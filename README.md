@@ -1,6 +1,15 @@
 # Time Series Analysis
 
-This repository contains Jupyter notebooks for performing time series analysis, focusing on financial data and volatility modeling. Below is an overview of the available notebooks:
+This repository contains Python scripts and Jupyter notebooks for performing time series analysis, focusing on financial data and volatility modeling. It includes data downloading, processing, and analysis tools for stock market data.
+
+## Scripts
+
+- **download_data_yf.py**: Downloads financial data using yfinance.
+- **get_data.py**: Retrieves and processes data.
+- **get_index_data.py**: Fetches index-related data.
+- **main.py**: Main entry point for running analyses.
+- **technicalIndicators.py**: Implements technical indicators for time series data.
+- **test.py**: Contains test functions.
 
 ## Notebooks
 
@@ -22,6 +31,10 @@ This repository contains Jupyter notebooks for performing time series analysis, 
 6. **test.ipynb**  
     A test notebook for trying out new ideas and debugging.
 
+## Data
+
+The `data/` folder contains sample CSV files with historical stock data for various tickers (e.g., BAJAJ-AUTO.NS, COALINDIA.NS) at different intervals (15m, 1h, 1d), as well as NSE bhav copies.
+
 ## Getting Started
 
 1. Clone the repository:
@@ -32,7 +45,7 @@ This repository contains Jupyter notebooks for performing time series analysis, 
 
 2. Install dependencies:
     ```bash
-    pip install -r requirements.txt
+    pip install -e .
     ```
 
 3. Open the notebooks:
@@ -46,4 +59,4 @@ This project is licensed under the MIT License.
 
 ## Acknowledgments
 
-Special thanks to the contributors and the open-source community for their support.  
+Special thanks to the contributors and the open-source community for their support.
