@@ -1,7 +1,7 @@
 from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 import time
-import tensorflow as tf
+# import tensorflow as tf
 import yfinance as yf
 import pandas as pd
 import numpy as np
