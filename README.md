@@ -4,10 +4,10 @@ This repository contains Jupyter notebooks for performing time series analysis, 
 
 ## Notebooks
 
-1. **Arqaunum_LSTM_Volatality_GARCH_arqanum_7.ipynb**  
+1. **LSTM_Volatality_GARCH.ipynb**  
     Implements LSTM and GARCH models for volatility prediction.
 
-2. **latest_Arqaunum_LSTM_Volatality_GARCH_arqanum_7.ipynb**  
+2. **LSTM_Volatality_GARCH2.ipynb**  
     An updated version of the LSTM and GARCH volatility modeling notebook.
 
 3. **new_nb.ipynb**  
