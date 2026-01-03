@@ -1,7 +1,8 @@
-import yfinance as yf
-import matplotlib.pyplot as plt
-from mplfinance.original_flavor import candlestick_ohlc
+from src.data.fetchers.mutual_fund import fetch_nav
+from src.mf.registry import fetch_scheme_registry
 
+# df = fetch_nav("120503")
+# print(df.tail())
 
-STOCK = ['RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS']
-data = yf.download(STOCK, period='1d', interval='15m')
+df = fetch_scheme_registry()
+df.write_parquet("data/parquet/mf_registry.parquet")

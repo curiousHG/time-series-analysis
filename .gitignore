@@ -1,5 +1,6 @@
 .venv
-data
+data/
+!src/data
 **/__pycache__
 .vscode
 sample/

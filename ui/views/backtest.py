@@ -1,0 +1,67 @@
+import streamlit as st
+import polars as pl
+import pandas as pd
+import vectorbt as vbt
+
+from ui.charts.price_chart import render_price_chart
+from ui.charts.indicator_chart import render_indicator
+from ui.tables.stats_table import render_stats
+from ui.utils import make_arrow_safe
+
+from src.strategies.rsi import RSIStrategy
+
+# IMPORTANT: force plotly Figure, not widgets
+vbt.settings['plotting']['use_widgets'] = False
+
+
+@st.cache_data
+def load_data(symbol: str):
+    df = pl.read_parquet(f"data/parquet/{symbol}.parquet")
+    return df
+
+
+
+def render(state):
+    st.title("📈 Backtest")
+
+    # ---------- Sidebar ----------
+    symbol = state["symbol"]
+    strategy_name = state["strategy"]
+    params = state["params"]
+
+    # example
+    window = params.get("window", 14)
+
+    # ---------- Data ----------
+    df = load_data(symbol)
+    price = pd.Series(df["Close"].to_numpy(), index=df["Date"])
+
+    # ---------- Strategy ----------
+    strategy = RSIStrategy(window=window)
+
+    indicators = strategy.indicators(price)
+    entries, exits = strategy.signals(price, indicators)
+
+    pf = vbt.Portfolio.from_signals(
+        price,
+        entries,
+        exits,
+        freq="1D"
+    )
+
+    # ---------- Layout ----------
+    left, right = st.columns([3, 2])
+
+    with left:
+        render_price_chart(pf.plot())
+
+        for name, series in indicators.items():
+            render_indicator(name, series)
+
+    with right:
+        render_stats(pf)
+
+        st.subheader("Trades")
+        st.dataframe(
+            make_arrow_safe(pf.trades.records_readable)
+        )
