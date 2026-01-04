@@ -4,11 +4,18 @@ from ui.views.backtest import render as render_backtest
 from ui.views.mutual_funds import render as render_mf
 
 st.set_page_config(layout="wide")
+# state = sidebar()
 
-state = sidebar()
+# if state["mode"] == "Stocks":
+#     render_backtest(state)
 
-if state["mode"] == "Stocks":
-    render_backtest(state)
+# elif state["mode"] == "Mutual Funds":
+#     render_mf(state)
 
-elif state["mode"] == "Mutual Funds":
-    render_mf(state)
+
+pages = [
+    st.Page("views/mutual_funds.py", title="Mutual Fund Analysis"),
+    st.Page("views/backtest.py", title = "Stock Analysis")
+]
+pg = st.navigation(pages, position='top')
+pg.run()
