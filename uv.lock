@@ -3173,6 +3173,18 @@ wheels = [
 ]
 
 [[package]]
+name = "streamlit-cookies-controller"
+version = "0.0.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b0/c8/7caf505d62faeb8c0f6e6b74b554e1c2b0c3ca46c0a39250445c574a5a18/streamlit-cookies-controller-0.0.4.tar.gz", hash = "sha256:f5df2543de858f1585dcb6e90f58f38aafbf313ee8e237c64663b2d9761583cc", size = 406305, upload-time = "2024-04-10T03:50:35.813Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/c6/3bbdfecf5009943bcb62d37e3fd4b3fe45e87137e449a50e3025170bc9f7/streamlit_cookies_controller-0.0.4-py3-none-any.whl", hash = "sha256:f97fec6acdeee9cb9e16da25c3fc91d404b5b0ddced87c1d9fa9c62f65ca3251", size = 409303, upload-time = "2024-04-10T03:50:33.458Z" },
+]
+
+[[package]]
 name = "streamlit-embedcode"
 version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3392,6 +3404,7 @@ dependencies = [
     { name = "scipy" },
     { name = "seaborn" },
     { name = "streamlit" },
+    { name = "streamlit-cookies-controller" },
     { name = "streamlit-extras" },
     { name = "ta-lib" },
     { name = "vectorbt" },
@@ -3426,6 +3439,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.16.3" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "streamlit", specifier = ">=1.52.2" },
+    { name = "streamlit-cookies-controller", specifier = ">=0.0.4" },
     { name = "streamlit-extras", specifier = ">=0.7.8" },
     { name = "ta-lib", specifier = ">=0.6.8" },
     { name = "vectorbt", specifier = ">=0.28.2" },

@@ -1,7 +1,7 @@
 import streamlit as st
 from ui.sidebar import sidebar
 from ui.views.backtest import render as render_backtest
-from ui.views.mutual_funds import render as render_mf
+from ui.views.mutualFund.main import render as render_mf
 
 st.set_page_config(layout="wide")
 # state = sidebar()
@@ -14,7 +14,7 @@ st.set_page_config(layout="wide")
 
 
 pages = [
-    st.Page("views/mutual_funds.py", title="Mutual Fund Analysis"),
+    st.Page("views/mutualFund/main.py", title="Mutual Fund Analysis"),
     st.Page("views/backtest.py", title = "Stock Analysis")
 ]
 pg = st.navigation(pages, position='top')

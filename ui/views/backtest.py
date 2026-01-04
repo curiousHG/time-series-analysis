@@ -16,8 +16,7 @@ vbt.settings['plotting']['use_widgets'] = False
 
 @st.cache_data
 def load_data(symbol: str):
-    df = pl.read_parquet(f"data/parquet/{symbol}.parquet")
-    return df
+    return pl.read_parquet(f"data/parquet/{symbol}.parquet")
 
 
 

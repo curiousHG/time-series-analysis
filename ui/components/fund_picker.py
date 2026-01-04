@@ -1,6 +1,7 @@
 import streamlit as st
 import polars as pl
 
+from ui.components.cookies import get_cookie, set_cookie
 from ui.components.localstorage import load_from_local_storage, save_to_local_storage
 
 def _add_fund(scheme, load_registry, save_to_registry):
@@ -18,7 +19,6 @@ def _add_fund(scheme, load_registry, save_to_registry):
     
 
 def fund_picker(
-    fetch_suggestions,
     load_registry,
     save_to_registry,
 ):
@@ -27,49 +27,49 @@ def fund_picker(
     Returns: list[str] of selected scheme names
     """
 
-    st.session_state.setdefault(
-        "selected_schemes",
-        load_from_local_storage("selected_schemes", [])
-    )
+    if "selection_initialized" not in st.session_state:
+        stored = get_cookie("selected_schemes", None)
+
+        # Only restore if cookie actually exists
+        if stored is not None:
+            st.session_state.selected_schemes = stored
+        else:
+            st.session_state.selected_schemes = []
+
+        st.session_state.selection_initialized = True
+        st.session_state.allow_persist = False
+
+
 
     st.sidebar.markdown("## 🔍 Select Mutual Funds")
 
-    # ---- search box (only for suggestions)
-    query = st.sidebar.text_input(
-        "Search funds",
-        key="search_query",
-        placeholder="Type fund name…",
-    )
 
     # ---- base options from registry
     registry_names = load_registry()["schemeName"].to_list()
 
-    # ---- live suggestions
-    suggestions = []
-    if len(query) >= 2:
-        suggestions = fetch_suggestions(query)
 
     # ---- merged option set (CRITICAL)
     options = sorted(
         set(registry_names)
-        | set(suggestions)
         | set(st.session_state.selected_schemes)
     )
-
-
     # ---- multiselect = search + add + remove
-    selected = st.sidebar.multiselect(
+    st.sidebar.multiselect(
         "Funds",
         options=options,
-        default=st.session_state.selected_schemes,
         key="selected_schemes",
     )
 
+    if not st.session_state.allow_persist:
+        st.session_state.allow_persist = True
+        return st.session_state.selected_schemes
+
     # ---- persist newly added funds
-    newly_added = set(selected) - set(registry_names)
+    newly_added = set(st.session_state.selected_schemes) - set(registry_names)
     if newly_added:
         save_to_registry(list(newly_added))
         st.toast(f"Added {len(newly_added)} fund(s)")
-    save_to_local_storage("selected_schemes", selected)
 
-    return selected
+    set_cookie("selected_schemes", st.session_state.selected_schemes)
+
+    return st.session_state.selected_schemes
