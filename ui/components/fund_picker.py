@@ -1,7 +1,7 @@
 import streamlit as st
 import polars as pl
 
-from ui.components.cookies import get_cookie, set_cookie
+from ui.persistence.cookies import get_cookie, set_cookie
 
 
 def fund_picker(

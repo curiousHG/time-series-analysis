@@ -2,15 +2,8 @@ import streamlit as st
 import polars as pl
 import plotly.express as px
 
-from src.mutualFunds.data_store import ensure_holdings_data
 
 
-def show_holdings_data(selected_scheme_slugs, holdings_df, sectors_df, assets_df):
-    st.subheader("🏦 Fund Holdings")
-    # st.dataframe(sectors_df)
-    for scheme in selected_scheme_slugs:
-        with st.expander(scheme, expanded=False):
-            render_holdings_table(holdings_df, sectors_df, assets_df, scheme)
 
 def render_holdings_table(
     holdings_df: pl.DataFrame,

@@ -6,7 +6,10 @@ from src.mutualFunds.tableSchema import ASSET_SCHEMA, HOLDINGS_SCHEMA, SECTOR_SC
 
 
 def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
-    items = resp["schemePortfolioAnalysisResponse"]["schemePortfolioList"]
+    base = resp["schemePortfolioAnalysisResponse"]
+    if base == {}:
+        return empty_df(HOLDINGS_SCHEMA)
+    items = base["schemePortfolioList"]
 
     rows = []
     for h in items:
@@ -53,6 +56,8 @@ def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
 
 def normalize_sector_allocation(resp: dict, slug: str) -> pl.DataFrame:
     base = resp["schemePortfolioAnalysisResponse"]
+    if not base:
+        return empty_df(SECTOR_SCHEMA)
     items = base["schemePortfolioList"]
     sector_map = base.get("sectorAllocationMap", {})
 
@@ -85,6 +90,8 @@ def normalize_sector_allocation(resp: dict, slug: str) -> pl.DataFrame:
 
 def normalize_asset_allocation(resp: dict, slug: str) -> pl.DataFrame:
     base = resp["schemePortfolioAnalysisResponse"]
+    if not base:
+        return empty_df(ASSET_SCHEMA)
     items = base["schemePortfolioList"]
     asset_map = base.get("assetAllocationMap", {})
 

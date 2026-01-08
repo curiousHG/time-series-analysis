@@ -3,7 +3,7 @@ from src.mutualFunds.holdings import normalize_holdings, normalize_sector_alloca
 from src.mutualFunds.constants import ASSET_PATH, HOLDINGS_PATH, NAV_PATH, RAW_DIR, SECTOR_PATH
 from src.mutualFunds.fetch_data import fetch_nav_from_advisorkhoj, fetch_portfolio_by_slug
 
-from datetime import datetime
+
 import json
 
 from src.mutualFunds.tableSchema import ASSET_SCHEMA, HOLDINGS_SCHEMA, SECTOR_SCHEMA, empty_df
