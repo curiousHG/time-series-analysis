@@ -15,7 +15,7 @@ def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str]):
         return
     df = sector_exposure(sector_df, fund_slugs).to_pandas()
 
-    fig = px.bar(
+    return px.bar(
         df,
         x="weight",
         y="sector",
@@ -24,7 +24,6 @@ def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str]):
         title="Sector Exposure Comparison",
     )
 
-    st.plotly_chart(fig, use_container_width=True)
 
 
 def plot_overlap_heatmap(matrix: pd.DataFrame):
@@ -35,8 +34,8 @@ def plot_overlap_heatmap(matrix: pd.DataFrame):
         aspect="auto",
         title="Fund Overlap (%)",
     )
-    fig.update_layout(xaxis_title="Fund", yaxis_title="Fund")
-    st.plotly_chart(fig, use_container_width=True)
+    return fig.update_layout(xaxis_title="Fund", yaxis_title="Fund")
+    # st.plotly_chart(fig, use_container_width=True)
 
 
 def plot_kde_returns(pct: pd.DataFrame):

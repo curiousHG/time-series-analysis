@@ -1,11 +1,14 @@
-import streamlit as st
+from dash import Dash
+import dash_bootstrap_components as dbc
+from layout.sidebar import sidebar
+from layout.main import main_layout
+import callbacks.mutual_fund
 
+app = Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+server = app.server
 
-st.set_page_config(layout="wide")
+app.layout = main_layout(sidebar)
 
-pages = [
-    st.Page("views/mutualFund/main.py", title="Mutual Fund Analysis"),
-    st.Page("views/backtest.py", title = "Stock Analysis")
-]
-pg = st.navigation(pages, position='top')
-pg.run()
+if __name__ == "__main__":
+    app.run(debug=True, dev_tools_hot_reload=True)
+    
