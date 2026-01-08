@@ -6,18 +6,38 @@ def compute_overlap(holdings_df: pl.DataFrame, fund_a_slug: str, fund_b_slug: st
     df_a = (
         holdings_df
         .filter(pl.col("schemeSlug") == fund_a_slug)
-        .select("stockName", pl.col("weight").alias("w_a"))
+        .select("instrumentName", pl.col("weight").alias("w_a"))
     )
 
     df_b = (
         holdings_df
         .filter(pl.col("schemeSlug") == fund_b_slug)
-        .select("stockName", pl.col("weight").alias("w_b"))
+        .select("instrumentName", pl.col("weight").alias("w_b"))
     )
 
     return (
         df_a
-        .join(df_b, on="stockName", how="inner")
+        .join(df_b, on="instrumentName", how="inner")
+        .select(pl.min_horizontal("w_a", "w_b").alias("overlap"))
+        .select(pl.sum("overlap"))
+        .item()
+    )
+def compute_sector_overlap(sector_df: pl.DataFrame, fund_a_slug: str, fund_b_slug: str) -> float:
+    df_a = (
+        sector_df
+        .filter(pl.col("schemeSlug") == fund_a_slug)
+        .select("instrumentName", pl.col("weight").alias("w_a"))
+    )
+
+    df_b = (
+        sector_df
+        .filter(pl.col("schemeSlug") == fund_b_slug)
+        .select("instrumentName", pl.col("weight").alias("w_b"))
+    )
+
+    return (
+        df_a
+        .join(df_b, on="instrumentName", how="inner")
         .select(pl.min_horizontal("w_a", "w_b").alias("overlap"))
         .select(pl.sum("overlap"))
         .item()

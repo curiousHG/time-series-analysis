@@ -1,0 +1,76 @@
+import numpy as np
+from scipy.stats import gaussian_kde
+import plotly.graph_objects as go
+import plotly.express as px
+import streamlit as st
+import polars as pl
+import pandas as pd
+
+
+from src.mutualFunds.analytics import sector_exposure
+
+def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str]):
+    if not sector_df.height:
+        st.write("No sector data")
+        return
+    df = sector_exposure(sector_df, fund_slugs).to_pandas()
+
+    fig = px.bar(
+        df,
+        x="weight",
+        y="sector",
+        color="schemeSlug",
+        orientation="h",
+        title="Sector Exposure Comparison",
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def plot_overlap_heatmap(matrix: pd.DataFrame):
+    fig = px.imshow(
+        matrix,
+        text_auto=".1f",
+        color_continuous_scale="Reds",
+        aspect="auto",
+        title="Fund Overlap (%)",
+    )
+    fig.update_layout(xaxis_title="Fund", yaxis_title="Fund")
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def plot_kde_returns(pct: pd.DataFrame):
+    fig = go.Figure()
+
+    x_grid = np.linspace(-0.06, 0.06, 500)  # common return range
+
+    for scheme in pct.columns:
+        series = pct[scheme].dropna()
+
+        if len(series) < 50:
+            continue  # not enough data for stable KDE
+
+        kde = gaussian_kde(series)
+        y = kde(x_grid)
+
+        fig.add_trace(
+            go.Scatter(
+                x=x_grid,
+                y=y,
+                mode="lines",
+                name=scheme,
+                hovertemplate="Return: %{x:.2%}<br>Density: %{y:.2f}<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        title="Daily Return Distribution (KDE)",
+        xaxis_title="Daily Return",
+        yaxis_title="Density",
+        hovermode="x unified",
+    )
+
+    fig.update_xaxes(tickformat=".1%")
+
+    st.plotly_chart(fig, width="stretch")
+

@@ -26,6 +26,7 @@ dependencies = [
     "streamlit-cookies-controller>=0.0.4",
     "streamlit-extras>=0.7.8",
     "ta-lib>=0.6.8",
+    "tqdm>=4.67.1",
     "vectorbt>=0.28.2",
     "yfinance>=0.2.66",
 ]

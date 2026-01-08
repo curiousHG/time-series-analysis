@@ -1,9 +1,14 @@
 import polars as pl
 from src.mutualFunds.holdings import normalize_holdings, normalize_sector_allocation, normalize_asset_allocation
-from src.mutualFunds.constants import ASSET_PATH, HOLDINGS_PATH, NAV_PATH, SECTOR_PATH
+from src.mutualFunds.constants import ASSET_PATH, HOLDINGS_PATH, NAV_PATH, RAW_DIR, SECTOR_PATH
 from src.mutualFunds.fetch_data import fetch_nav_from_advisorkhoj, fetch_portfolio_by_slug
 
 from datetime import datetime
+import json
+
+from src.mutualFunds.tableSchema import ASSET_SCHEMA, HOLDINGS_SCHEMA, SECTOR_SCHEMA, empty_df
+
+
 
 def nav_json_to_df(nav_json: list[list], scheme_name: str) -> pl.DataFrame:
     cleaned = [
@@ -78,25 +83,58 @@ def ensure_nav_data(scheme_names: list[str]) -> pl.DataFrame:
 
 
 
-def ensure_holdings_data(slugs: list[str]) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    holdings = pl.read_parquet(HOLDINGS_PATH) if HOLDINGS_PATH.exists() else pl.DataFrame()
-    sectors = pl.read_parquet(SECTOR_PATH) if SECTOR_PATH.exists() else pl.DataFrame()
-    assets = pl.read_parquet(ASSET_PATH) if ASSET_PATH.exists() else pl.DataFrame()
+def ensure_holdings_data(
+    slugs: list[str],
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
 
-    existing = set(holdings["schemeSlug"].unique().to_list()) if holdings.height else set()
+    holdings = (
+        pl.read_parquet(HOLDINGS_PATH)
+        if HOLDINGS_PATH.exists()
+        else empty_df(HOLDINGS_SCHEMA)
+    )
+
+    sectors = (
+        pl.read_parquet(SECTOR_PATH)
+        if SECTOR_PATH.exists()
+        else empty_df(SECTOR_SCHEMA)
+    )
+
+    assets = (
+        pl.read_parquet(ASSET_PATH)
+        if ASSET_PATH.exists()
+        else empty_df(ASSET_SCHEMA)
+    )
+
+    existing = (
+        set(holdings["schemeSlug"].unique().to_list())
+        if holdings.height
+        else set()
+    )
+
     missing = set(slugs) - existing
 
     for slug in missing:
-        resp = fetch_portfolio_by_slug(slug)
-        # print(resp)
+        raw_path = RAW_DIR / f"{slug}.json"
+        if raw_path.exists():
+            with open(raw_path, "r", encoding="utf-8") as f:
+                resp = json.load(f)
+        else:
+            resp = fetch_portfolio_by_slug(slug)
+            tmp = raw_path.with_suffix(".json.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(resp, f, indent=2, ensure_ascii=False)
+            tmp.replace(raw_path)
 
         h = normalize_holdings(resp, slug)
         s = normalize_sector_allocation(resp, slug)
         a = normalize_asset_allocation(resp, slug)
 
-        holdings = pl.concat([holdings, h]) if holdings.height and  h.height else h
-        sectors = pl.concat([sectors, s]) if sectors.height else s
-        assets = pl.concat([assets, a]) if assets.height else a
+        if h.height:
+            holdings = holdings.vstack(h)
+        if s.height:
+            sectors = sectors.vstack(s)
+        if a.height:
+            assets = assets.vstack(a)
 
     if missing:
         holdings.write_parquet(HOLDINGS_PATH)

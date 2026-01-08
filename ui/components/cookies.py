@@ -10,20 +10,30 @@ COOKIE_VERSION = 1
 
 
 def set_cookie(key: str, value):
+    if not controller:
+        return
     payload = {
         "v": COOKIE_VERSION,   # schema version
         "data": value,
     }
-
-    controller.set(
-        key,
-        json.dumps(payload),
-        expires=datetime.now() + timedelta(days=COOKIE_DAYS),
-    )
+    try:
+        controller.set(
+            key,
+            json.dumps(payload),
+            expires=datetime.now() + timedelta(days=COOKIE_DAYS),
+        )
+    except Exception as e:
+        st.error(f"Failed to set cookie {key} - {e}")
 
 
 def get_cookie(key: str, default=None):
-    raw = controller.get(key)
+    if not controller:
+        return default
+    try:
+        raw = controller.get(key)
+    except Exception as e:
+        st.error(f"Failed to get cookie: {key} - {e}")
+        return default
     if not raw:
         return default
 

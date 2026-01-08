@@ -24,11 +24,12 @@ def render_holdings_table(
     # --------------------
     # Holdings (Top N + Others)
     # --------------------
+    
     h = (
         holdings_df
         .filter(pl.col("schemeSlug") == scheme_slug)
         .sort("weight", descending=True)
-        .select("stockName", "weight")
+        .select("instrumentName", "weight")
     )
 
     top = h.head(top_n)
@@ -38,7 +39,7 @@ def render_holdings_table(
         top = pl.concat([
             top,
             pl.DataFrame({
-                "stockName": ["Others"],
+                "instrumentName": ["Others"],
                 "weight": [others_weight],
             })
         ])
@@ -46,6 +47,9 @@ def render_holdings_table(
     # --------------------
     # Sector allocation
     # --------------------
+
+    # %7B%22v%22%3A%201%2C%20%22data%22%3A%20%5B%5D%7D
+    
     s = (
         sector_df
         .filter(pl.col("schemeSlug") == scheme_slug)
@@ -72,7 +76,7 @@ def render_holdings_table(
     with col1:
         fig_holdings = px.treemap(
             top.to_pandas(),
-            path=["stockName"],
+            path=["instrumentName"],
             values="weight",
             title="Holdings (Top Constituents)",
         )
@@ -96,34 +100,40 @@ def render_holdings_table(
 
     # ---- Sector donut
     with col2:
-        fig_sector = px.pie(
-            s.to_pandas(),
-            names="sector",
-            values="weight",
-            hole=0.55,
-            title="Sector Allocation",
-        )
-        fig_sector.update_traces(textposition="inside", textinfo="percent")
-        st.plotly_chart(fig_sector, width='stretch')
+        if s.height>0:
+            fig_sector = px.pie(
+                s.to_pandas(),
+                names="sector",
+                values="weight",
+                hole=0.55,
+                title="Sector Allocation",
+            )
+            fig_sector.update_traces(textposition="inside", textinfo="percent")
+            st.plotly_chart(fig_sector, width='stretch')
+        else:
+            st.write("No sector data available")
 
     # ---- Asset donut
     with col3:
-        fig_asset = px.pie(
-            a.to_pandas(),
-            names="assetClass",
-            values="weight",
-            hole=0.55,
-            title="Asset Allocation",
-        )
-        fig_asset.update_traces(textposition="inside", textinfo="percent")
-        st.plotly_chart(fig_asset, width='stretch')
+        if a.height > 0:
+            fig_asset = px.pie(
+                a.to_pandas(),
+                names="assetClass",
+                values="weight",
+                hole=0.55,
+                title="Asset Allocation",
+            )
+            fig_asset.update_traces(textposition="inside", textinfo="percent")
+            st.plotly_chart(fig_asset, width='stretch')
+        else:
+            st.write("No asset data available")
 
     # --------------------
     # Optional: Data table (collapsed)
     # --------------------
     with st.expander("📄 View holdings table"):
         st.dataframe(
-            h.select("stockName", "weight"),
+            h.select("instrumentName", "weight"),
             width='stretch',
         )
 

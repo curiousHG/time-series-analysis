@@ -3407,6 +3407,7 @@ dependencies = [
     { name = "streamlit-cookies-controller" },
     { name = "streamlit-extras" },
     { name = "ta-lib" },
+    { name = "tqdm" },
     { name = "vectorbt" },
     { name = "yfinance" },
 ]
@@ -3442,6 +3443,7 @@ requires-dist = [
     { name = "streamlit-cookies-controller", specifier = ">=0.0.4" },
     { name = "streamlit-extras", specifier = ">=0.7.8" },
     { name = "ta-lib", specifier = ">=0.6.8" },
+    { name = "tqdm", specifier = ">=4.67.1" },
     { name = "vectorbt", specifier = ">=0.28.2" },
     { name = "yfinance", specifier = ">=0.2.66" },
 ]
