@@ -52,10 +52,11 @@ def show_rolling_returns_info(selected_registry: pl.DataFrame, nav_df:pl.DataFra
             continue
 
         with cols[col_idx]:
-            render_indicator(
+            fig = render_indicator(
                 f"{scheme_name} ({window_label})",
                 series,
             )
+            st.plotly_chart(fig, width="stretch")
 
         col_idx = (col_idx + 1) % 3
 

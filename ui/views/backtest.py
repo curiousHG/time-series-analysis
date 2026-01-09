@@ -55,7 +55,8 @@ def render(state):
         render_price_chart(pf.plot())
 
         for name, series in indicators.items():
-            render_indicator(name, series)
+            fig = render_indicator(name, series)
+            st.plotly_chart(fig, width="stretch")
 
     with right:
         render_stats(pf)

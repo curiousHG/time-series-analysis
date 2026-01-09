@@ -2,7 +2,6 @@ import numpy as np
 from scipy.stats import gaussian_kde
 import plotly.graph_objects as go
 import plotly.express as px
-import streamlit as st
 import polars as pl
 import pandas as pd
 
@@ -10,9 +9,6 @@ import pandas as pd
 from src.mutualFunds.analytics import sector_exposure
 
 def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str]):
-    if not sector_df.height:
-        st.write("No sector data")
-        return
     df = sector_exposure(sector_df, fund_slugs).to_pandas()
 
     return px.bar(

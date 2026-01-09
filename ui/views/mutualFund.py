@@ -15,14 +15,11 @@ from ui.components.mutual_fund_holdings import render_holdings_table
 from ui.components.mutual_funds_rolling_returns import show_rolling_returns_info
 from src.mutualFunds.tradebook import (
     compute_current_holdings,
-    load_tradebook,
-    normalize_transactions,
 )
+from ui.components.fund_matcher import fund_matcher
 from ui.data.loaders import load_nav_and_holdings, load_txn_data
 from ui.utils import get_selected_registry
 from ui.charts.plotters import plot_kde_returns, plot_overlap_heatmap, plot_sector_stack
-
-
 
 
 st.title("💼 Mutual Funds")
@@ -50,22 +47,31 @@ nav_df = nav_df.join(selected_registry, on="schemeName", how="inner")
 nav_pd = nav_df.to_pandas()
 
 
-
-tab_portfolio, tab_overlap, tab_returns, tab_holdings, tab_correlation = st.tabs(
-    [
-        "📊 Portfolio",
-        "🧩 Overlap & Allocation",
-        "📈 Returns",
-        "📋 Holdings",
-        "🔥 Correlation",
-    ]
+tab_map, tab_portfolio, tab_overlap, tab_returns, tab_holdings, tab_correlation = (
+    st.tabs(
+        [
+            "🔗 Mapping",
+            "📊 Portfolio",
+            "🧩 Overlap & Allocation",
+            "📈 Returns",
+            "📋 Holdings",
+            "🔥 Correlation",
+        ]
+    )
 )
+
+
+with tab_map:
+    fund_matcher(txn_df=txn_df)
+
 with tab_portfolio:
     st.header("Current Portfolio")
 
+    st.subheader("Price & Trades")
+    # st.plotly_chart(fig, width="stretch")
+
     current_holdings = compute_current_holdings(txn_df)
     st.dataframe(current_holdings)
-
 
 
 with tab_overlap:
@@ -74,9 +80,11 @@ with tab_overlap:
 
     fig = plot_overlap_heatmap(matrix)
     st.plotly_chart(fig, width="stretch")
-    
-    fig = plot_sector_stack(sectors_df, selected_scheme_slugs)
-    st.plotly_chart(fig, width="stretch")
+    if not sectors_df.height:
+        st.write("No sector data")
+    else:
+        fig = plot_sector_stack(sectors_df, selected_scheme_slugs)
+        st.plotly_chart(fig, width="stretch")
 
 with tab_returns:
     st.header("Returns & Distributions")
@@ -105,6 +113,6 @@ with tab_correlation:
         .dropna()
         .corr()
     )
-    st.dataframe(corr)
 
-    render_correlation_heatmap(corr)
+    fig = render_correlation_heatmap(corr)
+    st.plotly_chart(fig, width="stretch")

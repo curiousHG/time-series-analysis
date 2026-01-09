@@ -1,19 +1,47 @@
 import polars as pl
-from src.mutualFunds.holdings import normalize_holdings, normalize_sector_allocation, normalize_asset_allocation
-from src.mutualFunds.constants import ASSET_PATH, HOLDINGS_PATH, NAV_PATH, RAW_DIR, SECTOR_PATH
-from src.mutualFunds.fetch_data import fetch_nav_from_advisorkhoj, fetch_portfolio_by_slug
-
-
+import pandas as pd
 import json
+from src.mutualFunds.holdings import (
+    normalize_holdings,
+    normalize_sector_allocation,
+    normalize_asset_allocation,
+)
+from src.mutualFunds.constants import (
+    ASSET_PATH,
+    HOLDINGS_PATH,
+    NAV_PATH,
+    RAW_DIR,
+    SECTOR_PATH,
+    FUND_MAPPING_PATH,
+)
+from src.mutualFunds.fetch_data import (
+    fetch_nav_from_advisorkhoj,
+    fetch_portfolio_by_slug,
+)
 
-from src.mutualFunds.tableSchema import ASSET_SCHEMA, HOLDINGS_SCHEMA, SECTOR_SCHEMA, empty_df
+from src.mutualFunds.tableSchema import (
+    ASSET_SCHEMA,
+    HOLDINGS_SCHEMA,
+    SECTOR_SCHEMA,
+    empty_df,
+)
 
+
+def persist_fund_mapping(fund_mapping: pd.DataFrame):
+    if fund_mapping is None or fund_mapping.empty:
+        return
+    fund_mapping.to_csv(FUND_MAPPING_PATH, index=False)
+
+def ensure_fund_mapping():
+    if FUND_MAPPING_PATH.exists():
+        return pd.read_csv(FUND_MAPPING_PATH)
+    return None
 
 
 def nav_json_to_df(nav_json: list[list], scheme_name: str) -> pl.DataFrame:
     cleaned = [
         {
-            "ts_ms": int(row[0]),   # epoch milliseconds
+            "ts_ms": int(row[0]),  # epoch milliseconds
             "nav": float(row[1]),
         }
         for row in nav_json
@@ -24,15 +52,8 @@ def nav_json_to_df(nav_json: list[list], scheme_name: str) -> pl.DataFrame:
         pl.DataFrame(cleaned)
         .with_columns(
             [
-                pl.from_epoch(
-                    pl.col("ts_ms"),
-                    time_unit="ms"
-                )
-                .dt.date()
-                .alias("date"),
-
+                pl.from_epoch(pl.col("ts_ms"), time_unit="ms").dt.date().alias("date"),
                 pl.col("nav").alias("nav"),
-
                 pl.lit(scheme_name).alias("schemeName"),
             ]
         )
@@ -41,21 +62,16 @@ def nav_json_to_df(nav_json: list[list], scheme_name: str) -> pl.DataFrame:
         .unique(subset=["date", "schemeName"], keep="last")
     )
 
-def ensure_nav_data(scheme_names: list[str]) -> pl.DataFrame:   
 
+def ensure_nav_data(scheme_names: list[str]) -> pl.DataFrame:
     """
     Ensures NAV data exists locally for given scheme NAMES
     using AdvisorKhoj NAV endpoint.
     """
-    
+
     if NAV_PATH.exists():
         nav_df = pl.read_parquet(NAV_PATH)
-        existing = (
-            nav_df.select("schemeName")
-                  .unique()
-                  .to_series()
-                  .to_list()
-        )
+        existing = nav_df.select("schemeName").unique().to_series().to_list()
     else:
         nav_df = pl.DataFrame(
             schema={
@@ -82,7 +98,6 @@ def ensure_nav_data(scheme_names: list[str]) -> pl.DataFrame:
     return nav_df
 
 
-
 def ensure_holdings_data(
     slugs: list[str],
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
@@ -100,15 +115,11 @@ def ensure_holdings_data(
     )
 
     assets = (
-        pl.read_parquet(ASSET_PATH)
-        if ASSET_PATH.exists()
-        else empty_df(ASSET_SCHEMA)
+        pl.read_parquet(ASSET_PATH) if ASSET_PATH.exists() else empty_df(ASSET_SCHEMA)
     )
 
     existing = (
-        set(holdings["schemeSlug"].unique().to_list())
-        if holdings.height
-        else set()
+        set(holdings["schemeSlug"].unique().to_list()) if holdings.height else set()
     )
 
     missing = set(slugs) - existing
