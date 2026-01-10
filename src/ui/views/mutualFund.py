@@ -2,18 +2,18 @@ import streamlit as st
 import polars as pl
 import pandas as pd
 
-from src.mutualFunds.data_store import ensure_holdings_data, ensure_nav_data
+from mutualFunds.data_store import ensure_holdings_data, ensure_nav_data
 from ui.components.fund_picker import fund_picker
-from src.mutualFunds.registry import (
+from mutualFunds.registry import (
     load_registry,
     save_to_registry,
 )
-from src.mutualFunds.analytics import overlap_matrix, sector_exposure
+from mutualFunds.analytics import overlap_matrix, sector_exposure
 
 from ui.charts.correlation_heatmap import render_correlation_heatmap
 from ui.components.mutual_fund_holdings import render_holdings_table
 from ui.components.mutual_funds_rolling_returns import show_rolling_returns_info
-from src.mutualFunds.tradebook import (
+from mutualFunds.tradebook import (
     compute_current_holdings,
 )
 from ui.components.fund_matcher import fund_matcher

@@ -1,6 +1,6 @@
 import vectorbt as vbt
 
-from src.strategies.base import Strategy
+from strategies.base import Strategy
 
 class RSIStrategy(Strategy):
     name = "RSI"

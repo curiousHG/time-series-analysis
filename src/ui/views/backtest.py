@@ -8,7 +8,7 @@ from ui.charts.indicator_chart import render_indicator
 from ui.tables.stats_table import render_stats
 from ui.utils import make_arrow_safe
 
-from src.strategies.rsi import RSIStrategy
+from strategies.rsi import RSIStrategy
 
 # IMPORTANT: force plotly Figure, not widgets
 vbt.settings['plotting']['use_widgets'] = False

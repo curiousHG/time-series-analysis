@@ -1,7 +1,7 @@
 import streamlit as st
 import polars as pl
 
-from src.mutualFunds.analytics import rolling_return_summary, rolling_returns
+from mutualFunds.analytics import rolling_return_summary, rolling_returns
 from ui.charts.indicator_chart import render_indicator
 
 def show_rolling_returns_info(selected_registry: pl.DataFrame, nav_df:pl.DataFrame):

@@ -1,12 +1,12 @@
 import polars as pl
 import pandas as pd
 import json
-from src.mutualFunds.holdings import (
+from mutualFunds.holdings import (
     normalize_holdings,
     normalize_sector_allocation,
     normalize_asset_allocation,
 )
-from src.mutualFunds.constants import (
+from mutualFunds.constants import (
     ASSET_PATH,
     HOLDINGS_PATH,
     NAV_PATH,
@@ -14,12 +14,12 @@ from src.mutualFunds.constants import (
     SECTOR_PATH,
     FUND_MAPPING_PATH,
 )
-from src.mutualFunds.fetch_data import (
+from mutualFunds.fetch_data import (
     fetch_nav_from_advisorkhoj,
     fetch_portfolio_by_slug,
 )
 
-from src.mutualFunds.tableSchema import (
+from mutualFunds.tableSchema import (
     ASSET_SCHEMA,
     HOLDINGS_SCHEMA,
     SECTOR_SCHEMA,

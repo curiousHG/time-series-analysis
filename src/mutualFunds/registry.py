@@ -1,6 +1,6 @@
 import httpx
 import polars as pl
-from src.mutualFunds.constants import REGISTRY_PATH, MF_REGISTRY_URL
+from mutualFunds.constants import REGISTRY_PATH, MF_REGISTRY_URL
 
 
 def load_registry() -> pl.DataFrame:

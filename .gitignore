@@ -1,6 +1,8 @@
 .venv
 data/
 !src/data
+!src/ui/data
+!data/parquet/
 **/__pycache__
 .vscode
 sample/

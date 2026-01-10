@@ -2,7 +2,7 @@ import polars as pl
 from pathlib import Path
 from datetime import datetime
 
-from src.mutualFunds.tableSchema import ASSET_SCHEMA, HOLDINGS_SCHEMA, SECTOR_SCHEMA, empty_df
+from mutualFunds.tableSchema import ASSET_SCHEMA, HOLDINGS_SCHEMA, SECTOR_SCHEMA, empty_df
 
 
 def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
