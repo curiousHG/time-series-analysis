@@ -2,7 +2,7 @@
 data/
 !src/data
 !src/ui/data
-!data/parquet/
+!data/parquet/advisorkhoj_registry.parquet
 **/__pycache__
 .vscode
 sample/
