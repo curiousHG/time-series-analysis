@@ -6,7 +6,7 @@ import polars as pl
 import pandas as pd
 
 
-from mutualFunds.analytics import sector_exposure
+from mutual_funds.analytics import sector_exposure
 
 def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str]):
     df = sector_exposure(sector_df, fund_slugs).to_pandas()

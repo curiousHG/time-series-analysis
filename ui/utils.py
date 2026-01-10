@@ -1,5 +1,7 @@
 import polars as pl
 import streamlit as st
+import time
+from contextlib import contextmanager
 
 
 def make_arrow_safe(df):
@@ -23,3 +25,11 @@ def get_selected_registry(load_registry) -> pl.DataFrame:
     return registry.filter(
         pl.col("schemeName").is_in(st.session_state.selected_schemes)
     )
+
+
+@contextmanager
+def timed(label: str):
+    start = time.perf_counter()
+    yield
+    elapsed = time.perf_counter() - start
+    st.sidebar.write(f"⏱️ {label}: {elapsed:.2f}s")

@@ -1,7 +1,6 @@
 .venv
 data/
-!src/data
-!src/ui/data
+!data/fetchers/
 !data/parquet/advisorkhoj_registry.parquet
 **/__pycache__
 .vscode

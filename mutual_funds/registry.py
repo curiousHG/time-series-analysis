@@ -1,7 +1,14 @@
 import httpx
 import polars as pl
-from mutualFunds.constants import REGISTRY_PATH, MF_REGISTRY_URL
+from mutual_funds.constants import REGISTRY_PATH, MF_REGISTRY_URL
 
+
+def make_slug(name: str) -> str:
+    return "-".join(
+        c.strip("-")
+        for c in name.replace("(", " ").replace(")", " ").split()
+        if c and c != "-"
+    ).lower()
 
 def load_registry() -> pl.DataFrame:
     if REGISTRY_PATH.exists():
@@ -10,23 +17,25 @@ def load_registry() -> pl.DataFrame:
     return pl.DataFrame(
         schema={
             "schemeName": pl.Utf8,
+            "schemeSlug": pl.Utf8,
             "source": pl.Utf8,
-            "schemeSlug": pl.Utf8
         }
     )
 
 def save_to_registry(names: list[str]):
-    df = load_registry()
+    if not names:
+        return
 
-    slugs = ['-'.join([c.strip('-')for c in name.replace("("," ").replace(")"," ").split(' ') if c != '-' and c]) for name in names]
+    df = load_registry()
     
     new = pl.DataFrame(
         {
             "schemeName": names,
+            "schemeSlug": [make_slug(n) for n in names],
             "source": ["advisorkhoj"] * len(names),
-            "schemeSlug": slugs
         }
     )
+    # print(new, df)
 
     df = (
         pl.concat([df, new])
@@ -51,4 +60,6 @@ def fetch_scheme_registry(query:str) -> pl.DataFrame:
     resp = httpx.post(MF_REGISTRY_URL, timeout=30, headers=HEADERS, data=f"query={query}")
     resp.raise_for_status()
 
-    return resp.json()
+    names: list[str] = resp.json()
+
+    return pl.DataFrame({"schemeName": names})
