@@ -2,7 +2,7 @@ import streamlit as st
 import polars as pl
 import pandas as pd
 
-from mutual_funds.data_store import ensure_holdings_data, ensure_nav_data
+from data.store.mutualfund import ensure_holdings_data, ensure_nav_data
 from ui.components.fund_picker import fund_picker
 from mutual_funds.registry import (
     load_registry,

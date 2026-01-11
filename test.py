@@ -1,11 +1,24 @@
-from src.data.fetchers.mutual_fund import fetch_nav
-from src.mutualFunds.registry import fetch_scheme_registry
+
 import polars as pl
+import yfinance as yf
 
 
-df = fetch_scheme_registry()
-df.write_parquet("data/parquet/mf_registry.parquet")
+df = yf.download("AAPL", start="2022-01-01", end="2023-01-01", interval="1d")
+# change from multi index to single index
+"""
+MultiIndex([(  'Date',     ''),
+            ( 'Close', 'AAPL'),
+            (  'High', 'AAPL'),
+            (   'Low', 'AAPL'),
+            (  'Open', 'AAPL'),
+            ('Volume', 'AAPL')],
 
-
-data = pl.read_parquet("data/parquet/mf_registry.parquet")
-# print(data)
+            change this to 
+Index(['Date', 'Close', 'High', 'Low', 'Open', 'Volume'],
+"""
+df = df.reset_index()
+df.columns = [col[0] for col in df.columns]
+# set date as the index
+df = df.set_index("Date")
+pl_df = pl.from_pandas(df)
+print(pl_df.columns)

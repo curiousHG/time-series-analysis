@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import polars as pl
 
-from mutual_funds.data_store import ensure_fund_mapping, ensure_nav_data, persist_fund_mapping
+from data.store.mutualfund import ensure_fund_mapping, ensure_nav_data, persist_fund_mapping
 from mutual_funds.registry import load_registry
 from mutual_funds.tradebook import apply_fund_mapping, compute_daily_units
 from ui.data.loaders import get_trade_symbols, load_nav_data, load_txn_data

@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 MF_REGISTRY_URL = "https://www.advisorkhoj.com/mutual-funds-research/autoSuggestAllMfSchemes"
+
 RAW_DIR = Path("data/raw")
 NAV_PATH = Path("data/parquet/mf_nav.parquet")
 REGISTRY_PATH = Path("data/parquet/advisorkhoj_registry.parquet")

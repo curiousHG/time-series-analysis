@@ -53,7 +53,6 @@ def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
         .select(HOLDINGS_SCHEMA.keys())
     )
 
-
 def normalize_sector_allocation(resp: dict, slug: str) -> pl.DataFrame:
     base = resp["schemePortfolioAnalysisResponse"]
     if not base:
@@ -86,8 +85,6 @@ def normalize_sector_allocation(resp: dict, slug: str) -> pl.DataFrame:
         .select(SECTOR_SCHEMA.keys())
     )
 
-
-
 def normalize_asset_allocation(resp: dict, slug: str) -> pl.DataFrame:
     base = resp["schemePortfolioAnalysisResponse"]
     if not base:
@@ -119,4 +116,3 @@ def normalize_asset_allocation(resp: dict, slug: str) -> pl.DataFrame:
         )
         .select(ASSET_SCHEMA.keys())
     )
-
