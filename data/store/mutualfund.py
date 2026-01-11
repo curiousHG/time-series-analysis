@@ -1,6 +1,7 @@
 import polars as pl
 import pandas as pd
 import json
+import pathlib
 from data.fetchers.mutual_fund import fetch_portfolio_by_slug
 from mutual_funds.holdings import (
     normalize_holdings,
@@ -122,6 +123,7 @@ def ensure_holdings_data(
     existing = (
         set(holdings["schemeSlug"].unique().to_list()) if holdings.height else set()
     )
+    
 
     missing = set(slugs) - existing
 
@@ -131,6 +133,7 @@ def ensure_holdings_data(
             with open(raw_path, "r", encoding="utf-8") as f:
                 resp = json.load(f)
         else:
+            pathlib.Path(RAW_DIR).mkdir(parents=True, exist_ok=True)
             resp = fetch_portfolio_by_slug(slug)
             tmp = raw_path.with_suffix(".json.tmp")
             with open(tmp, "w", encoding="utf-8") as f:

@@ -36,10 +36,12 @@ def ensure_stock_data(symbol:str, start:str, end:str) -> pl.DataFrame:
             fetch_end = end
         if need_fetch:
             new_data = fetch_symbol_data(symbol, start=fetch_start, end=fetch_end)
-            new_df = pl.from_pandas(new_data.reset_index())
-            df = pl.concat([df, new_df])
-            df.write_parquet(path)
-        return df.filter((pl.col("Date") >= start) & (pl.col("Date") <= end))
+            if new_data:
+                new_df = pl.from_pandas(new_data.reset_index())
+                print(new_df.columns, df.columns)
+                df = pl.concat([df, new_df])
+                df.write_parquet(path)
+        return df.filter((pl.col("Date") >= start_date) & (pl.col("Date") <= end_date))
     else:
         data = fetch_symbol_data(symbol, start=start, end=end)
         df = pl.from_pandas(data.reset_index())

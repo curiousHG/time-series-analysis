@@ -2,10 +2,13 @@ import polars as pl
 import pandas as pd
 
 def load_tradebook(csv_path: str) -> pl.DataFrame:
-    return pl.read_csv(
-        csv_path,
-        try_parse_dates=True,
-    )
+    try:
+        return pl.read_csv(
+            csv_path,
+            try_parse_dates=True,
+        )
+    except Exception as e:
+        return None
 
 def normalize_transactions(df: pl.DataFrame) -> pl.DataFrame:
     return (

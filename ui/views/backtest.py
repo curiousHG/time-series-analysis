@@ -5,6 +5,7 @@ import vectorbt as vbt
 
 # from ui.charts.price_chart import render_price_chart
 from ui.charts.indicator_chart import render_indicator
+from ui.components.stock_picker import stock_picker
 from ui.tables.stats_table import render_stats
 from ui.utils import make_arrow_safe
 
@@ -16,13 +17,11 @@ from data.store.stock import ensure_stock_data
 vbt.settings['plotting']['use_widgets'] = False
 
 
-with st.sidebar:
-    st.title("Backtest")
-    st.text_input("Symbol", value="RELIANCE.NS", key="symbol_input")
+stocks = stock_picker()
 
-
+st.write(stocks)
 st.write(ensure_stock_data("RELIANCE.NS", start="2022-01-01", end="2023-01-01"))
-st.write(query_stocks(st.session_state.symbol_input))
+st.write(query_stocks("rel"))
 
 # @st.cache_data
 # def load_data(symbol: str):

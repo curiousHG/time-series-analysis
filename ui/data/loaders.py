@@ -8,7 +8,10 @@ import polars as pl
 @st.cache_data(show_spinner=False)
 def load_txn_data(path: str)->pl.DataFrame:
     tradebook = load_tradebook(path)
+    if not tradebook:
+        return None
     return normalize_transactions(tradebook)
+    
 
 @st.cache_data(show_spinner=False)
 def load_nav_data(scheme_names: list[str]) -> pl.DataFrame:
@@ -23,6 +26,10 @@ def load_nav_and_holdings(scheme_names, scheme_slugs):
 @st.cache_data(ttl=24 * 3600)
 def cached_search(query: str):
     return search_advisorkhoj_schemes(query)
+
+@st.cache_data(ttl=24*3600)
+def cachec_search_stock(query:str):
+    return 
 
 def get_trade_symbols(trades_df: pl.DataFrame) -> list[str]:
     return (

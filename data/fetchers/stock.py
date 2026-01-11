@@ -29,16 +29,15 @@ def query_stocks(query: str) -> dict:
     return yf.Lookup(query).all
 
 
-def fetch_symbol_data(symbol: str, start: str = "2018-01-01", end: str = "2023-01-01", interval: str = "1d") -> yf.Ticker.history:
+def fetch_symbol_data(symbol: str, start: str, end: str, interval: str = "1d") -> yf.Ticker.history:
     """Fetch historical data for a given stock symbol"""
     try:
-        data = yf.download(symbol, start=start, end=end, interval=interval)
+        data = yf.download(symbol, start=start, end=end, interval=interval, multi_level_index=False)
         # remove the symbol name in the columns make the columns only the field names
-        data.reset_index()
-        data.columns = [col[0] for col in data.columns]
-        # data.set_index("Date")
+        if len(data) == 0:
+            return None
     except Exception as e:
-        logging.error(f"Error fetching data for symbol {symbol}: {e}")
+        print(f"Error fetching data for symbol {symbol}: {e}")
         return None
     return data
 

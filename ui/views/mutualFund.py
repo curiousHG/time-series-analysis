@@ -30,7 +30,7 @@ selected_schemes = fund_picker(
 )
 
 selected_registry = get_selected_registry(load_registry)
-# st.data_editor(selected_registry)
+st.data_editor(selected_registry)
 selected_scheme_names = selected_registry["schemeName"].to_list()
 selected_scheme_slugs = selected_registry["schemeSlug"].to_list()
 
@@ -62,16 +62,21 @@ tab_map, tab_portfolio, tab_overlap, tab_returns, tab_holdings, tab_correlation 
 
 
 with tab_map:
-    fund_matcher(txn_df)
+    if not txn_df:
+        st.write("Add the transaction dataframe")
+    else:
+        fund_matcher(txn_df)
 
 with tab_portfolio:
     st.header("Current Portfolio")
 
     st.subheader("Price & Trades")
     # st.plotly_chart(fig, width="stretch")
-
-    current_holdings = compute_current_holdings(txn_df)
-    st.dataframe(current_holdings)
+    if not txn_df:
+        st.write("Add the transaction dataframe")
+    else:
+        current_holdings = compute_current_holdings(txn_df)
+        st.dataframe(current_holdings)
 
 with tab_overlap:
     st.header("Overlap & Allocation")
