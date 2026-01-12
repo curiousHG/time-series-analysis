@@ -4,8 +4,9 @@ import polars as pl
 from mutual_funds.analytics import rolling_return_summary, rolling_returns
 from ui.charts.indicator_chart import render_indicator
 
-def show_rolling_returns_info(selected_registry: pl.DataFrame, nav_df:pl.DataFrame):
-    
+
+def show_rolling_returns_info(selected_registry: pl.DataFrame, nav_df: pl.DataFrame):
+
     nav_df = nav_df.join(selected_registry, on="schemeName", how="inner")
     nav_pd = nav_df.to_pandas()
     st.subheader("Analytics")
@@ -59,4 +60,3 @@ def show_rolling_returns_info(selected_registry: pl.DataFrame, nav_df:pl.DataFra
             st.plotly_chart(fig, width="stretch")
 
         col_idx = (col_idx + 1) % 3
-

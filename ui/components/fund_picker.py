@@ -7,7 +7,7 @@ from ui.persistence.cookies import get_cookie, set_cookie
 def fund_picker(
     load_registry,
     save_to_registry,
-)->pl.DataFrame:
+) -> pl.DataFrame:
     """
     Fund picker with:
     - registry-backed multiselect
@@ -18,26 +18,22 @@ def fund_picker(
     if "selected_schemes" not in st.session_state:
         st.session_state.selected_schemes = get_cookie("selected_schemes", []) or []
         st.session_state.allow_persist = False
-    
+
     if "ak_results" not in st.session_state:
         st.session_state.ak_results = []
-
 
     st.sidebar.markdown("### 🔍 Select MFs To Analyze")
 
     # ---- base options from registry
     registry_names = load_registry()["schemeName"].to_list()
 
-    options = sorted(
-        set(registry_names)
-        | set(st.session_state.selected_schemes)
-    )
+    options = sorted(set(registry_names) | set(st.session_state.selected_schemes))
     st.sidebar.multiselect(
         "Selected Funds",
         options=options,
         key="selected_schemes",
     )
-     # ---------- AdvisorKhoj search ----------
+    # ---------- AdvisorKhoj search ----------
     st.sidebar.markdown("### ➕ Add more funds")
 
     query = st.sidebar.text_input(
@@ -63,7 +59,6 @@ def fund_picker(
         if st.sidebar.button("Add selected"):
             # add to registry (safe even if duplicates)
             save_to_registry(to_add)
-
 
             st.toast(f"Added {len(to_add)} fund(s)")
             st.rerun()

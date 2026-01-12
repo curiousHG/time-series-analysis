@@ -7,6 +7,8 @@ from urllib.parse import quote, quote_plus
 from bs4 import BeautifulSoup
 import re
 
+from mutual_funds.constants import MF_REGISTRY_URL
+
 BASE_URL = "https://api.mfapi.in/mf"
 BASE_OVERVIEW_URL = "https://www.advisorkhoj.com/mutual-funds-research/{scheme_name}"
 HEADERS = {
@@ -36,14 +38,11 @@ def fetch_nav(scheme_code: str) -> pl.DataFrame:
 
     df = pl.DataFrame(data)
 
-    df = (
-        df.with_columns(
-            pl.col("date").str.strptime(pl.Date, "%d-%m-%Y"),
-            pl.col("nav").cast(pl.Float64),
-            pl.lit(scheme_code).alias("scheme_code"),
-        )
-        .sort("date")
-    )
+    df = df.with_columns(
+        pl.col("date").str.strptime(pl.Date, "%d-%m-%Y"),
+        pl.col("nav").cast(pl.Float64),
+        pl.lit(scheme_code).alias("scheme_code"),
+    ).sort("date")
 
     return df
 
@@ -102,9 +101,6 @@ def fetch_nav_from_advisorkhoj(
     }
 
 
-
-
-
 def search_advisorkhoj_schemes(query: str) -> pl.DataFrame:
     """
     Search AdvisorKhoj Scheme page and extract:
@@ -122,8 +118,7 @@ def search_advisorkhoj_schemes(query: str) -> pl.DataFrame:
         )
 
     url = (
-        "https://www.advisorkhoj.com/search"
-        f"?page=Scheme&keyword={quote_plus(query)}"
+        "https://www.advisorkhoj.com/search" f"?page=Scheme&keyword={quote_plus(query)}"
     )
 
     headers = {
@@ -175,7 +170,7 @@ def fetch_fund_overview_html(scheme_name: str) -> str:
     """
     url = BASE_OVERVIEW_URL.format(scheme_name=quote(scheme_name))
 
-    resp = httpx.get(url, headers=HEADERS, timeout=20,follow_redirects=True)
+    resp = httpx.get(url, headers=HEADERS, timeout=20, follow_redirects=True)
     resp.raise_for_status()
     return resp.text
 
@@ -214,9 +209,6 @@ def fetch_nav(scheme_code: str) -> pl.DataFrame:
     ).sort("date")
 
 
-
-
-
 def build_nav_params(scheme_name: str, launch_date: str) -> dict:
     """
     AdvisorKhoj expects scheme_amfi_name double-encoded
@@ -229,5 +221,22 @@ def build_nav_params(scheme_name: str, launch_date: str) -> dict:
     }
 
 
+def fetch_scheme_registry(query: str) -> pl.DataFrame:
+    """
+    Fetch all mutual fund scheme codes and names from AMFI
+    and add AdvisorKhoj-compatible slug
+    """
+    HEADERS = {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin": "https://www.advisorkhoj.com",
+        "Referer": "https://www.advisorkhoj.com/mutual-funds-research/",
+    }
+    resp = httpx.post(
+        MF_REGISTRY_URL, timeout=30, headers=HEADERS, data=f"query={query}"
+    )
+    resp.raise_for_status()
 
+    names: list[str] = resp.json()
 
+    return pl.DataFrame({"schemeName": names})

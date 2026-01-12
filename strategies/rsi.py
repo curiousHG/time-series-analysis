@@ -2,6 +2,7 @@ import vectorbt as vbt
 
 from strategies.base import Strategy
 
+
 class RSIStrategy(Strategy):
     name = "RSI"
 
@@ -14,7 +15,4 @@ class RSIStrategy(Strategy):
 
     def signals(self, price, indicators):
         rsi = indicators["RSI"]
-        return (
-            rsi < 30,   # entries
-            rsi > 70    # exits
-        )
+        return (rsi < 30, rsi > 70)  # entries  # exits

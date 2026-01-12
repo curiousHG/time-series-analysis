@@ -2,11 +2,14 @@ import streamlit as st
 import polars as pl
 import pandas as pd
 
-from data.store.mutualfund import ensure_holdings_data, ensure_nav_data
-from ui.components.fund_picker import fund_picker
-from mutual_funds.registry import (
-    load_registry,
+from data.store.mutualfund import (
+    ensure_holdings_data,
+    ensure_nav_data,
     save_to_registry,
+)
+from ui.components.fund_picker import fund_picker
+from data.store.mutualfund import (
+    load_registry,
 )
 from mutual_funds.analytics import overlap_matrix, sector_exposure
 

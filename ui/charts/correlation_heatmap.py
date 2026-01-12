@@ -1,5 +1,6 @@
 import plotly.express as px
 
+
 def render_correlation_heatmap(corr_df):
     # show like a half heatmap
     # show only the lower triangle
@@ -9,8 +10,5 @@ def render_correlation_heatmap(corr_df):
         aspect="auto",
         color_continuous_scale="RdBu",
         origin="lower",
-        title="Mutual Fund Correlation"
-
+        title="Mutual Fund Correlation",
     ).update_layout(xaxis_title="Fund", yaxis_title="Fund")
-
-   

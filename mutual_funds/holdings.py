@@ -2,7 +2,12 @@ import polars as pl
 from pathlib import Path
 from datetime import datetime
 
-from mutual_funds.tableSchema import ASSET_SCHEMA, HOLDINGS_SCHEMA, SECTOR_SCHEMA, empty_df
+from mutual_funds.tableSchema import (
+    ASSET_SCHEMA,
+    HOLDINGS_SCHEMA,
+    SECTOR_SCHEMA,
+    empty_df,
+)
 
 
 def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
@@ -22,19 +27,15 @@ def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
                 "portfolioDate": datetime.strptime(
                     h["portfolio_date"], "%d-%m-%Y"
                 ).date(),
-
                 "instrumentName": h["instrument"],
                 "isin": h.get("isin") or "",
                 "issuerName": h.get("issuer_name") or "",
-
                 "assetClass": h["asset_class"],
                 "assetSubClass": h.get("asset_subclass") or "",
                 "assetType": h.get("asset_type") or "",
-
                 "weight": float(h["holdings"]),
                 "value": float(h["value"]) if h.get("value") else 0.0,
                 "quantity": float(h["quantity"]) if h.get("quantity") else 0.0,
-
                 "industry": h.get("industry") or "",
                 "marketCapBucket": h.get("stocks") or "",
                 "creditRating": h.get("rating") or "",
@@ -52,6 +53,7 @@ def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
         )
         .select(HOLDINGS_SCHEMA.keys())
     )
+
 
 def normalize_sector_allocation(resp: dict, slug: str) -> pl.DataFrame:
     base = resp["schemePortfolioAnalysisResponse"]
@@ -84,6 +86,7 @@ def normalize_sector_allocation(resp: dict, slug: str) -> pl.DataFrame:
         )
         .select(SECTOR_SCHEMA.keys())
     )
+
 
 def normalize_asset_allocation(resp: dict, slug: str) -> pl.DataFrame:
     base = resp["schemePortfolioAnalysisResponse"]

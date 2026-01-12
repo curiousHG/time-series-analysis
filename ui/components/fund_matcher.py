@@ -2,8 +2,12 @@ import streamlit as st
 import pandas as pd
 import polars as pl
 
-from data.store.mutualfund import ensure_fund_mapping, ensure_nav_data, persist_fund_mapping
-from mutual_funds.registry import load_registry
+from data.store.mutualfund import (
+    ensure_fund_mapping,
+    ensure_nav_data,
+    persist_fund_mapping,
+)
+from data.store.mutualfund import load_registry
 from mutual_funds.tradebook import apply_fund_mapping, compute_daily_units
 from ui.data.loaders import get_trade_symbols, load_nav_data, load_txn_data
 from ui.utils import timed
@@ -51,6 +55,7 @@ def init_fund_mapping(trade_symbols: list[str]):
 
     st.session_state.fund_mapping = df.reset_index(drop=True)
 
+
 def update_mapping():
     """
     Applies editor diffs to session_state.fund_mapping
@@ -81,9 +86,9 @@ def update_mapping():
 
     st.toast("Mapping saved", icon="💾")
 
+
 def render_fund_mapping_editor(nav_funds: list[str]):
     st.header("🔗 Map Trade Funds to NAV Funds")
-
 
     # with st.expander("ℹ️ Instructions", expanded=False):
     #     st.markdown(
@@ -108,7 +113,7 @@ def render_fund_mapping_editor(nav_funds: list[str]):
             ),
         },
         key="fund_mapping_editor",
-        on_change= update_mapping
+        on_change=update_mapping,
     )
 
     st.session_state.fund_mapping = edited_df
@@ -125,39 +130,34 @@ def fund_matcher(txn_df: pl.DataFrame):
     res = apply_fund_mapping(txn_df, ensure_fund_mapping())
     daily_units = compute_daily_units(res)
     # st.dataframe(res)
-    nav_df = load_nav_data(
-        daily_units["schemeName"].unique().to_list()
-    )
+    nav_df = load_nav_data(daily_units["schemeName"].unique().to_list())
 
     # st.dataframe(daily_units)
 
     # with timed("Load NAV Data"):
 
-    nav_df = nav_df.select([
+    nav_df = nav_df.select(
+        [
             "schemeName",
             pl.col("date").cast(pl.Date).alias("date"),
             "nav",
-        ])
+        ]
+    )
     # st.dataframe(nav_df)
 
     # Join daily units with NAV and compute value
-    fund_value_ts = (
-        daily_units
-        .join(
-            nav_df,
-            on=["schemeName", "date"],
-            how="inner",
-        )
-        .with_columns(
-            (pl.col("units") * pl.col("nav")).alias("value")
-        )
-    )
-    st.dataframe(res.with_columns(pl.col("trade_date").alias("date"))
-                 .join(
+    fund_value_ts = daily_units.join(
         nav_df,
         on=["schemeName", "date"],
-        how="left",
-    ))
+        how="inner",
+    ).with_columns((pl.col("units") * pl.col("nav")).alias("value"))
+    st.dataframe(
+        res.with_columns(pl.col("trade_date").alias("date")).join(
+            nav_df,
+            on=["schemeName", "date"],
+            how="left",
+        )
+    )
     # portfolio_ts = (
     #     fund_value_ts
     #     .group_by("date")

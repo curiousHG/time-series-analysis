@@ -3,8 +3,6 @@ import polars as pl
 import plotly.express as px
 
 
-
-
 def render_holdings_table(
     holdings_df: pl.DataFrame,
     sector_df: pl.DataFrame,
@@ -17,10 +15,9 @@ def render_holdings_table(
     # --------------------
     # Holdings (Top N + Others)
     # --------------------
-    
+
     h = (
-        holdings_df
-        .filter(pl.col("schemeSlug") == scheme_slug)
+        holdings_df.filter(pl.col("schemeSlug") == scheme_slug)
         .sort("weight", descending=True)
         .select("instrumentName", "weight")
     )
@@ -29,23 +26,26 @@ def render_holdings_table(
     others_weight = h.tail(h.height - top_n)["weight"].sum()
 
     if others_weight > 0:
-        top = pl.concat([
-            top,
-            pl.DataFrame({
-                "instrumentName": ["Others"],
-                "weight": [others_weight],
-            })
-        ])
+        top = pl.concat(
+            [
+                top,
+                pl.DataFrame(
+                    {
+                        "instrumentName": ["Others"],
+                        "weight": [others_weight],
+                    }
+                ),
+            ]
+        )
 
     # --------------------
     # Sector allocation
     # --------------------
 
     # %7B%22v%22%3A%201%2C%20%22data%22%3A%20%5B%5D%7D
-    
+
     s = (
-        sector_df
-        .filter(pl.col("schemeSlug") == scheme_slug)
+        sector_df.filter(pl.col("schemeSlug") == scheme_slug)
         .select("sector", "weight")
         .sort("weight", descending=True)
     )
@@ -54,8 +54,7 @@ def render_holdings_table(
     # Asset allocation
     # --------------------
     a = (
-        assets_df
-        .filter(pl.col("schemeSlug") == scheme_slug)
+        assets_df.filter(pl.col("schemeSlug") == scheme_slug)
         .select("assetClass", "weight")
         .sort("weight", descending=True)
     )
@@ -76,7 +75,6 @@ def render_holdings_table(
 
         fig_holdings.update_traces(
             textinfo="label",
-            
             # textfont=dict(size=22, color="black"),
             tiling=dict(
                 packing="squarify",
@@ -89,11 +87,11 @@ def render_holdings_table(
             height=650,
         )
 
-        st.plotly_chart(fig_holdings,width='stretch')
+        st.plotly_chart(fig_holdings, width="stretch")
 
     # ---- Sector donut
     with col2:
-        if s.height>0:
+        if s.height > 0:
             fig_sector = px.pie(
                 s.to_pandas(),
                 names="sector",
@@ -102,7 +100,7 @@ def render_holdings_table(
                 title="Sector Allocation",
             )
             fig_sector.update_traces(textposition="inside", textinfo="percent")
-            st.plotly_chart(fig_sector, width='stretch')
+            st.plotly_chart(fig_sector, width="stretch")
         else:
             st.write("No sector data available")
 
@@ -117,7 +115,7 @@ def render_holdings_table(
                 title="Asset Allocation",
             )
             fig_asset.update_traces(textposition="inside", textinfo="percent")
-            st.plotly_chart(fig_asset, width='stretch')
+            st.plotly_chart(fig_asset, width="stretch")
         else:
             st.write("No asset data available")
 
@@ -127,6 +125,5 @@ def render_holdings_table(
     with st.expander("📄 View holdings table"):
         st.dataframe(
             h.select("instrumentName", "weight"),
-            width='stretch',
+            width="stretch",
         )
-

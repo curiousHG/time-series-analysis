@@ -37,8 +37,11 @@ def momentum(df, n=10):
 
 
 def CO(df):
-    adl = (2*df["Close"]-df["High"]-df["Low"]) / \
-        (df["High"]-df["Low"])*df["Volume"]
+    adl = (
+        (2 * df["Close"] - df["High"] - df["Low"])
+        / (df["High"] - df["Low"])
+        * df["Volume"]
+    )
     ema3 = adl.ewm(span=3, adjust=False).mean()
     ema10 = adl.ewm(span=10, adjust=False).mean()
     co = ema3 - ema10
@@ -50,6 +53,7 @@ def OBV(df):
     change = np.where(df["Close"].diff() > 0, 1, -1)
     obv = (vol * change).cumsum()
     return obv
+
 
 # def MFI(df, n=14):
 #     typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
@@ -79,18 +83,16 @@ def OBV(df):
 
 def MFI(df):
     # Calculate the Money Flow Index
-    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
-    raw_money_flow = typical_price * df['Volume']
-    up_flow = np.where(
-        typical_price > typical_price.shift(1), raw_money_flow, 0)
-    down_flow = np.where(
-        typical_price < typical_price.shift(1), raw_money_flow, 0)
+    typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
+    raw_money_flow = typical_price * df["Volume"]
+    up_flow = np.where(typical_price > typical_price.shift(1), raw_money_flow, 0)
+    down_flow = np.where(typical_price < typical_price.shift(1), raw_money_flow, 0)
     positive_money_flow = np.sum(up_flow)
     negative_money_flow = np.sum(down_flow)
     money_ratio = np.divide(
-        positive_money_flow, negative_money_flow, where=negative_money_flow != 0)
-    mfi = np.where(negative_money_flow == 0, 100,
-                   100 - (100 / (1 + money_ratio)))
+        positive_money_flow, negative_money_flow, where=negative_money_flow != 0
+    )
+    mfi = np.where(negative_money_flow == 0, 100, 100 - (100 / (1 + money_ratio)))
     return mfi
 
 
@@ -107,16 +109,28 @@ def HTDCP(df):
     analytic_signal = hilbert(df["Close"])
     instantaneous_phase = np.degrees(np.unwrap(np.angle(analytic_signal)))
     hilbert_transform = np.abs(analytic_signal)
-    hilbert_envelope = pd.Series(hilbert_transform).rolling(
-        window=31, center=True, min_periods=1).mean()
-    hilbert_smoothed = pd.Series(hilbert_envelope).rolling(window=11, center=True, min_periods=1).apply(
-        lambda x: np.convolve(x, hamming(11), mode='same'), raw=True)
+    hilbert_envelope = (
+        pd.Series(hilbert_transform)
+        .rolling(window=31, center=True, min_periods=1)
+        .mean()
+    )
+    hilbert_smoothed = (
+        pd.Series(hilbert_envelope)
+        .rolling(window=11, center=True, min_periods=1)
+        .apply(lambda x: np.convolve(x, hamming(11), mode="same"), raw=True)
+    )
     hilbert_smoothed /= np.sum(hamming(11))
     hilbert_difference = np.abs(hilbert_smoothed.diff())
-    hilbert_smoothed_numpy = np.asarray(
-        hilbert_smoothed)  # convert to numpy array
-    dcphase = np.degrees(np.unwrap(np.angle(pd.Series(hilbert_smoothed_numpy *
-                         np.exp(-1j * instantaneous_phase)).rolling(window=31, center=True).mean())))
+    hilbert_smoothed_numpy = np.asarray(hilbert_smoothed)  # convert to numpy array
+    dcphase = np.degrees(
+        np.unwrap(
+            np.angle(
+                pd.Series(hilbert_smoothed_numpy * np.exp(-1j * instantaneous_phase))
+                .rolling(window=31, center=True)
+                .mean()
+            )
+        )
+    )
     return dcphase
 
 
@@ -135,7 +149,7 @@ def HTDCP(df):
 
 def HTS(df):
     # Calculate the Hilbert Transform Sinewave
-    analytic_signal = hilbert(df['Close'])
+    analytic_signal = hilbert(df["Close"])
     amplitude_envelope = np.abs(analytic_signal)
     instant_phase = np.unwrap(np.angle(analytic_signal))
     sinewave = np.sin(instant_phase)
@@ -172,18 +186,19 @@ def HTTMM(df):
         return pd.Series()
 
     # Calculate the Hilbert Transform Trend Market Mode
-    instantaneous_phase = np.unwrap(np.angle(hilbert(df['Close'])))
+    instantaneous_phase = np.unwrap(np.angle(hilbert(df["Close"])))
     inst_period = np.diff(instantaneous_phase)
     inst_period = np.insert(inst_period, 0, inst_period[0])
     inst_frequency = np.divide(1, inst_period)
-    frequency = welch(df['Close'], window='hamming',
-                      nperseg=len(df['Close']))[0]
+    frequency = welch(df["Close"], window="hamming", nperseg=len(df["Close"]))[0]
     peak_ind, _ = find_peaks(frequency, prominence=0.1)
     widths = peak_widths(frequency, peak_ind, rel_height=0.5)
     dominant_period = np.mean(widths[0] / len(frequency))
     trend_market_mode = np.mod(
-        np.divide(360, dominant_period) * instantaneous_phase, 360)
+        np.divide(360, dominant_period) * instantaneous_phase, 360
+    )
     return trend_market_mode
+
 
 # # Create a new dataframe to store the technical indicators
 # features = pd.DataFrame(index=data.index)

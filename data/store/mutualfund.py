@@ -13,6 +13,7 @@ from mutual_funds.constants import (
     HOLDINGS_PATH,
     NAV_PATH,
     RAW_DIR,
+    REGISTRY_PATH,
     SECTOR_PATH,
     FUND_MAPPING_PATH,
 )
@@ -123,7 +124,6 @@ def ensure_holdings_data(
     existing = (
         set(holdings["schemeSlug"].unique().to_list()) if holdings.height else set()
     )
-    
 
     missing = set(slugs) - existing
 
@@ -157,3 +157,44 @@ def ensure_holdings_data(
         assets.write_parquet(ASSET_PATH)
 
     return holdings, sectors, assets
+
+
+def make_slug(name: str) -> str:
+    return "-".join(
+        c.strip("-")
+        for c in name.replace("(", " ").replace(")", " ").split()
+        if c and c != "-"
+    ).lower()
+
+
+def load_registry() -> pl.DataFrame:
+    if REGISTRY_PATH.exists():
+        return pl.read_parquet(REGISTRY_PATH)
+    pathlib.Path(REGISTRY_PATH).parent.mkdir(parents=True, exist_ok=True)
+    return pl.DataFrame(
+        schema={
+            "schemeName": pl.Utf8,
+            "schemeSlug": pl.Utf8,
+            "source": pl.Utf8,
+        }
+    )
+
+
+def save_to_registry(names: list[str]):
+    if not names:
+        return
+
+    df = load_registry()
+
+    new = pl.DataFrame(
+        {
+            "schemeName": names,
+            "schemeSlug": [make_slug(n) for n in names],
+            "source": ["advisorkhoj"] * len(names),
+        }
+    )
+    # print(new, df)
+
+    df = pl.concat([df, new]).unique(subset=["schemeName"]).sort("schemeName")
+
+    df.write_parquet(REGISTRY_PATH)

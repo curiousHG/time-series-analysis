@@ -8,6 +8,7 @@ import pandas as pd
 
 from mutual_funds.analytics import sector_exposure
 
+
 def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str]):
     df = sector_exposure(sector_df, fund_slugs).to_pandas()
 
@@ -19,7 +20,6 @@ def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str]):
         orientation="h",
         title="Sector Exposure Comparison",
     )
-
 
 
 def plot_overlap_heatmap(matrix: pd.DataFrame):
@@ -65,6 +65,4 @@ def plot_kde_returns(pct: pd.DataFrame):
     )
 
     fig.update_xaxes(tickformat=".1%")
-    return fig 
-
-
+    return fig

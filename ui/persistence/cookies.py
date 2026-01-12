@@ -13,7 +13,7 @@ def set_cookie(key: str, value):
     if not controller:
         return
     payload = {
-        "v": COOKIE_VERSION,   # schema version
+        "v": COOKIE_VERSION,  # schema version
         "data": value,
     }
     try:

@@ -2,16 +2,16 @@ import yfinance as yf
 import requests
 import logging
 import json
+import pandas as pd
 from pprint import pprint
 import inspect
+
 
 # logging.basicConfig(level=logging.DEBUG)
 
 
 def query_stocks(query: str) -> dict:
     """Return list of stock symbols matching the query"""
-    query = query.lower()
-
     # HEADERS = {
     #     "User-Agent": "PostmanRuntime/7.51.0",
     #     "Accept": "application/json",
@@ -26,21 +26,27 @@ def query_stocks(query: str) -> dict:
     #     YFINANCE_QUERY_URL, params=params, headers=HEADERS, timeout=10
     # )
     # return response.json()
-    return yf.Lookup(query).all
+    query = query.lower()
+    df = yf.Lookup(query).all
+    filtered = df[(df["exchange"] == "NSI") & (df["quoteType"] == "equity")]
+    print(filtered)
+    return filtered
 
 
-def fetch_symbol_data(symbol: str, start: str, end: str, interval: str = "1d") -> yf.Ticker.history:
+def fetch_symbol_data(
+    symbol: str, start: str, end: str, interval: str = "1d"
+) -> pd.DataFrame:
     """Fetch historical data for a given stock symbol"""
     try:
-        data = yf.download(symbol, start=start, end=end, interval=interval, multi_level_index=False)
+        data = yf.download(
+            symbol, start=start, end=end, interval=interval, multi_level_index=False
+        )
         # remove the symbol name in the columns make the columns only the field names
-        if len(data) == 0:
-            return None
+        return data
     except Exception as e:
         print(f"Error fetching data for symbol {symbol}: {e}")
         return None
     return data
-
 
 
 def dump_properties(obj):
@@ -64,4 +70,3 @@ def get_symbol_info(symbol: str):
     """Fetch symbol info from yfinance"""
     ticker = yf.Ticker(symbol)
     return ticker.info
-

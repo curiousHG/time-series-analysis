@@ -239,16 +239,16 @@ def query_stocks(query: str) -> list[str]:
     return response.json()
 
 
-# print(query_stocks("apple"))
-
 def fetch_symbol_data(symbol: str):
     """Fetch historical data for a given stock symbol"""
     data = yf.download(symbol, period="5y", interval="1d")
     return data
+
 
 def get_symbol_info(symbol: str):
     """Fetch symbol info from yfinance"""
     ticker = yf.Ticker(symbol)
     return ticker.info
 
-print(fetch_symbol_data("0P00012ALR.BO"))
+
+# print(fetch_symbol_data("0P00012ALR.BO"))

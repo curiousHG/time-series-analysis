@@ -181,7 +181,7 @@ wheels = [
 
 [[package]]
 name = "bokeh"
-version = "3.8.1"
+version = "3.8.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "contourpy" },
@@ -195,9 +195,9 @@ dependencies = [
     { name = "tornado", marker = "sys_platform != 'emscripten'" },
     { name = "xyzservices" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/de/42/777c0627dbd78a2a7c6c6a1c3327e8a787ec99a4b84ae93245ce49c96af7/bokeh-3.8.1.tar.gz", hash = "sha256:40df8e632de367399d06979cbd76c9e68a133a3138e1adde37c4a4715ecb4d6e", size = 6529791, upload-time = "2025-11-07T20:50:59.565Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/31/7ee0c4dfd0255631b0624ce01be178704f91f763f02a1879368eb109befd/bokeh-3.8.2.tar.gz", hash = "sha256:8e7dcacc21d53905581b54328ad2705954f72f2997f99fc332c1de8da53aa3cc", size = 6529251, upload-time = "2026-01-06T00:20:06.568Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5d/e7/b18bee0772d49c0f78d57f15a68e85257abf7224d9b910706abe8bd1dc0f/bokeh-3.8.1-py3-none-any.whl", hash = "sha256:89a66cb8bfe85e91bce144e3ccf3c4a6f0f1347e7006282972568ea0ecacbb00", size = 7206137, upload-time = "2025-11-07T20:50:58.108Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/a8/877f306720bc114c612579c5af36bcb359026b83d051226945499b306b1a/bokeh-3.8.2-py3-none-any.whl", hash = "sha256:5e2c0d84f75acb25d60efb9e4d2f434a791c4639b47d685534194c4e07bd0111", size = 7207131, upload-time = "2026-01-06T00:20:04.917Z" },
 ]
 
 [[package]]
@@ -1936,6 +1936,28 @@ wheels = [
 ]
 
 [[package]]
+name = "pip"
+version = "25.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/6e/74a3f0179a4a73a53d66ce57fdb4de0080a8baa1de0063de206d6167acc2/pip-25.3.tar.gz", hash = "sha256:8d0538dbbd7babbd207f261ed969c65de439f6bc9e5dbd3b3b9a77f25d95f343", size = 1803014, upload-time = "2025-10-25T00:55:41.394Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/44/3c/d717024885424591d5376220b5e836c2d5293ce2011523c9de23ff7bf068/pip-25.3-py3-none-any.whl", hash = "sha256:9655943313a94722b7774661c21049070f6bbb0a1516bf02f7c8d5d9201514cd", size = 1778622, upload-time = "2025-10-25T00:55:39.247Z" },
+]
+
+[[package]]
+name = "pip-check-reqs"
+version = "2.5.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pip" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0a/a7/46ff58c4c89f2eeffe71d603f129a4c1d39002990eeb32246bd779f03811/pip_check_reqs-2.5.5.tar.gz", hash = "sha256:e1a7fe459eaf0698c457ea25630d04519d31cc041c191726b1931fc143507aff", size = 19128, upload-time = "2025-05-23T06:04:52.444Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/98/6fcd51d0f25ccd5bfcdf6a97b3c3382c87954b4505a6f160941d03808ba6/pip_check_reqs-2.5.5-py3-none-any.whl", hash = "sha256:a6c2593db79ee1b101d98de49548efcb49158e203b0bdf23eabb2980a075b1ce", size = 12569, upload-time = "2025-05-23T06:04:51.133Z" },
+]
+
+[[package]]
 name = "platformdirs"
 version = "4.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3148,6 +3170,19 @@ wheels = [
 ]
 
 [[package]]
+name = "streamlit-bokeh"
+version = "3.8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "bokeh" },
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e4/b3/7b3080d71859da1313ff8fabb015eb45da2a0c3e94b6e00ca311a18674d9/streamlit_bokeh-3.8.2.tar.gz", hash = "sha256:0c3f3d4470a4ce08b68dd159cdcbc050c7ad1213b31bf13d7381aa8c7e1d6518", size = 1520038, upload-time = "2026-01-06T18:47:22.905Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a5/44/1b298e5d0177d7f3fe940fd12d422ce0c1c562a7cd846d028158b81e24e7/streamlit_bokeh-3.8.2-py3-none-any.whl", hash = "sha256:7e283191a2d36ac2fe7b1205daccf825674d706cdeea5093ff98e43f84c8b68f", size = 1522740, upload-time = "2026-01-06T18:47:21.077Z" },
+]
+
+[[package]]
 name = "streamlit-camera-input-live"
 version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3404,6 +3439,7 @@ dependencies = [
     { name = "scipy" },
     { name = "seaborn" },
     { name = "streamlit" },
+    { name = "streamlit-bokeh" },
     { name = "streamlit-cookies-controller" },
     { name = "streamlit-extras" },
     { name = "ta-lib" },
@@ -3417,6 +3453,7 @@ dependencies = [
 dev = [
     { name = "black" },
     { name = "ipykernel" },
+    { name = "pip-check-reqs" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -3441,6 +3478,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.16.3" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "streamlit", specifier = ">=1.52.2" },
+    { name = "streamlit-bokeh", specifier = ">=3.8.2" },
     { name = "streamlit-cookies-controller", specifier = ">=0.0.4" },
     { name = "streamlit-extras", specifier = ">=0.7.8" },
     { name = "ta-lib", specifier = ">=0.6.8" },
@@ -3454,6 +3492,7 @@ requires-dist = [
 dev = [
     { name = "black", specifier = ">=25.12.0" },
     { name = "ipykernel", specifier = ">=7.1.0" },
+    { name = "pip-check-reqs", specifier = ">=2.5.5" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "ruff", specifier = ">=0.14.10" },
 ]

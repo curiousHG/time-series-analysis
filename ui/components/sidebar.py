@@ -1,12 +1,10 @@
 import streamlit as st
 
+
 def sidebar():
     st.sidebar.title("Controls")
 
-    mode = st.sidebar.selectbox(
-        "Mode",
-        ["Stocks", "Mutual Funds"]
-    )
+    mode = st.sidebar.selectbox("Mode", ["Stocks", "Mutual Funds"])
 
     state = {"mode": mode}
 
@@ -22,17 +20,12 @@ def sidebar():
 def stock_controls():
     symbol = st.sidebar.selectbox("Symbol", ["reliance"])
 
-    strategy = st.sidebar.selectbox(
-        "Strategy",
-        ["RSI", "MA Crossover"]
-    )
+    strategy = st.sidebar.selectbox("Strategy", ["RSI", "MA Crossover"])
 
     params = {}
 
     if strategy == "RSI":
-        params["window"] = st.sidebar.slider(
-            "RSI Window", 5, 30, 14
-        )
+        params["window"] = st.sidebar.slider("RSI Window", 5, 30, 14)
 
     return {
         "symbol": symbol,

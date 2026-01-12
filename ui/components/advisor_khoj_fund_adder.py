@@ -1,7 +1,10 @@
 import streamlit as st
 import polars as pl
 
-from mutual_funds.registry import fetch_scheme_registry, load_registry, save_to_registry
+from data.fetchers.mutual_fund import fetch_scheme_registry
+from data.store.mutualfund import save_to_registry
+from data.store.mutualfund import load_registry
+
 
 def advisor_khoj_fund_adder():
     st.sidebar.subheader("🔍 Search AdvisorKhoj")
@@ -26,9 +29,7 @@ def advisor_khoj_fund_adder():
 
     # annotate whether already present
     display_df = ak_df.with_columns(
-        pl.col("schemeName")
-        .is_in(registry["schemeName"])
-        .alias("already_in_registry")
+        pl.col("schemeName").is_in(registry["schemeName"]).alias("already_in_registry")
     )
 
     st.caption("AdvisorKhoj results")
