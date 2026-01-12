@@ -32,3 +32,4 @@ def stock_picker():
             # st.session_state.yfinance_symbols =  yf_df
 
     return st.session_state.selected_stocks
+

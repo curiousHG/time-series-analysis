@@ -1,5 +1,6 @@
 import httpx
 import polars as pl
+import pathlib
 from mutual_funds.constants import REGISTRY_PATH, MF_REGISTRY_URL
 
 
@@ -13,7 +14,7 @@ def make_slug(name: str) -> str:
 def load_registry() -> pl.DataFrame:
     if REGISTRY_PATH.exists():
         return pl.read_parquet(REGISTRY_PATH)
-
+    pathlib.Path(REGISTRY_PATH).parent.mkdir(parents=True, exist_ok=True)
     return pl.DataFrame(
         schema={
             "schemeName": pl.Utf8,

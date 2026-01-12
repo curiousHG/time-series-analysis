@@ -17,7 +17,7 @@ def load_txn_data(path: str)->pl.DataFrame:
 def load_nav_data(scheme_names: list[str]) -> pl.DataFrame:
     return ensure_nav_data(scheme_names)
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=True)
 def load_nav_and_holdings(scheme_names, scheme_slugs):
     nav_df = ensure_nav_data(scheme_names)
     holdings_df, sectors_df, assets_df = ensure_holdings_data(scheme_slugs)
