@@ -35,7 +35,7 @@ def persist_fund_mapping(fund_mapping: pd.DataFrame):
     fund_mapping.to_csv(FUND_MAPPING_PATH, index=False)
 
 
-def ensure_fund_mapping():
+def ensure_fund_mapping() -> pd.DataFrame | None:
     if FUND_MAPPING_PATH.exists():
         return pd.read_csv(FUND_MAPPING_PATH)
     return None

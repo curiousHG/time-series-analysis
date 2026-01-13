@@ -2,7 +2,7 @@ import polars as pl
 import pandas as pd
 
 
-def load_tradebook(csv_path: str) -> pl.DataFrame:
+def load_tradebook(csv_path: str):
     try:
         return pl.read_csv(
             csv_path,

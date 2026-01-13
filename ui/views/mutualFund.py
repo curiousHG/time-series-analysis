@@ -65,7 +65,7 @@ tab_map, tab_portfolio, tab_overlap, tab_returns, tab_holdings, tab_correlation 
 
 
 with tab_map:
-    if not txn_df:
+    if isinstance(txn_df, type(None)):
         st.write("Add the transaction dataframe")
     else:
         fund_matcher(txn_df)
@@ -75,7 +75,7 @@ with tab_portfolio:
 
     st.subheader("Price & Trades")
     # st.plotly_chart(fig, width="stretch")
-    if not txn_df:
+    if isinstance(txn_df, type(None)):
         st.write("Add the transaction dataframe")
     else:
         current_holdings = compute_current_holdings(txn_df)

@@ -12,7 +12,7 @@ import pandas as pd
 @st.cache_data(show_spinner=False)
 def load_txn_data(path: str) -> pl.DataFrame:
     tradebook = load_tradebook(path)
-    if not tradebook:
+    if tradebook.is_empty():
         return None
     return normalize_transactions(tradebook)
 

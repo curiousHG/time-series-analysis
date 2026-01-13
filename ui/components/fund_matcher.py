@@ -9,9 +9,10 @@ from data.store.mutualfund import (
 )
 from data.store.mutualfund import load_registry
 from mutual_funds.tradebook import apply_fund_mapping, compute_daily_units
+from ui.charts.fund_trade_comp import fund_trade_comp
 from ui.data.loaders import get_trade_symbols, load_nav_data, load_txn_data
 from ui.utils import timed
-
+import plotly.graph_objects as go
 
 def init_fund_mapping(trade_symbols: list[str]):
     if "fund_mapping" not in st.session_state:
@@ -127,37 +128,66 @@ def fund_matcher(txn_df: pl.DataFrame):
 
     init_fund_mapping(trade_symbols)
     render_fund_mapping_editor(nav_funds)
-    res = apply_fund_mapping(txn_df, ensure_fund_mapping())
-    daily_units = compute_daily_units(res)
-    # st.dataframe(res)
-    nav_df = load_nav_data(daily_units["schemeName"].unique().to_list())
 
-    # st.dataframe(daily_units)
-
-    # with timed("Load NAV Data"):
+    res = apply_fund_mapping(txn_df, ensure_fund_mapping()) # gives pl.DataFrame with schemeName column added
+    nav_df = load_nav_data(
+        res["schemeName"].unique().to_list()
+    )
 
     nav_df = nav_df.select(
         [
             "schemeName",
             pl.col("date").cast(pl.Date).alias("date"),
             "nav",
-        ]
-    )
-    # st.dataframe(nav_df)
-
-    # Join daily units with NAV and compute value
-    fund_value_ts = daily_units.join(
+        ])
+    price_nav_comparison_df = res.with_columns(pl.col("trade_date").alias("date")).join(
         nav_df,
         on=["schemeName", "date"],
-        how="inner",
-    ).with_columns((pl.col("units") * pl.col("nav")).alias("value"))
-    st.dataframe(
-        res.with_columns(pl.col("trade_date").alias("date")).join(
-            nav_df,
-            on=["schemeName", "date"],
-            how="left",
-        )
+        how="left",
     )
+    # show only relevant columns and entries for unique isin
+    price_nav_comparison_df = price_nav_comparison_df.unique(subset=["isin"], keep="first")
+    price_nav_comparison_df = price_nav_comparison_df.select([
+        "symbol",
+        "schemeName",
+        "trade_date",
+        "price",
+        "nav",
+    ])
+
+    # Compute absolute difference if nav is None take zero
+    price_nav_diff = price_nav_comparison_df.with_columns(
+        (pl.col("price") - pl.col("nav")).abs().alias("abs_diff")
+    )
+
+    # Sum difference per scheme
+    fund_deviation = (
+        price_nav_diff
+        .group_by(["schemeName", "symbol"])
+        .agg(pl.col("abs_diff").sum().alias("total_abs_diff"))
+        .sort("total_abs_diff", descending=True)
+    )
+    st.dataframe(fund_deviation)
+
+    for row in fund_deviation.iter_rows(named=True):
+        fund = row["schemeName"]
+        symbol = row["symbol"]
+
+        st.subheader(f"{fund} ({symbol})")
+
+        fund_df = (
+            price_nav_comparison_df
+            .filter(pl.col("schemeName") == fund)
+            .sort("trade_date")
+        )
+
+        st.plotly_chart(
+            fund_trade_comp(fund_df.to_pandas()),
+            use_container_width=True,
+        )
+
+
+
     # portfolio_ts = (
     #     fund_value_ts
     #     .group_by("date")
