@@ -1,8 +1,10 @@
 import streamlit as st
 import polars as pl
 import pandas as pd
+from plotly import graph_objects as go
 
 from data.store.mutualfund import (
+    ensure_fund_mapping,
     ensure_holdings_data,
     ensure_nav_data,
     save_to_registry,
@@ -17,10 +19,11 @@ from ui.charts.correlation_heatmap import render_correlation_heatmap
 from ui.components.mutual_fund_holdings import render_holdings_table
 from ui.components.mutual_funds_rolling_returns import show_rolling_returns_info
 from mutual_funds.tradebook import (
+    apply_fund_mapping,
     compute_current_holdings,
 )
 from ui.components.fund_matcher import fund_matcher
-from ui.data.loaders import load_nav_and_holdings, load_txn_data
+from ui.data.loaders import load_nav_and_holdings, load_nav_data, load_txn_data
 from ui.utils import get_selected_registry
 from ui.charts.plotters import plot_kde_returns, plot_overlap_heatmap, plot_sector_stack
 
@@ -80,6 +83,52 @@ with tab_portfolio:
     else:
         current_holdings = compute_current_holdings(txn_df)
         st.dataframe(current_holdings)
+
+    # using the txn_df compute the total invested amount for each day and make a line chart
+    st.subheader("Total Invested Over Time")
+    if isinstance(txn_df, type(None)):
+        st.write("Add the transaction dataframe")
+    else:
+        invested_df = (
+            txn_df.with_columns(
+                (pl.col("price") * pl.col("signed_qty")).alias("invested_amount")
+            )
+            .group_by("trade_date")
+            .agg(pl.sum("invested_amount").alias("total_invested"))
+            .sort("trade_date")
+            .with_columns(
+                pl.col("total_invested").cum_sum().alias("cumulative_invested")
+            )
+        )
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=invested_df["trade_date"],
+                y=invested_df["cumulative_invested"],
+                mode="lines+markers",
+                name="Cumulative Invested",
+                marker=dict(color='Blue', size=6),
+            )
+        )
+        # also add a bar chart of daily invested amount like volume in stock charts
+        fig.add_trace(
+            go.Bar(
+                x=invested_df["trade_date"],
+                y=invested_df["total_invested"],
+                name="Daily Invested",
+                marker=dict(color='LightBlue'),
+
+            )
+        )
+        fig.update_layout(
+            title="Total Invested Over Time",
+            height=400,
+            margin=dict(l=20, r=20, t=30, b=20),
+            yaxis_title="Amount",
+            xaxis_title="Date",
+            barmode='overlay',
+        )
+        st.plotly_chart(fig, width="stretch")
 
 with tab_overlap:
     st.header("Overlap & Allocation")

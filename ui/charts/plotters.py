@@ -10,7 +10,10 @@ from mutual_funds.analytics import sector_exposure
 
 
 def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str]):
-    df = sector_exposure(sector_df, fund_slugs).to_pandas()
+    # sort by weight descending
+    df = sector_exposure(sector_df, fund_slugs).sort(by='weight', descending=True).to_pandas()
+    # change bars to log scale
+    # df['weight'] = np.log10(df['weight'])
 
     return px.bar(
         df,

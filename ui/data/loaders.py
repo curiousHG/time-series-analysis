@@ -71,4 +71,4 @@ def cached_search_stock(query: str) -> pd.DataFrame:
 
 
 def get_trade_symbols(trades_df: pl.DataFrame) -> list[str]:
-    return trades_df.select("symbol").unique().sort("symbol").to_series().to_list()
+    return trades_df.select(["symbol"]).unique().sort("symbol").to_series().to_list()
