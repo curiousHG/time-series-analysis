@@ -6,7 +6,7 @@ def run():
     # st.write("🚀 App started")
     pages = [
         st.Page("ui/views/mutualFund.py", title="Mutual Fund Analysis"),
-        st.Page("ui/views/backtest.py", title="Stock Analysis"),
+        st.Page("ui/views/backtest.py", title="Stock Analysis", url_path="stock"),
     ]
     pg = st.navigation(pages, position="top")
     pg.run()
