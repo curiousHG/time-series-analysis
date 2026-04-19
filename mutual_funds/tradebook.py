@@ -8,7 +8,7 @@ def load_tradebook(csv_path: str):
             csv_path,
             try_parse_dates=True,
         )
-    except Exception as e:
+    except Exception:
         return None
 
 

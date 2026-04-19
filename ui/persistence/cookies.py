@@ -1,4 +1,3 @@
-import streamlit as st
 from streamlit_cookies_controller import CookieController
 from datetime import datetime, timedelta
 import json
@@ -22,17 +21,21 @@ def set_cookie(key: str, value):
             json.dumps(payload),
             expires=datetime.now() + timedelta(days=COOKIE_DAYS),
         )
-    except Exception as e:
-        st.error(f"Failed to set cookie {key} - {e}")
+    except Exception:
+        # CookieController not yet initialized on this Streamlit run cycle
+        pass
 
 
 def get_cookie(key: str, default=None):
     if not controller:
         return default
     try:
-        raw = controller.get(key)
-    except Exception as e:
-        st.error(f"Failed to get cookie: {key} - {e}")
+        cookies = controller.getAll()
+        if not cookies or not isinstance(cookies, dict):
+            return default
+        raw = cookies.get(key)
+    except Exception:
+        # CookieController not yet initialized on this Streamlit run cycle
         return default
     if not raw:
         return default

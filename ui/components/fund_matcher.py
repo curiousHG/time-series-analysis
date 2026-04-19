@@ -1,19 +1,15 @@
 import streamlit as st
 import pandas as pd
 import polars as pl
-import random
 from data.store.mutualfund import (
     ensure_fund_mapping,
-    ensure_nav_data,
     persist_fund_mapping,
 )
 from data.store.mutualfund import load_registry
-from mutual_funds.tradebook import apply_fund_mapping, compute_daily_units
+from mutual_funds.tradebook import apply_fund_mapping
 from ui.charts.fund_trade_comp import fund_trade_comp
-from ui.data.loaders import get_trade_symbols, load_nav_data, load_txn_data
-from ui.persistence.cookies import set_cookie
-from ui.utils import timed
-import plotly.graph_objects as go
+from ui.state.loaders import get_trade_symbols, load_nav_data
+
 
 def init_fund_mapping(trade_symbols: list[str]):
     if "fund_mapping" not in st.session_state:
@@ -129,81 +125,82 @@ def fund_matcher(txn_df: pl.DataFrame):
     init_fund_mapping(trade_symbols)
     render_fund_mapping_editor(nav_funds)
 
+    fund_mapping_df = ensure_fund_mapping()
+    if fund_mapping_df is None or fund_mapping_df.empty:
+        st.info("No fund mappings yet. Map trade symbols above, then reload.")
+        return
 
+    res = apply_fund_mapping(txn_df, fund_mapping_df)
 
-    res = apply_fund_mapping(txn_df, ensure_fund_mapping()) # gives pl.DataFrame with schemeName column added
-
-    mapped_schemes = res.select("schemeName").filter(pl.col("schemeName").is_not_null()).unique().to_series().to_list()
-    if mapped_schemes:
-        if "selected_schemes" not in st.session_state:
-            st.session_state.selected_schemes = []
-        existing = set(st.session_state.selected_schemes)
-        new_ones = [s for s in mapped_schemes if s not in existing]
-        if new_ones:
-            st.session_state.selected_schemes.extend(new_ones)
-            st.toast(f"Added {len(new_ones)} mapped funds to selection")
-            set_cookie("selected_schemes", st.session_state.selected_schemes)
-    
-    nav_df = load_nav_data(
-        res["schemeName"].unique().to_list()
+    mapped_schemes = (
+        res.select("schemeName")
+        .filter(pl.col("schemeName").is_not_null())
+        .unique()
+        .to_series()
+        .to_list()
     )
+    if mapped_schemes:
+        from ui.components.fund_picker import add_schemes
+
+        new_ones = add_schemes(mapped_schemes)
+        if new_ones:
+            st.toast(f"Added {len(new_ones)} mapped funds to selection")
+
+    nav_df = load_nav_data(res["schemeName"].unique().to_list())
 
     nav_df = nav_df.select(
         [
             "schemeName",
             pl.col("date").cast(pl.Date).alias("date"),
             "nav",
-        ])
+        ]
+    )
     price_nav_comparison_df = res.with_columns(pl.col("trade_date").alias("date")).join(
         nav_df,
         on=["schemeName", "date"],
         how="left",
     )
     # show only relevant columns and entries for unique isin
-    price_nav_comparison_df = price_nav_comparison_df.select([
-        "symbol",
-        "schemeName",
-        "trade_date",
-        "price",
-        "nav",
-    ])
-    uniqueCount = price_nav_comparison_df.select(['symbol','schemeName']).unique().shape[0]
+    price_nav_comparison_df = price_nav_comparison_df.select(
+        [
+            "symbol",
+            "schemeName",
+            "trade_date",
+            "price",
+            "nav",
+        ]
+    )
+    uniqueCount = (
+        price_nav_comparison_df.select(["symbol", "schemeName"]).unique().shape[0]
+    )
     st.write(f"### 📈 Price vs NAV Comparison for {uniqueCount} Funds")
-    
-    for scheme in price_nav_comparison_df.select(['symbol','schemeName']).unique().iter_rows():
-        # print(scheme)
+
+    for idx, scheme in enumerate(
+        price_nav_comparison_df.select(["symbol", "schemeName"]).unique().iter_rows()
+    ):
         symbol = scheme[0]
         schemeName = scheme[1]
 
         with st.expander(f"🔍 {schemeName} ({symbol})", expanded=False):
-            
+
             # select entries for this schemeName in price_nav_comparison_df
             fund_df = price_nav_comparison_df.filter(
                 pl.col("schemeName") == schemeName
             ).to_pandas()
 
-            # date range of this fund in price_nav_comparison_df
-            date_min = fund_df["trade_date"].min()
-            date_max = fund_df["trade_date"].max()
-            # add 3 months buffer
-            date_min = date_min - pd.DateOffset(months=3)
-            date_max = date_max + pd.DateOffset(months=3)
-
-            # select this schemeName in nav_df in the same date range
             nav_scheme_df = nav_df.filter(
                 pl.col("schemeName") == schemeName
             ).to_pandas()
-            nav_scheme_df = nav_scheme_df[
-                (nav_scheme_df["date"] >= date_min) &
-                (nav_scheme_df["date"] <= date_max)
-            ]
 
             fund_df = fund_df.sort_values(by=["trade_date"])
             nav_scheme_df = nav_scheme_df.sort_values(by=["date"])
 
             fig = fund_trade_comp(fund_df, nav_scheme_df, schemeName, symbol)
-            st.plotly_chart(fig, use_container_width=True, key=f"{schemeName}-{symbol}-{random.random()}")
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                key=f"fund-trade-comp-{idx}-{schemeName}-{symbol}",
+            )
         # break
 
     # Add mapped schemes to selected_schemes
-

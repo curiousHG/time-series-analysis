@@ -42,14 +42,29 @@ def compute_sector_overlap(
 
 
 def overlap_matrix(holdings_df: pl.DataFrame, fund_slugs: list[str]):
-    data = []
+    n = len(fund_slugs)
 
-    for a in fund_slugs:
-        row = []
-        for b in fund_slugs:
-            val = compute_overlap(holdings_df, a, b)
-            row.append(val)
-        data.append(row)
+    # Pre-filter holdings per slug to avoid repeated .filter() calls
+    fund_holdings = {}
+    for slug in fund_slugs:
+        fund_holdings[slug] = holdings_df.filter(pl.col("schemeSlug") == slug).select(
+            "instrumentName", "weight"
+        )
+
+    data = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        data[i][i] = fund_holdings[fund_slugs[i]]["weight"].sum()
+        for j in range(i + 1, n):
+            df_a = fund_holdings[fund_slugs[i]].rename({"weight": "w_a"})
+            df_b = fund_holdings[fund_slugs[j]].rename({"weight": "w_b"})
+            val = (
+                df_a.join(df_b, on="instrumentName", how="inner")
+                .select(pl.min_horizontal("w_a", "w_b").alias("overlap"))
+                .select(pl.sum("overlap"))
+                .item()
+            )
+            data[i][j] = val
+            data[j][i] = val
 
     return pd.DataFrame(data, index=fund_slugs, columns=fund_slugs).round(2)
 

@@ -1,6 +1,4 @@
-import httpx
-import polars as pl
-from datetime import datetime
+import logging
 import httpx
 import polars as pl
 from urllib.parse import quote, quote_plus
@@ -9,7 +7,9 @@ import re
 
 from mutual_funds.constants import MF_REGISTRY_URL
 
-BASE_URL = "https://api.mfapi.in/mf"
+logger = logging.getLogger("data.fetchers.mutual_fund")
+
+MFAPI_BASE_URL = "https://api.mfapi.in/mf"
 BASE_OVERVIEW_URL = "https://www.advisorkhoj.com/mutual-funds-research/{scheme_name}"
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
@@ -20,34 +20,91 @@ NAV_URL = (
     "getCompleteNavReportForFundOverview"
 )
 
-BASE_URL = "https://api.mfapi.in/mf"
 
-
-def fetch_nav(scheme_code: str) -> pl.DataFrame:
+def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
     """
-    Fetch historical NAV for a mutual fund scheme
+    Fetch historical NAV for a mutual fund scheme from MFAPI.
+    Returns DataFrame with columns: date, nav, schemeName
     """
-    url = f"{BASE_URL}/{scheme_code}"
+    url = f"{MFAPI_BASE_URL}/{scheme_code}"
+    logger.info("Fetching NAV from MFAPI: code=%s name=%s", scheme_code, scheme_name)
 
     resp = httpx.get(url, timeout=30)
     resp.raise_for_status()
 
     raw = resp.json()
-
-    data = raw["data"]
+    data = raw.get("data", [])
+    if not data:
+        logger.warning("Empty NAV response from MFAPI for code=%s", scheme_code)
+        raise ValueError(f"No NAV data from MFAPI for scheme code {scheme_code}")
 
     df = pl.DataFrame(data)
-
-    df = df.with_columns(
+    result = df.with_columns(
         pl.col("date").str.strptime(pl.Date, "%d-%m-%Y"),
         pl.col("nav").cast(pl.Float64),
-        pl.lit(scheme_code).alias("scheme_code"),
+        pl.lit(scheme_name).alias("schemeName"),
     ).sort("date")
+    logger.info("MFAPI NAV fetched: %d records for %s", result.height, scheme_name)
+    return result
 
-    return df
+
+def search_mfapi(query: str) -> list[dict]:
+    """
+    Search MFAPI for schemes matching query.
+    Returns list of {schemeCode, schemeName}.
+    """
+    if not query or len(query.strip()) < 2:
+        return []
+
+    resp = httpx.get(f"{MFAPI_BASE_URL}/search", params={"q": query}, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _normalize_for_match(s: str) -> str:
+    """Normalize scheme name for fuzzy matching."""
+    return re.sub(r"[\s\-_]+", " ", s.strip().lower())
+
+
+def resolve_mfapi_code(scheme_name: str) -> str | None:
+    """
+    Find the MFAPI scheme code that best matches the given scheme name.
+    Uses first few keywords from the name to search, then picks the closest match.
+    Returns scheme code as string, or None if no good match found.
+    """
+    # Use first 3-4 meaningful words for search
+    words = [
+        w for w in scheme_name.split() if len(w) > 1 and w.upper() not in ("-", "–")
+    ]
+    search_query = " ".join(words[:4])
+
+    results = search_mfapi(search_query)
+    if not results:
+        logger.debug("No MFAPI results for query=%s (scheme=%s)", search_query, scheme_name)
+        return None
+
+    target = _normalize_for_match(scheme_name)
+
+    # Exact normalized match first
+    for r in results:
+        if _normalize_for_match(r["schemeName"]) == target:
+            return str(r["schemeCode"])
+
+    # Substring containment match
+    for r in results:
+        candidate = _normalize_for_match(r["schemeName"])
+        if target in candidate or candidate in target:
+            return str(r["schemeCode"])
+
+    # Fall back to first result if search was specific enough (4+ words)
+    if len(words) >= 4 and results:
+        return str(results[0]["schemeCode"])
+
+    return None
 
 
 def fetch_portfolio_by_slug(slug: str):
+    logger.info("Fetching portfolio from AdvisorKhoj: slug=%s", slug)
     body = f"scheme_amfi={slug}"
 
     URL = "https://www.advisorkhoj.com/mutual-funds-research/getPortfolioAnalysis"
@@ -67,7 +124,10 @@ def fetch_portfolio_by_slug(slug: str):
     )
 
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    if not data:
+        raise ValueError(f"Empty portfolio response from AdvisorKhoj for slug '{slug}'")
+    return data
 
 
 def fetch_nav_from_advisorkhoj(
@@ -189,24 +249,9 @@ def extract_launch_date(html: str) -> str:
             if match:
                 return match.group(1)
 
-    raise ValueError("Launch Date not found")
-
-
-def fetch_nav(scheme_code: str) -> pl.DataFrame:
-    url = f"{BASE_URL}/{scheme_code}"
-
-    resp = httpx.get(url, timeout=30)
-    resp.raise_for_status()
-
-    raw = resp.json()
-
-    df = pl.DataFrame(raw["data"])
-
-    return df.with_columns(
-        pl.col("date").str.strptime(pl.Date, "%d-%m-%Y"),
-        pl.col("nav").cast(pl.Float64),
-        pl.lit(scheme_code).alias("schemeCode"),
-    ).sort("date")
+    raise ValueError(
+        f"Launch Date not found on AdvisorKhoj for '{html[:80]}...' — this fund may not be supported"
+    )
 
 
 def build_nav_params(scheme_name: str, launch_date: str) -> dict:

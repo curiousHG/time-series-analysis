@@ -11,7 +11,11 @@ from mutual_funds.analytics import sector_exposure
 
 def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str]):
     # sort by weight descending
-    df = sector_exposure(sector_df, fund_slugs).sort(by='weight', descending=True).to_pandas()
+    df = (
+        sector_exposure(sector_df, fund_slugs)
+        .sort(by="weight", descending=True)
+        .to_pandas()
+    )
     # change bars to log scale
     # df['weight'] = np.log10(df['weight'])
 
@@ -44,11 +48,14 @@ def plot_kde_returns(pct: pd.DataFrame):
     for scheme in pct.columns:
         series = pct[scheme].dropna()
 
-        if len(series) < 50:
-            continue  # not enough data for stable KDE
+        if len(series) < 50 or series.std() == 0:
+            continue  # not enough data or zero variance
 
-        kde = gaussian_kde(series)
-        y = kde(x_grid)
+        try:
+            kde = gaussian_kde(series)
+            y = kde(x_grid)
+        except np.linalg.LinAlgError:
+            continue
 
         fig.add_trace(
             go.Scatter(

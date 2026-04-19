@@ -1,5 +1,4 @@
 import polars as pl
-from pathlib import Path
 from datetime import datetime
 
 from mutual_funds.tableSchema import (

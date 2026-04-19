@@ -1,6 +1,6 @@
 import streamlit as st
-from ui.data.loaders import cached_search_stock
-from ui.persistence.cookies import get_cookie, set_cookie
+from ui.state.loaders import cached_search_stock
+from ui.persistence.selections import load_selection, save_selection
 
 
 def option_formatter(item: tuple[str, str]) -> str:
@@ -8,9 +8,8 @@ def option_formatter(item: tuple[str, str]) -> str:
 
 
 def on_selected_stocks_change():
-    # Widget → app state sync
     st.session_state.selected_stocks = list(st.session_state.selected_stocks_widget)
-    set_cookie("selected_stocks", st.session_state.selected_stocks)
+    save_selection("selected_stocks", st.session_state.selected_stocks)
 
 
 def on_add_selected():
@@ -22,17 +21,17 @@ def on_add_selected():
     st.session_state.selected_stocks_widget = merged
     st.session_state.yfinance_selected = []
 
-    set_cookie("selected_stocks", merged)
+    save_selection("selected_stocks", merged)
 
 
-def stock_picker(load_registry, save_to_registry):
+def stock_picker():
 
-    st.sidebar.markdown("### 🔍 Select Stocks To Analyze")
+    st.sidebar.markdown("### Select Stocks To Analyze")
 
     if "selected_stocks" not in st.session_state:
-        st.session_state.selected_stocks = get_cookie("selected_stocks", []) or []
+        st.session_state.selected_stocks = load_selection("selected_stocks", [])
 
-    if "selected_stocks_widget" not in st.session_state:
+    if "selected_stocks_widget" not in st.session_state or st.session_state.pop("_load_stock_defaults", False):
         st.session_state.selected_stocks_widget = (
             st.session_state.selected_stocks.copy()
         )
@@ -80,5 +79,21 @@ def stock_picker(load_registry, save_to_registry):
             "Add selected",
             on_click=on_add_selected,
         )
+
+    # ---- Defaults
+    st.sidebar.divider()
+    dc1, dc2 = st.sidebar.columns(2)
+    if dc1.button("Save as default", key="save_default_stocks", use_container_width=True):
+        save_selection("default_stocks", st.session_state.selected_stocks)
+        st.sidebar.success(f"Saved {len(st.session_state.selected_stocks)} stocks as default")
+    if dc2.button("Load defaults", key="load_default_stocks", use_container_width=True):
+        defaults = load_selection("default_stocks", [])
+        if defaults:
+            st.session_state.selected_stocks = defaults
+            save_selection("selected_stocks", defaults)
+            st.session_state._load_stock_defaults = True
+            st.rerun()
+        else:
+            st.sidebar.warning("No defaults saved yet")
 
     return st.session_state.selected_stocks

@@ -1,5 +1,3 @@
-import vectorbt as vbt
-
 from strategies.base import Strategy
 
 
@@ -10,6 +8,8 @@ class RSIStrategy(Strategy):
         self.window = window
 
     def indicators(self, price):
+        import vectorbt as vbt
+
         rsi = vbt.RSI.run(price, window=self.window)
         return {"RSI": rsi.rsi}
 

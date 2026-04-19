@@ -1,31 +1,16 @@
 import streamlit as st
 import polars as pl
 import pandas as pd
-import vectorbt as vbt
+import json
 
-# from ui.charts.price_chart import render_price_chart
-from ui.charts.indicator_chart import render_indicator
+from streamlit_lightweight_charts import renderLightweightCharts
 from ui.components.stock_picker import stock_picker
-from ui.tables.stats_table import render_stats
-from ui.utils import make_arrow_safe
-import plotly.graph_objects as go
-
-from strategies.rsi import RSIStrategy
-from ui.data.loaders import load_stock_open_close
-from data.fetchers.stock import fetch_symbol_data, get_symbol_info, query_stocks
-from data.store.stock import (
-    ensure_stock_data,
-    load_stock_registry,
-    save_to_stock_registry,
-)
-
-# IMPORTANT: force plotly Figure, not widgets
-vbt.settings["plotting"]["use_widgets"] = False
+from ui.state.loaders import load_stock_open_close
 
 
 stock_picker()
 with st.sidebar:
-    st.markdown("### 📅 Date Range")
+    st.markdown("### Date Range")
 
     start_date, end_date = st.date_input(
         "Select date range",
@@ -34,78 +19,122 @@ with st.sidebar:
         max_value=pd.Timestamp.today(),
         key="date_range",
     )
-# st.write(stocks)
+
 df = load_stock_open_close(st.session_state.selected_stocks, start_date, end_date)
-# st.dataframe(df)
-# st.write(ensure_stock_data("RELIANCE.NS", start="2022-01-01", end="2023-01-03"))
 
+symbols = df.select("Symbol").unique().to_series().to_list()
+symbol = st.selectbox("Select stock", symbols)
 
-symbol = st.selectbox(
-    "Select stock", df.select("Symbol").unique().to_series().to_list()
-)
 if symbol:
-    sdf = df.filter(pl.col("Symbol") == symbol).to_pandas()
-
-    fig = go.Figure(
-        data=[
-            go.Candlestick(
-                x=sdf["Date"],
-                open=sdf["Open"],
-                high=sdf["High"],
-                low=sdf["Low"],
-                close=sdf["Close"],
-            )
-        ]
+    sdf = (
+        df.filter(pl.col("Symbol") == symbol)
+        .sort("Date")
+        .with_columns(pl.col("Date").cast(pl.Utf8).alias("time"))
+        .to_pandas()
     )
 
-    fig.update_layout(title=f"{symbol} Candlestick")
-    st.plotly_chart(fig, use_container_width=True)
+    # Moving averages
+    sdf["ma20"] = sdf["Close"].rolling(20).mean()
+    sdf["ma50"] = sdf["Close"].rolling(50).mean()
 
+    # Prepare chart data
+    candles = json.loads(
+        sdf[["time", "Open", "High", "Low", "Close"]]
+        .rename(
+            columns={"Open": "open", "High": "high", "Low": "low", "Close": "close"}
+        )
+        .dropna()
+        .to_json(orient="records")
+    )
 
-# @st.cache_data
-# def load_data(symbol: str):
-#     return pl.read_parquet(f"data/parquet/{symbol}.parquet")
+    volume_data = json.loads(
+        sdf[["time", "Volume"]]
+        .rename(columns={"Volume": "value"})
+        .dropna()
+        .to_json(orient="records")
+    )
 
+    # Color volume bars green/red based on close vs open
+    for i, row in enumerate(volume_data):
+        if i < len(candles):
+            row["color"] = (
+                "rgba(38, 166, 154, 0.5)"
+                if candles[i]["close"] >= candles[i]["open"]
+                else "rgba(239, 83, 80, 0.5)"
+            )
 
-# st.title("📈 Backtest")
-# symbol = "RELIANCE.NS"
-# params = {}
+    ma20_data = json.loads(
+        sdf[["time", "ma20"]]
+        .rename(columns={"ma20": "value"})
+        .dropna()
+        .to_json(orient="records")
+    )
 
-# # example
-# window = params.get("window", 14)
+    ma50_data = json.loads(
+        sdf[["time", "ma50"]]
+        .rename(columns={"ma50": "value"})
+        .dropna()
+        .to_json(orient="records")
+    )
 
-# # ---------- Data ----------
-# df = load_data(symbol)
-# price = pd.Series(df["Close"].to_numpy(), index=df["Date"])
+    chart_options = {
+        "height": 500,
+        "layout": {
+            "background": {"color": "#0f1117"},
+            "textColor": "#e2e8f0",
+        },
+        "grid": {
+            "vertLines": {"color": "#1e293b"},
+            "horzLines": {"color": "#1e293b"},
+        },
+        "crosshair": {"mode": 0},
+        "timeScale": {"borderColor": "#334155"},
+        "rightPriceScale": {"borderColor": "#334155"},
+    }
 
-# # ---------- Strategy ----------
-# strategy = RSIStrategy(window=window)
+    series = [
+        {
+            "type": "Candlestick",
+            "data": candles,
+            "options": {
+                "upColor": "#26a69a",
+                "downColor": "#ef5350",
+                "borderUpColor": "#26a69a",
+                "borderDownColor": "#ef5350",
+                "wickUpColor": "#26a69a",
+                "wickDownColor": "#ef5350",
+            },
+        },
+        {
+            "type": "Line",
+            "data": ma20_data,
+            "options": {
+                "color": "#6366f1",
+                "lineWidth": 1,
+                "title": "MA20",
+            },
+        },
+        {
+            "type": "Line",
+            "data": ma50_data,
+            "options": {
+                "color": "#f59e0b",
+                "lineWidth": 1,
+                "title": "MA50",
+            },
+        },
+        {
+            "type": "Histogram",
+            "data": volume_data,
+            "options": {
+                "priceFormat": {"type": "volume"},
+                "priceScaleId": "",
+            },
+        },
+    ]
 
-# indicators = strategy.indicators(price)
-# entries, exits = strategy.signals(price, indicators)
-
-# pf = vbt.Portfolio.from_signals(
-#     price,
-#     entries,
-#     exits,
-#     freq="1D"
-# )
-
-# # ---------- Layout ----------
-# left, right = st.columns([3, 2])
-
-# with left:
-#     st.subheader("📉 Price Chart with Indicators")
-#     st.plotly_chart(pf.plot(), width="stretch")
-
-#     for name, series in indicators.items():
-#         fig = render_indicator(name, series)
-#         st.plotly_chart(fig, width="stretch")
-
-# with right:
-#     render_stats(pf)
-
-#     st.subheader("Trades")
-#     st.dataframe(
-#         make_arrow_safe(pf.trades.records_readable)
-#     )
+    st.subheader(symbol)
+    renderLightweightCharts(
+        [{"chart": chart_options, "series": series}],
+        key=f"chart_{symbol}",
+    )

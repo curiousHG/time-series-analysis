@@ -4,27 +4,21 @@ import time
 from contextlib import contextmanager
 
 
-def make_arrow_safe(df):
-    df = df.copy()
-    for col in df.columns:
-        if "timedelta" in str(df[col].dtype):
-            df[col] = df[col].astype(str)
-    return df
 
 
 def get_selected_registry(load_registry) -> pl.DataFrame:
     """
-    Returns full registry rows for currently selected schemes
-    stored in st.session_state.selected_schemes
+    Returns full registry rows for currently selected schemes.
     """
-    registry = load_registry()
+    from ui.components.fund_picker import get_selected_schemes
 
-    if not st.session_state.selected_schemes:
+    registry = load_registry()
+    selected = get_selected_schemes()
+
+    if not selected:
         return registry.head(0)  # empty df, same schema
 
-    return registry.filter(
-        pl.col("schemeName").is_in(st.session_state.selected_schemes)
-    )
+    return registry.filter(pl.col("schemeName").is_in(selected))
 
 
 @contextmanager

@@ -1,72 +1,63 @@
 import yfinance as yf
-import requests
 import logging
-import json
 import pandas as pd
-from pprint import pprint
-import inspect
+
+logger = logging.getLogger("data.fetchers.stock")
 
 
-# logging.basicConfig(level=logging.DEBUG)
-
-
-def query_stocks(query: str) -> dict:
-    """Return list of stock symbols matching the query"""
-    # HEADERS = {
-    #     "User-Agent": "PostmanRuntime/7.51.0",
-    #     "Accept": "application/json",
-    # }
-
-    # YFINANCE_QUERY_URL = "https://query2.finance.yahoo.com/v1/finance/search"
-    # params = {
-    #     "q": query,
-    #     "quotesCount": 50,
-    # }
-    # response = requests.get(
-    #     YFINANCE_QUERY_URL, params=params, headers=HEADERS, timeout=10
-    # )
-    # return response.json()
+def query_stocks(query: str) -> pd.DataFrame:
+    """Return list of stock symbols matching the query."""
     query = query.lower()
     df = yf.Lookup(query).all
     filtered = df[(df["exchange"] == "NSI") & (df["quoteType"] == "equity")]
-    print(filtered)
     return filtered
 
 
 def fetch_symbol_data(
     symbol: str, start: str, end: str, interval: str = "1d"
-) -> pd.DataFrame:
-    """Fetch historical data for a given stock symbol"""
+) -> pd.DataFrame | None:
+    """Fetch historical data for a given stock symbol using yfinance."""
     try:
         data = yf.download(
             symbol, start=start, end=end, interval=interval, multi_level_index=False
         )
-        # remove the symbol name in the columns make the columns only the field names
         return data
     except Exception as e:
-        print(f"Error fetching data for symbol {symbol}: {e}")
+        logger.error(f"Error fetching data for symbol {symbol}: {e}")
         return None
-    return data
 
 
-def dump_properties(obj):
-    result = {}
-    for name, attr in inspect.getmembers(type(obj)):
-        if isinstance(attr, property):
-            try:
-                result[name] = getattr(obj, name)
-            except Exception as e:
-                result[name] = f"<error: {e}>"
-    return result
+def fetch_symbol_data_jugaad(symbol: str, start, end) -> pd.DataFrame | None:
+    """
+    Fetch historical data from NSE via jugaad-data.
+    Symbol should be WITHOUT .NS suffix (e.g., 'RELIANCE' not 'RELIANCE.NS').
+    """
+    try:
+        from jugaad_data.nse import stock_df
 
+        nse_symbol = symbol.replace(".NS", "").replace(".BO", "")
+        df = stock_df(symbol=nse_symbol, from_date=start, to_date=end, series="EQ")
+        if df.empty:
+            return None
 
-def get_funds_data(ticker: yf.Ticker):
-    """Fetch funds data from yfinance Ticker object"""
-    funds_data: yf.FundsData = ticker.funds_data
-    return dump_properties(funds_data)
+        # Rename columns to match yfinance format
+        df = df.rename(
+            columns={
+                "DATE": "Date",
+                "OPEN": "Open",
+                "HIGH": "High",
+                "LOW": "Low",
+                "CLOSE": "Close",
+                "VOLUME": "Volume",
+            }
+        )
+        return df[["Date", "Open", "High", "Low", "Close", "Volume"]]
+    except Exception as e:
+        logger.debug(f"jugaad-data failed for {symbol}: {e}")
+        return None
 
 
 def get_symbol_info(symbol: str):
-    """Fetch symbol info from yfinance"""
+    """Fetch symbol info from yfinance."""
     ticker = yf.Ticker(symbol)
     return ticker.info
