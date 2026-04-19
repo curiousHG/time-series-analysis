@@ -1,7 +1,7 @@
 import polars as pl
 from datetime import datetime
 
-from mutual_funds.tableSchema import (
+from mutual_funds.table_schema import (
     ASSET_SCHEMA,
     HOLDINGS_SCHEMA,
     SECTOR_SCHEMA,

@@ -3,7 +3,7 @@ import polars as pl
 import traceback
 from datetime import datetime
 
-from data.store.mutualfund import (
+from data.store.mutual_fund import (
     load_registry,
     save_to_registry,
     _fetch_single_nav,
@@ -23,6 +23,8 @@ from mutual_funds.holdings import (
     normalize_asset_allocation,
 )
 from data.store.tradebook import import_tradebook_bytes, get_tradebook_stats
+from data.store.amfi import sync_amfi_master, get_scheme_count
+from data.store.mutual_fund import auto_map_tradebook
 from ui.components.fund_picker import fund_picker
 from ui.state.loaders import load_nav_data, load_holdings_data, load_txn_data
 from ui.utils import get_selected_registry
@@ -204,6 +206,19 @@ if update_holdings or update_all:
     load_holdings_data.clear()
     st.toast(f"Saved holdings data for {success_count}/{len(scheme_slugs)} funds")
 
+# ==== AMFI Master Section ====
+st.divider()
+st.subheader("AMFI Master Data")
+
+amfi_count = get_scheme_count()
+st.write(f"**{amfi_count:,}** schemes in database")
+
+if st.button("Sync AMFI Master", type="primary"):
+    with st.spinner("Downloading AMFI NAVAll.txt..."):
+        count = sync_amfi_master()
+    st.success(f"Synced **{count:,}** schemes from AMFI")
+    st.rerun()
+
 # ==== Tradebook Section ====
 st.divider()
 st.subheader("Tradebook")
@@ -231,7 +246,27 @@ if uploaded is not None:
     if new_count > 0:
         st.success(f"Imported **{new_count}** new trades, skipped **{skipped}** duplicates.")
         load_txn_data.clear()
+
+        # Auto-map ISINs if AMFI data is available
+        if amfi_count > 0:
+            with st.spinner("Auto-mapping ISINs to fund schemes..."):
+                mappings = auto_map_tradebook()
+            if mappings:
+                st.success(f"Auto-mapped **{len(mappings)}** funds by ISIN")
+                load_nav_data.clear()
+            else:
+                st.warning("Could not auto-map any funds. Sync AMFI data first.")
     elif skipped > 0:
-        st.warning(f"All **{skipped}** trades already exist in the database. Nothing new to import.")
+        st.warning(f"All **{skipped}** trades already exist in the database.")
     else:
         st.error("CSV was empty or could not be parsed.")
+
+if stats["total_trades"] > 0 and amfi_count > 0:
+    if st.button("Re-map all tradebook ISINs"):
+        with st.spinner("Auto-mapping ISINs..."):
+            mappings = auto_map_tradebook()
+        if mappings:
+            st.success(f"Mapped **{len(mappings)}** funds")
+            load_nav_data.clear()
+        else:
+            st.warning("No ISINs could be mapped.")

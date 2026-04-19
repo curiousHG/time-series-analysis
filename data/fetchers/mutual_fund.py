@@ -10,6 +10,7 @@ from mutual_funds.constants import MF_REGISTRY_URL
 logger = logging.getLogger("data.fetchers.mutual_fund")
 
 MFAPI_BASE_URL = "https://api.mfapi.in/mf"
+AMFI_NAV_ALL_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
 BASE_OVERVIEW_URL = "https://www.advisorkhoj.com/mutual-funds-research/{scheme_name}"
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
@@ -285,3 +286,75 @@ def fetch_scheme_registry(query: str) -> pl.DataFrame:
     names: list[str] = resp.json()
 
     return pl.DataFrame({"schemeName": names})
+
+
+def fetch_amfi_master() -> list[dict]:
+    """
+    Download AMFI NAVAll.txt and parse into a list of scheme dicts.
+    Format: SchemeCode;ISIN Payout/Growth;ISIN Reinvestment;SchemeName;NAV;Date
+    Lines without semicolons are category/fund house headers.
+    """
+    from datetime import datetime as dt
+
+    logger.info("Fetching AMFI master data from %s", AMFI_NAV_ALL_URL)
+    resp = httpx.get(AMFI_NAV_ALL_URL, timeout=60, follow_redirects=True)
+    resp.raise_for_status()
+
+    schemes = []
+    current_category = None
+    current_fund_house = None
+
+    for line in resp.text.strip().split("\n"):
+        line = line.strip()
+        if not line or line.startswith("Scheme Code"):
+            continue
+
+        parts = line.split(";")
+        if len(parts) < 5:
+            # Category or fund house header
+            if "(" in line and ")" in line:
+                current_category = line.strip()
+            else:
+                current_fund_house = line.strip()
+            continue
+
+        try:
+            scheme_code = int(parts[0].strip())
+        except ValueError:
+            continue
+
+        isin_growth = parts[1].strip() or None
+        isin_reinvestment = parts[2].strip() if len(parts) > 2 else None
+        if isin_reinvestment == "-":
+            isin_reinvestment = None
+        scheme_name = parts[3].strip()
+
+        nav_str = parts[4].strip() if len(parts) > 4 else None
+        nav = None
+        if nav_str and nav_str not in ("N.A.", "-"):
+            try:
+                nav = float(nav_str)
+            except ValueError:
+                pass
+
+        nav_date = None
+        if len(parts) > 5:
+            date_str = parts[5].strip()
+            try:
+                nav_date = dt.strptime(date_str, "%d-%b-%Y").date()
+            except ValueError:
+                pass
+
+        schemes.append({
+            "scheme_code": scheme_code,
+            "isin_growth": isin_growth,
+            "isin_reinvestment": isin_reinvestment,
+            "scheme_name": scheme_name,
+            "nav": nav,
+            "nav_date": nav_date,
+            "fund_house": current_fund_house,
+            "category": current_category,
+        })
+
+    logger.info("Parsed %d schemes from AMFI master", len(schemes))
+    return schemes

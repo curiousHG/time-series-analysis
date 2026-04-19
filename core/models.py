@@ -106,6 +106,20 @@ class StockRegistry(SQLModel, table=True):
     quote_type: str | None = None
 
 
+class AmfiScheme(SQLModel, table=True):
+    __tablename__ = "amfi_schemes"
+    __table_args__ = TABLE_ARGS
+
+    scheme_code: int = Field(primary_key=True)
+    isin_growth: str | None = Field(default=None, index=True)
+    isin_reinvestment: str | None = None
+    scheme_name: str
+    nav: float | None = None
+    nav_date: datetime.date | None = None
+    fund_house: str | None = None
+    category: str | None = None
+
+
 class FundMapping(SQLModel, table=True):
     __tablename__ = "fund_mapping"
     __table_args__ = TABLE_ARGS

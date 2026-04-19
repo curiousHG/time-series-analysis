@@ -87,7 +87,7 @@ def render_holdings_table(
             height=650,
         )
 
-        st.plotly_chart(fig_holdings, width="stretch")
+        st.plotly_chart(fig_holdings, use_container_width=True, key=f"holdings-tree-{scheme_slug}")
 
     # ---- Sector donut
     with col2:
@@ -100,7 +100,7 @@ def render_holdings_table(
                 title="Sector Allocation",
             )
             fig_sector.update_traces(textposition="inside", textinfo="percent")
-            st.plotly_chart(fig_sector, width="stretch")
+            st.plotly_chart(fig_sector, use_container_width=True, key=f"holdings-sector-{scheme_slug}")
         else:
             st.write("No sector data available")
 
@@ -115,7 +115,7 @@ def render_holdings_table(
                 title="Asset Allocation",
             )
             fig_asset.update_traces(textposition="inside", textinfo="percent")
-            st.plotly_chart(fig_asset, width="stretch")
+            st.plotly_chart(fig_asset, use_container_width=True, key=f"holdings-asset-{scheme_slug}")
         else:
             st.write("No asset data available")
 

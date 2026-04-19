@@ -1,4 +1,4 @@
-from data.store.mutualfund import (
+from data.store.mutual_fund import (
     ensure_holdings_data,
     ensure_nav_data,
     refresh_nav_data as _refresh_nav,
