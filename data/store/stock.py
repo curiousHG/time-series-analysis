@@ -132,15 +132,17 @@ def ensure_stock_data(
     start = _to_date(start_date)
     end = _to_date(end_date)
 
+    MIN_FETCH_DAYS = 5  # don't fetch ranges shorter than 5 days (avoids holiday gaps)
+
     existing = _get_date_range(symbol)
 
     if existing is None:
         _fetch_and_save(symbol, start, end)
     else:
         db_min, db_max = existing
-        if start < db_min:
+        if start < db_min and (db_min - start).days >= MIN_FETCH_DAYS:
             _fetch_and_save(symbol, start, db_min)
-        if end > db_max:
+        if end > db_max and (end - db_max).days >= MIN_FETCH_DAYS:
             _fetch_and_save(symbol, db_max, end)
 
     return _load_ohlcv(symbol, start, end)

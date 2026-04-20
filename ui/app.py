@@ -12,6 +12,7 @@ def run():
     st.set_page_config(layout="wide")
     # st.write("🚀 App started")
     pages = [
+        st.Page("ui/views/portfolio.py", title="Portfolio", url_path="portfolio"),
         st.Page("ui/views/mutual_fund.py", title="Mutual Fund Analysis"),
         st.Page("ui/views/backtest.py", title="Stock Analysis", url_path="stock"),
         st.Page("ui/views/data_manager.py", title="Data Manager", url_path="data"),

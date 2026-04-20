@@ -1,0 +1,5 @@
+[tool.pyrefly]
+project_root = "."
+search_path = ["."]
+python_version = "3.11"
+venv_path = ".venv"

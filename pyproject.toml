@@ -5,32 +5,21 @@ description = "Add your description here"
 readme = "README.md"
 requires-python=">=3.11"
 dependencies = [
-    "backtesting>=0.1.0",
-    "duckdb>=1.4.3",
+    "beautifulsoup4>=4.12.0",
     "httpx>=0.28.1",
-    "ipykernel>=7.1.0",
-    "matplotlib>=3.10.8",
-    "mplfinance>=0.12.10b0",
-    "nseazy>=0.0.1b5",
     "numpy>=2.3.5",
-    "optuna>=4.6.0",
     "pandas>=2.3.3",
     "plotly>=6.5.0",
     "polars>=1.36.1",
-    "pydantic>=2.12.5",
-    "quantstats>=0.0.77",
-    "scikit-learn>=1.8.0",
-    "scipy>=1.16.3",
-    "seaborn>=0.13.2",
     "streamlit>=1.52.2",
-    "streamlit-bokeh>=3.8.2",
-    "streamlit-cookies-controller>=0.0.4",
-    "streamlit-extras>=0.7.8",
-    "ta-lib>=0.6.8",
-    "tqdm>=4.67.1",
     "vectorbt>=0.28.2",
-    "watchdog>=6.0.0",
     "yfinance>=0.2.66",
+    "psycopg2-binary>=2.9",
+    "sqlmodel>=0.0.22",
+    "ta-lib>=0.6",
+    "quantstats>=0.0.77",
+    "jugaad-data>=0.30",
+    "streamlit-lightweight-charts>=0.7",
 ]
 
 [dependency-groups]
@@ -41,6 +30,13 @@ dev = [
     "pytest>=9.0.2",
     "ruff>=0.14.10",
 ]
+
+[tool.setuptools.packages.find]
+include = ["core*", "data*", "mutual_funds*", "strategies*", "ui*", "scripts*"]
+
+[tool.pyrefly]
+project_root = "."
+search_path = ["."]
 
 [tool.uv]
 
