@@ -1,7 +1,7 @@
 """Holdings tab — treemap + donut charts per fund."""
 
-import streamlit as st
 import polars as pl
+import streamlit as st
 
 from ui.components.mutual_fund_holdings import render_holdings_table
 

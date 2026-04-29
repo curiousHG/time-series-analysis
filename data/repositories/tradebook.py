@@ -1,9 +1,10 @@
 """Tradebook DB operations — import CSVs with deduplication."""
 
 import logging
+
 import polars as pl
-from sqlmodel import select, col
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlmodel import col, select
 
 from core.database import get_session
 from core.models import MfTradebook
@@ -60,7 +61,7 @@ def _import_tradebook_df(df: pl.DataFrame) -> tuple[int, int]:
                 )
                 .on_conflict_do_nothing(index_elements=["trade_id"])
             )
-            result = session.execute(stmt)
+            result = session.exec(stmt)
             if result.rowcount > 0:
                 new_count += 1
         session.commit()
@@ -73,9 +74,7 @@ def _import_tradebook_df(df: pl.DataFrame) -> tuple[int, int]:
 def load_tradebook_from_db() -> pl.DataFrame:
     """Load all tradebook transactions from database as a Polars DataFrame."""
     with get_session() as session:
-        rows = session.execute(
-            select(MfTradebook).order_by(col(MfTradebook.trade_date))
-        ).scalars().all()
+        rows = session.exec(select(MfTradebook).order_by(col(MfTradebook.trade_date))).all()
 
     if not rows:
         return pl.DataFrame(
@@ -104,7 +103,7 @@ def load_tradebook_from_db() -> pl.DataFrame:
 def get_tradebook_stats() -> dict:
     """Return summary stats for the tradebook."""
     with get_session() as session:
-        rows = session.execute(select(MfTradebook)).scalars().all()
+        rows = session.exec(select(MfTradebook)).all()
 
     if not rows:
         return {"total_trades": 0, "symbols": 0, "date_range": None}

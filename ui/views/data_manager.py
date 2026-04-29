@@ -1,34 +1,35 @@
-import streamlit as st
-import polars as pl
 import traceback
 from datetime import datetime
 
-from data.store.mutual_fund import (
-    load_registry,
-    save_to_registry,
+import polars as pl
+import streamlit as st
+
+from data.fetchers.mutual_fund import fetch_portfolio_by_slug
+from data.repositories.amfi import get_scheme_count, sync_amfi_master
+from data.repositories.fund_mapping import auto_map_tradebook
+from data.repositories.holdings import (
+    load_holdings,
+    save_assets,
+    save_holdings,
+    save_sectors,
+)
+from data.repositories.nav import (
     _fetch_single_nav,
     _load_scheme_code_map,
     _save_scheme_code_map,
-    _save_nav_df,
-    _load_nav_df,
-    _load_holdings,
-    _save_holdings,
-    _save_sectors,
-    _save_assets,
+    load_nav_df,
+    save_nav_df,
 )
-from data.fetchers.mutual_fund import fetch_portfolio_by_slug
+from data.repositories.registry import load_registry, save_to_registry
+from data.repositories.tradebook import get_tradebook_stats, import_tradebook_bytes
 from mutual_funds.holdings import (
+    normalize_asset_allocation,
     normalize_holdings,
     normalize_sector_allocation,
-    normalize_asset_allocation,
 )
-from data.store.tradebook import import_tradebook_bytes, get_tradebook_stats
-from data.store.amfi import sync_amfi_master, get_scheme_count
-from data.store.mutual_fund import auto_map_tradebook
 from ui.components.fund_picker import fund_picker
-from ui.state.loaders import load_nav_data, load_holdings_data, load_txn_data
+from ui.state.loaders import load_holdings_data, load_nav_data, load_txn_data
 from ui.utils import get_selected_registry
-
 
 st.title("Data Manager")
 
@@ -48,8 +49,8 @@ scheme_names = selected_registry["schemeName"].to_list()
 scheme_slugs = selected_registry["schemeSlug"].to_list()
 
 # ---- Load existing data from DB to show status
-nav_df = _load_nav_df(scheme_names)
-holdings_df = _load_holdings(scheme_slugs)
+nav_df = load_nav_df(scheme_names)
+holdings_df = load_holdings(scheme_slugs)
 
 # ---- Build status table
 st.subheader("NAV Data Status")
@@ -87,9 +88,7 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
     column_config={
-        "Days Old": st.column_config.NumberColumn(
-            help="Days since last available NAV data point"
-        ),
+        "Days Old": st.column_config.NumberColumn(help="Days since last available NAV data point"),
     },
 )
 
@@ -116,24 +115,21 @@ st.subheader("Update Data")
 
 col1, col2, col3 = st.columns(3)
 update_nav = col1.button("Update All NAV", type="primary", use_container_width=True)
-update_holdings = col2.button(
-    "Update All Holdings", type="secondary", use_container_width=True
-)
-update_all = col3.button(
-    "Update Everything", type="secondary", use_container_width=True
-)
+update_holdings = col2.button("Update All Holdings", type="secondary", use_container_width=True)
+update_all = col3.button("Update Everything", type="secondary", use_container_width=True)
 
 if update_nav or update_all:
     st.markdown("#### NAV Update Progress")
     code_map = _load_scheme_code_map()
 
     # Delete existing NAV for selected schemes
-    from core.database import get_session
-    from core.models import MfNav, MfHolding, MfSectorAllocation, MfAssetAllocation
     from sqlmodel import delete
 
+    from core.database import get_session
+    from core.models import MfAssetAllocation, MfHolding, MfNav, MfSectorAllocation
+
     with get_session() as session:
-        session.execute(delete(MfNav).where(MfNav.scheme_name.in_(scheme_names)))
+        session.exec(delete(MfNav).where(MfNav.scheme_name.in_(scheme_names)))
         session.commit()
 
     progress = st.progress(0, text="Starting NAV updates...")
@@ -144,11 +140,9 @@ if update_nav or update_all:
 
         try:
             df = _fetch_single_nav(name, code_map)
-            _save_nav_df(df)
+            save_nav_df(df)
             dates = df.select("date").to_series()
-            st.success(
-                f"**{name}** -- {df.height} records, {dates.min()} to {dates.max()}"
-            )
+            st.success(f"**{name}** -- {df.height} records, {dates.min()} to {dates.max()}")
             success_count += 1
         except Exception as e:
             st.error(f"**{name}** -- Failed: {e}")
@@ -165,14 +159,15 @@ if update_holdings or update_all:
     st.markdown("#### Holdings Update Progress")
 
     # Delete existing holdings for selected slugs
-    from core.database import get_session
-    from core.models import MfHolding, MfSectorAllocation, MfAssetAllocation
     from sqlmodel import delete
 
+    from core.database import get_session
+    from core.models import MfAssetAllocation, MfHolding, MfSectorAllocation
+
     with get_session() as session:
-        session.execute(delete(MfHolding).where(MfHolding.scheme_slug.in_(scheme_slugs)))
-        session.execute(delete(MfSectorAllocation).where(MfSectorAllocation.scheme_slug.in_(scheme_slugs)))
-        session.execute(delete(MfAssetAllocation).where(MfAssetAllocation.scheme_slug.in_(scheme_slugs)))
+        session.exec(delete(MfHolding).where(MfHolding.scheme_slug.in_(scheme_slugs)))
+        session.exec(delete(MfSectorAllocation).where(MfSectorAllocation.scheme_slug.in_(scheme_slugs)))
+        session.exec(delete(MfAssetAllocation).where(MfAssetAllocation.scheme_slug.in_(scheme_slugs)))
         session.commit()
 
     progress = st.progress(0, text="Starting holdings updates...")
@@ -188,14 +183,11 @@ if update_holdings or update_all:
             s = normalize_sector_allocation(resp, slug)
             a = normalize_asset_allocation(resp, slug)
 
-            _save_holdings(h)
-            _save_sectors(s)
-            _save_assets(a)
+            save_holdings(h)
+            save_sectors(s)
+            save_assets(a)
 
-            st.success(
-                f"**{name}** -- {h.height} holdings, "
-                f"{s.height} sectors, {a.height} asset types"
-            )
+            st.success(f"**{name}** -- {h.height} holdings, {s.height} sectors, {a.height} asset types")
             success_count += 1
         except Exception as e:
             st.error(f"**{name}** ({slug}) -- Failed: {e}")

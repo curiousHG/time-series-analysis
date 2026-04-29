@@ -1,7 +1,9 @@
 import logging
+
 import streamlit as st
-from ui.state.loaders import cached_search
+
 from ui.persistence.selections import load_selection, save_selection
+from ui.state.loaders import cached_search
 
 logger = logging.getLogger("ui.components.fund_picker")
 

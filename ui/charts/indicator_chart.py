@@ -1,5 +1,5 @@
-import plotly.express as px
 import pandas as pd
+import plotly.express as px
 
 
 def render_indicator(name, indicator):

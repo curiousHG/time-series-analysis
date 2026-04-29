@@ -1,8 +1,9 @@
 """AMFI master data store — sync, ISIN lookup, name search."""
 
 import logging
-from sqlmodel import select, col
+
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlmodel import col, select
 
 from core.database import get_session
 from core.models import AmfiScheme
@@ -33,7 +34,7 @@ def sync_amfi_master() -> int:
                     },
                 )
             )
-            session.execute(stmt)
+            session.exec(stmt)
         session.commit()
 
     logger.info("Synced %d AMFI schemes to database", len(schemes))
@@ -43,15 +44,11 @@ def sync_amfi_master() -> int:
 def lookup_by_isin(isin: str) -> AmfiScheme | None:
     """Find a scheme by ISIN (growth or reinvestment)."""
     with get_session() as session:
-        result = session.execute(
-            select(AmfiScheme).where(col(AmfiScheme.isin_growth) == isin)
-        ).scalars().first()
+        result = session.exec(select(AmfiScheme).where(col(AmfiScheme.isin_growth) == isin)).first()
         if result:
             return result
 
-        result = session.execute(
-            select(AmfiScheme).where(col(AmfiScheme.isin_reinvestment) == isin)
-        ).scalars().first()
+        result = session.exec(select(AmfiScheme).where(col(AmfiScheme.isin_reinvestment) == isin)).first()
         return result
 
 
@@ -59,18 +56,12 @@ def lookup_by_name(query: str) -> list[AmfiScheme]:
     """Search schemes by name (case-insensitive LIKE)."""
     with get_session() as session:
         return (
-            session.execute(
-                select(AmfiScheme).where(
-                    col(AmfiScheme.scheme_name).ilike(f"%{query}%")
-                )
-            )
-            .scalars()
-            .all()
+            session.exec(select(AmfiScheme).where(col(AmfiScheme.scheme_name).ilike(f"%{query}%"))).all()
         )
 
 
 def get_scheme_count() -> int:
     """Return total number of schemes in DB."""
     with get_session() as session:
-        result = session.execute(select(AmfiScheme)).scalars().all()
+        result = session.exec(select(AmfiScheme)).all()
         return len(result)

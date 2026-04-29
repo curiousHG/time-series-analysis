@@ -1,28 +1,43 @@
 """One-time migration: load existing Parquet files into PostgreSQL via ORM."""
 
 import json
-import polars as pl
 from pathlib import Path
+
+import polars as pl
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from core.database import init_schema, get_session
+from core.database import get_session, init_schema
 from core.models import (
-    MfNav, MfHolding, MfSectorAllocation, MfAssetAllocation,
-    MfRegistry, SchemeCodeMap, StockOhlcv,
+    MfAssetAllocation,
+    MfHolding,
+    MfNav,
+    MfRegistry,
+    MfSectorAllocation,
+    SchemeCodeMap,
+    StockOhlcv,
 )
 
 PARQUET_DIR = Path("data/parquet")
 
 # Polars → ORM field maps
 HOLDINGS_MAP = {
-    "schemeCode": "scheme_code", "schemeName": "scheme_name",
-    "schemeSlug": "scheme_slug", "schemeCommon": "scheme_common",
-    "portfolioDate": "portfolio_date", "instrumentName": "instrument_name",
-    "isin": "isin", "issuerName": "issuer_name",
-    "assetClass": "asset_class", "assetSubClass": "asset_sub_class",
-    "assetType": "asset_type", "weight": "weight", "value": "value",
-    "quantity": "quantity", "industry": "industry",
-    "marketCapBucket": "market_cap", "creditRating": "credit_rating",
+    "schemeCode": "scheme_code",
+    "schemeName": "scheme_name",
+    "schemeSlug": "scheme_slug",
+    "schemeCommon": "scheme_common",
+    "portfolioDate": "portfolio_date",
+    "instrumentName": "instrument_name",
+    "isin": "isin",
+    "issuerName": "issuer_name",
+    "assetClass": "asset_class",
+    "assetSubClass": "asset_sub_class",
+    "assetType": "asset_type",
+    "weight": "weight",
+    "value": "value",
+    "quantity": "quantity",
+    "industry": "industry",
+    "marketCapBucket": "market_cap",
+    "creditRating": "credit_rating",
     "creditRatingEq": "credit_rating_eq",
 }
 
@@ -56,7 +71,7 @@ def _migrate_nav():
                 .values(date=row["date"], nav=row["nav"], scheme_name=row["schemeName"])
                 .on_conflict_do_update(index_elements=["date", "scheme_name"], set_={"nav": row["nav"]})
             )
-            session.execute(stmt)
+            session.exec(stmt)
         session.commit()
     print(f"Migrated {df.height} NAV rows")
 
@@ -78,7 +93,7 @@ def _migrate_registry():
                 )
                 .on_conflict_do_nothing(index_elements=["scheme_name"])
             )
-            session.execute(stmt)
+            session.exec(stmt)
         session.commit()
     print(f"Migrated {df.height} registry entries")
 
@@ -105,14 +120,16 @@ def _migrate_sectors():
     df = pl.read_parquet(path)
     with get_session() as session:
         for row in df.iter_rows(named=True):
-            session.add(MfSectorAllocation(
-                scheme_code=row.get("schemeCode"),
-                scheme_name=row.get("schemeName"),
-                scheme_slug=row.get("schemeSlug"),
-                portfolio_date=row.get("portfolioDate"),
-                sector=row.get("sector"),
-                weight=row.get("weight"),
-            ))
+            session.add(
+                MfSectorAllocation(
+                    scheme_code=row.get("schemeCode"),
+                    scheme_name=row.get("schemeName"),
+                    scheme_slug=row.get("schemeSlug"),
+                    portfolio_date=row.get("portfolioDate"),
+                    sector=row.get("sector"),
+                    weight=row.get("weight"),
+                )
+            )
         session.commit()
     print(f"Migrated {df.height} sector rows")
 
@@ -125,14 +142,16 @@ def _migrate_assets():
     df = pl.read_parquet(path)
     with get_session() as session:
         for row in df.iter_rows(named=True):
-            session.add(MfAssetAllocation(
-                scheme_code=row.get("schemeCode"),
-                scheme_name=row.get("schemeName"),
-                scheme_slug=row.get("schemeSlug"),
-                portfolio_date=row.get("portfolioDate"),
-                asset_class=row.get("assetClass"),
-                weight=row.get("weight"),
-            ))
+            session.add(
+                MfAssetAllocation(
+                    scheme_code=row.get("schemeCode"),
+                    scheme_name=row.get("schemeName"),
+                    scheme_slug=row.get("schemeSlug"),
+                    portfolio_date=row.get("portfolioDate"),
+                    asset_class=row.get("assetClass"),
+                    weight=row.get("weight"),
+                )
+            )
         session.commit()
     print(f"Migrated {df.height} asset rows")
 
@@ -152,14 +171,17 @@ def _migrate_stocks():
                 stmt = (
                     pg_insert(StockOhlcv)
                     .values(
-                        date=row["Date"], symbol=symbol,
-                        open=row.get("Open"), high=row.get("High"),
-                        low=row.get("Low"), close=row.get("Close"),
+                        date=row["Date"],
+                        symbol=symbol,
+                        open=row.get("Open"),
+                        high=row.get("High"),
+                        low=row.get("Low"),
+                        close=row.get("Close"),
                         volume=row.get("Volume"),
                     )
                     .on_conflict_do_nothing(index_elements=["date", "symbol"])
                 )
-                session.execute(stmt)
+                session.exec(stmt)
             session.commit()
         print(f"Migrated {df.height} OHLCV rows for {symbol}")
 
@@ -178,7 +200,7 @@ def _migrate_scheme_codes():
                 .values(scheme_name=name, scheme_code=code)
                 .on_conflict_do_nothing(index_elements=["scheme_name"])
             )
-            session.execute(stmt)
+            session.exec(stmt)
         session.commit()
     print(f"Migrated {len(code_map)} scheme code mappings")
 
@@ -188,7 +210,7 @@ def _migrate_tradebook():
     if not path.exists():
         print("No tradebook CSV found, skipping")
         return
-    from data.store.tradebook import import_tradebook_csv
+    from data.repositories.tradebook import import_tradebook_csv
 
     new_count, skipped = import_tradebook_csv(str(path))
     print(f"Migrated tradebook: {new_count} new, {skipped} duplicates skipped")

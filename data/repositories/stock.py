@@ -1,9 +1,10 @@
 import logging
+from datetime import date, datetime
+
 import polars as pl
-from datetime import datetime, date
-from sqlmodel import select, col
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlmodel import col, select
 
 from core.database import get_session
 from core.models import StockOhlcv, StockRegistry
@@ -69,7 +70,7 @@ def _upsert_ohlcv(symbol: str, df: pl.DataFrame) -> None:
                     },
                 )
             )
-            session.execute(stmt)
+            session.exec(stmt)
         session.commit()
     logger.info("Saved %d OHLCV rows for %s", df.height, symbol)
 
@@ -77,19 +78,15 @@ def _upsert_ohlcv(symbol: str, df: pl.DataFrame) -> None:
 def _load_ohlcv(symbol: str, start_date: date, end_date: date) -> pl.DataFrame:
     """Load OHLCV data from database for a symbol within a date range."""
     with get_session() as session:
-        rows = (
-            session.execute(
-                select(StockOhlcv)
-                .where(
-                    col(StockOhlcv.symbol) == symbol,
-                    col(StockOhlcv.date) >= start_date,
-                    col(StockOhlcv.date) <= end_date,
-                )
-                .order_by(col(StockOhlcv.date))
+        rows = session.exec(
+            select(StockOhlcv)
+            .where(
+                col(StockOhlcv.symbol) == symbol,
+                col(StockOhlcv.date) >= start_date,
+                col(StockOhlcv.date) <= end_date,
             )
-            .scalars()
-            .all()
-        )
+            .order_by(col(StockOhlcv.date))
+        ).all()
 
     if not rows:
         return EMPTY_OHLCV.clone()
@@ -109,7 +106,7 @@ def _load_ohlcv(symbol: str, start_date: date, end_date: date) -> pl.DataFrame:
 def _get_date_range(symbol: str) -> tuple[date, date] | None:
     """Get min/max dates for a symbol in the database, or None if no data."""
     with get_session() as session:
-        row = session.execute(
+        row = session.exec(
             select(
                 func.min(col(StockOhlcv.date)),
                 func.max(col(StockOhlcv.date)),
@@ -121,9 +118,7 @@ def _get_date_range(symbol: str) -> tuple[date, date] | None:
     return row[0], row[1]
 
 
-def ensure_stock_data(
-    symbol: str, start_date: datetime | date, end_date: datetime | date
-) -> pl.DataFrame:
+def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
     """
     Smart-caching stock data loader.
     Checks DB for existing data, fetches only missing date ranges,
@@ -150,7 +145,7 @@ def ensure_stock_data(
 
 def load_stock_registry() -> pl.DataFrame:
     with get_session() as session:
-        rows = session.execute(select(StockRegistry)).scalars().all()
+        rows = session.exec(select(StockRegistry)).all()
     if not rows:
         return pl.DataFrame(
             schema={

@@ -1,9 +1,8 @@
-import polars as pl
-import streamlit as st
 import time
 from contextlib import contextmanager
 
-
+import polars as pl
+import streamlit as st
 
 
 def get_selected_registry(load_registry) -> pl.DataFrame:

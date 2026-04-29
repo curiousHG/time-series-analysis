@@ -8,7 +8,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 from streamlit_lightweight_charts import renderLightweightCharts
 
-from core.indicators import INDICATOR_REGISTRY
+from indicators import INDICATOR_REGISTRY
 
 
 def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: list[str], symbol: str):
@@ -21,18 +21,13 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
     )
 
     volume_data = json.loads(
-        sdf[["time", "Volume"]]
-        .rename(columns={"Volume": "value"})
-        .dropna()
-        .to_json(orient="records")
+        sdf[["time", "Volume"]].rename(columns={"Volume": "value"}).dropna().to_json(orient="records")
     )
 
     for i, row in enumerate(volume_data):
         if i < len(candles):
             row["color"] = (
-                "rgba(38, 166, 154, 0.5)"
-                if candles[i]["close"] >= candles[i]["open"]
-                else "rgba(239, 83, 80, 0.5)"
+                "rgba(38, 166, 154, 0.5)" if candles[i]["close"] >= candles[i]["open"] else "rgba(239, 83, 80, 0.5)"
             )
 
     chart_options = {
@@ -69,30 +64,30 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
 
     # Add overlay indicators to price chart
     for idx, (name, values) in enumerate(overlays.items()):
-        line_data = json.loads(
-            pd.DataFrame({"time": sdf["time"], "value": values})
-            .dropna()
-            .to_json(orient="records")
+        line_data = json.loads(pd.DataFrame({"time": sdf["time"], "value": values}).dropna().to_json(orient="records"))
+        series.append(
+            {
+                "type": "Line",
+                "data": line_data,
+                "options": {
+                    "color": overlay_colors[idx % len(overlay_colors)],
+                    "lineWidth": 1,
+                    "title": name,
+                },
+            }
         )
-        series.append({
-            "type": "Line",
-            "data": line_data,
-            "options": {
-                "color": overlay_colors[idx % len(overlay_colors)],
-                "lineWidth": 1,
-                "title": name,
-            },
-        })
 
     # Volume bars
-    series.append({
-        "type": "Histogram",
-        "data": volume_data,
-        "options": {
-            "priceFormat": {"type": "volume"},
-            "priceScaleId": "",
-        },
-    })
+    series.append(
+        {
+            "type": "Histogram",
+            "data": volume_data,
+            "options": {
+                "priceFormat": {"type": "volume"},
+                "priceScaleId": "",
+            },
+        }
+    )
 
     st.subheader(symbol)
     renderLightweightCharts(
@@ -137,10 +132,7 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
                             x=sdf["Date"],
                             y=values,
                             name=series_name,
-                            marker_color=[
-                                "#26a69a" if v >= 0 else "#ef5350"
-                                for v in values.fillna(0)
-                            ],
+                            marker_color=["#26a69a" if v >= 0 else "#ef5350" for v in values.fillna(0)],
                             showlegend=True,
                         ),
                         row=panel_idx,

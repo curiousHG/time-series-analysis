@@ -2,8 +2,8 @@
 
 import logging
 import sys
-from pathlib import Path
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 LOGS_DIR = Path("logs")
 MAX_BYTES = 5 * 1024 * 1024  # 5 MB per file
@@ -43,26 +43,20 @@ def setup_logging(level: int = logging.INFO):
     root.addHandler(console)
 
     # app.log — catches everything
-    app_handler = RotatingFileHandler(
-        LOGS_DIR / LOG_FILES["app"], maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT
-    )
+    app_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["app"], maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT)
     app_handler.setLevel(level)
     app_handler.setFormatter(formatter)
     root.addHandler(app_handler)
 
     # data.log — data fetchers and store
-    data_handler = RotatingFileHandler(
-        LOGS_DIR / LOG_FILES["data"], maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT
-    )
+    data_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["data"], maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT)
     data_handler.setLevel(logging.DEBUG)
     data_handler.setFormatter(formatter)
     for namespace in ("data.fetchers", "data.store"):
         logging.getLogger(namespace).addHandler(data_handler)
 
     # ui.log — UI components and views
-    ui_handler = RotatingFileHandler(
-        LOGS_DIR / LOG_FILES["ui"], maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT
-    )
+    ui_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["ui"], maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT)
     ui_handler.setLevel(logging.DEBUG)
     ui_handler.setFormatter(formatter)
     logging.getLogger("ui").addHandler(ui_handler)

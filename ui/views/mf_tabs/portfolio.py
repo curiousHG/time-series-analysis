@@ -1,10 +1,10 @@
 """Portfolio tab — orchestrates sub-tabs."""
 
-import streamlit as st
 import polars as pl
+import streamlit as st
 
-from ui.views.portfolio_tabs.helpers import get_mapped_data, build_portfolio_value_series
-from ui.views.portfolio_tabs import allocation, growth, drawdown, risk_metrics, fund_returns
+from ui.views.portfolio_tabs import allocation, drawdown, fund_returns, growth, risk_metrics
+from ui.views.portfolio_tabs.helpers import build_portfolio_value_series, get_mapped_data
 
 
 def render(txn_df: pl.DataFrame | None):

@@ -1,9 +1,9 @@
 """Allocation tab — holdings table, pie chart, P&L bar."""
 
-import streamlit as st
-import polars as pl
 import pandas as pd
 import plotly.express as px
+import polars as pl
+import streamlit as st
 
 
 def render(mapped: pl.DataFrame, nav_df: pl.DataFrame):
@@ -21,16 +21,18 @@ def render(mapped: pl.DataFrame, nav_df: pl.DataFrame):
             current_value = net_units * current_nav
             pnl = current_value - net_invested
             pnl_pct = (pnl / net_invested * 100) if net_invested > 0 else 0
-            alloc_rows.append({
-                "Fund": scheme,
-                "Invested": round(net_invested, 2),
-                "Current Value": round(current_value, 2),
-                "P&L": round(pnl, 2),
-                "P&L %": round(pnl_pct, 2),
-                "Units": round(net_units, 3),
-                "NAV": round(current_nav, 4),
-                "Allocation %": 0.0,
-            })
+            alloc_rows.append(
+                {
+                    "Fund": scheme,
+                    "Invested": round(net_invested, 2),
+                    "Current Value": round(current_value, 2),
+                    "P&L": round(pnl, 2),
+                    "P&L %": round(pnl_pct, 2),
+                    "Units": round(net_units, 3),
+                    "NAV": round(current_nav, 4),
+                    "Allocation %": 0.0,
+                }
+            )
 
     if not alloc_rows:
         st.info("No active holdings found.")
@@ -65,8 +67,11 @@ def render(mapped: pl.DataFrame, nav_df: pl.DataFrame):
     col1, col2 = st.columns(2)
     with col1:
         fig_pie = px.pie(
-            alloc_df, values="Current Value", names="Fund",
-            title="Allocation by Value", hole=0.4,
+            alloc_df,
+            values="Current Value",
+            names="Fund",
+            title="Allocation by Value",
+            hole=0.4,
         )
         fig_pie.update_traces(textposition="inside", textinfo="percent+label")
         fig_pie.update_layout(showlegend=False, height=400)
@@ -74,8 +79,12 @@ def render(mapped: pl.DataFrame, nav_df: pl.DataFrame):
 
     with col2:
         fig_pnl = px.bar(
-            alloc_df.sort_values("P&L"), x="P&L", y="Fund",
-            orientation="h", title="P&L by Fund", color="P&L",
+            alloc_df.sort_values("P&L"),
+            x="P&L",
+            y="Fund",
+            orientation="h",
+            title="P&L by Fund",
+            color="P&L",
             color_continuous_scale=["#ef4444", "#fbbf24", "#10b981"],
         )
         fig_pnl.update_layout(height=400, showlegend=False)

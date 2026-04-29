@@ -1,18 +1,14 @@
 import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-import polars as pl
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import polars as pl
 
 from mutual_funds.analytics import sector_exposure
 
 
 def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str]):
-    df = (
-        sector_exposure(sector_df, fund_slugs)
-        .sort(by="weight", descending=True)
-        .to_pandas()
-    )
+    df = sector_exposure(sector_df, fund_slugs).sort(by="weight", descending=True).to_pandas()
     return px.bar(
         df,
         x="weight",

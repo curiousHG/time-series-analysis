@@ -1,25 +1,22 @@
 import logging
+import re
+from urllib.parse import quote, quote_plus
+
 import httpx
 import polars as pl
-from urllib.parse import quote, quote_plus
 from bs4 import BeautifulSoup
-import re
-
-from mutual_funds.constants import MF_REGISTRY_URL
 
 logger = logging.getLogger("data.fetchers.mutual_fund")
 
 MFAPI_BASE_URL = "https://api.mfapi.in/mf"
 AMFI_NAV_ALL_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
+MF_REGISTRY_URL = "https://www.advisorkhoj.com/mutual-funds-research/autoSuggestAllMfSchemes"
 BASE_OVERVIEW_URL = "https://www.advisorkhoj.com/mutual-funds-research/{scheme_name}"
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Accept": "text/html",
 }
-NAV_URL = (
-    "https://www.advisorkhoj.com/mutual-funds-research/"
-    "getCompleteNavReportForFundOverview"
-)
+NAV_URL = "https://www.advisorkhoj.com/mutual-funds-research/getCompleteNavReportForFundOverview"
 
 
 def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
@@ -74,9 +71,7 @@ def resolve_mfapi_code(scheme_name: str) -> str | None:
     Returns scheme code as string, or None if no good match found.
     """
     # Use first 3-4 meaningful words for search
-    words = [
-        w for w in scheme_name.split() if len(w) > 1 and w.upper() not in ("-", "–")
-    ]
+    words = [w for w in scheme_name.split() if len(w) > 1 and w.upper() not in ("-", "–")]
     search_query = " ".join(words[:4])
 
     results = search_mfapi(search_query)
@@ -178,9 +173,7 @@ def search_advisorkhoj_schemes(query: str) -> pl.DataFrame:
             }
         )
 
-    url = (
-        "https://www.advisorkhoj.com/search" f"?page=Scheme&keyword={quote_plus(query)}"
-    )
+    url = f"https://www.advisorkhoj.com/search?page=Scheme&keyword={quote_plus(query)}"
 
     headers = {
         "User-Agent": (
@@ -250,9 +243,7 @@ def extract_launch_date(html: str) -> str:
             if match:
                 return match.group(1)
 
-    raise ValueError(
-        f"Launch Date not found on AdvisorKhoj for '{html[:80]}...' — this fund may not be supported"
-    )
+    raise ValueError(f"Launch Date not found on AdvisorKhoj for '{html[:80]}...' — this fund may not be supported")
 
 
 def build_nav_params(scheme_name: str, launch_date: str) -> dict:
@@ -278,9 +269,7 @@ def fetch_scheme_registry(query: str) -> pl.DataFrame:
         "Origin": "https://www.advisorkhoj.com",
         "Referer": "https://www.advisorkhoj.com/mutual-funds-research/",
     }
-    resp = httpx.post(
-        MF_REGISTRY_URL, timeout=30, headers=HEADERS, data=f"query={query}"
-    )
+    resp = httpx.post(MF_REGISTRY_URL, timeout=30, headers=HEADERS, data=f"query={query}")
     resp.raise_for_status()
 
     names: list[str] = resp.json()
@@ -345,16 +334,18 @@ def fetch_amfi_master() -> list[dict]:
             except ValueError:
                 pass
 
-        schemes.append({
-            "scheme_code": scheme_code,
-            "isin_growth": isin_growth,
-            "isin_reinvestment": isin_reinvestment,
-            "scheme_name": scheme_name,
-            "nav": nav,
-            "nav_date": nav_date,
-            "fund_house": current_fund_house,
-            "category": current_category,
-        })
+        schemes.append(
+            {
+                "scheme_code": scheme_code,
+                "isin_growth": isin_growth,
+                "isin_reinvestment": isin_reinvestment,
+                "scheme_name": scheme_name,
+                "nav": nav,
+                "nav_date": nav_date,
+                "fund_house": current_fund_house,
+                "category": current_category,
+            }
+        )
 
     logger.info("Parsed %d schemes from AMFI master", len(schemes))
     return schemes

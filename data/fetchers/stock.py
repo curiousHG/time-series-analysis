@@ -1,6 +1,7 @@
-import yfinance as yf
 import logging
+
 import pandas as pd
+import yfinance as yf
 
 logger = logging.getLogger("data.fetchers.stock")
 
@@ -13,14 +14,10 @@ def query_stocks(query: str) -> pd.DataFrame:
     return filtered
 
 
-def fetch_symbol_data(
-    symbol: str, start: str, end: str, interval: str = "1d"
-) -> pd.DataFrame | None:
+def fetch_symbol_data(symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame | None:
     """Fetch historical data for a given stock symbol using yfinance."""
     try:
-        data = yf.download(
-            symbol, start=start, end=end, interval=interval, multi_level_index=False
-        )
+        data = yf.download(symbol, start=start, end=end, interval=interval, multi_level_index=False)
         return data
     except Exception as e:
         logger.error(f"Error fetching data for symbol {symbol}: {e}")

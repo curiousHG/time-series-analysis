@@ -12,10 +12,10 @@ streamlit run main.py
 uv sync
 uv pip install -e .
 
-# Lint and format
+# Lint and format (ruff handles both)
 uv run ruff check . --exclude notebooks/
 uv run ruff check --fix . --exclude notebooks/
-uv run black . --exclude notebooks/
+uv run ruff format . --exclude notebooks/
 
 # Tests
 uv run pytest
@@ -26,16 +26,18 @@ uv run python scripts/migrate_parquet_to_db.py
 
 # Sync AMFI master data (14K+ mutual fund schemes with ISIN codes)
 # Also available via "Sync AMFI Master" button in Data Manager UI
-uv run python -c "from data.store.amfi import sync_amfi_master; sync_amfi_master()"
+uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi_master()"
 ```
 
 ## Architecture
 
-**Streamlit-based financial analysis dashboard** for Indian markets (NSE) with four pages:
+**Trading agent platform** for Indian markets (NSE) — Streamlit UI with strategy backtesting, portfolio analytics, and a bot framework for automated trading.
+
+### Pages
 
 1. **Portfolio** — fund allocation, P&L, growth vs Nifty/FD, drawdown, risk metrics (quantstats), fund returns
 2. **Mutual Fund Analysis** — overlap heatmap, sector exposure, return distributions, holdings treemaps, correlation
-3. **Stock Analysis** — TradingView candlestick charts, 37 TA-Lib indicators (overlays + panels)
+3. **Stock Analysis** — TradingView candlestick charts, 37 TA-Lib indicators (overlays + panels), strategy backtesting
 4. **Data Manager** — AMFI sync, tradebook CSV upload, NAV/holdings data updates
 
 ### Layer Structure
@@ -44,65 +46,71 @@ uv run python -c "from data.store.amfi import sync_amfi_master; sync_amfi_master
 main.py → ui/app.py (multi-page router, init_schema, setup_logging)
               ↓
          ui/views/
-           portfolio.py              # Portfolio page entry point
-           mutual_fund.py            # MF analysis page with tabs
-           backtest.py               # Stock analysis page
-           data_manager.py           # Data management page
-         ui/views/portfolio_tabs/    # Portfolio sub-tabs
-           helpers.py                # Shared: get_mapped_data, build_portfolio_value_series
-           allocation.py             # Holdings table, pie chart, P&L bar
-           growth.py                 # Invested over time, portfolio vs Nifty vs FD
-           drawdown.py               # Drawdown chart, underwater chart
-           risk_metrics.py           # quantstats-powered metrics (TWR-adjusted)
-           fund_returns.py           # Per-fund NAV growth, monthly heatmap
-         ui/views/mf_tabs/          # MF analysis sub-tabs
-           portfolio.py              # Orchestrator for portfolio_tabs
-           overlap.py                # Overlap heatmap + sector stack
-           returns.py                # KDE distributions + rolling returns
-           holdings.py               # Treemap + donut charts per fund
-           correlation.py            # Correlation heatmap
-         ui/components/              # Reusable sidebar widgets
-           fund_picker.py            # MF fund selector (decoupled state pattern)
-           stock_picker.py           # Stock selector
-           mutual_fund_holdings.py   # Holdings treemap + donut renderer
-           mutual_funds_rolling_returns.py
-         ui/charts/                  # Plotly chart builders
-           theme.py                  # Dark mode Plotly template (auto-registered)
-           plotters.py               # Sector stack, overlap heatmap, KDE
-           correlation_heatmap.py
-           fund_trade_comp.py
-           indicator_chart.py
-         ui/state/loaders.py         # @st.cache_data wrapped data loaders
-         ui/persistence/selections.py # File-based state (data/user/selections.json)
+           portfolio.py                # Portfolio page entry point
+           mutual_fund.py              # MF analysis page with tabs
+           stock_analysis.py           # Stock analysis page (chart + backtest)
+           data_manager.py             # Data management page
+         ui/views/portfolio_tabs/      # Portfolio sub-tabs
+           helpers.py                  # Re-exports from services/portfolio_service
+           allocation.py, growth.py, drawdown.py, risk_metrics.py, fund_returns.py
+         ui/views/mf_tabs/            # MF analysis sub-tabs
+           portfolio.py, overlap.py, returns.py, holdings.py, correlation.py
+         ui/views/stock_tabs/          # Stock analysis sub-tabs
+           chart.py                    # TradingView candlestick + indicators
+           strategy_backtest.py        # Strategy runner UI (delegates to services)
+         ui/components/                # Reusable sidebar widgets
+         ui/charts/                    # Plotly chart builders + dark theme
+         ui/state/loaders.py           # @st.cache_data wrapped data loaders
+         ui/persistence/selections.py  # File-based state (data/user/selections.json)
+              ↓
+         services/                     # Business logic layer (no Streamlit imports)
+           backtest_service.py         # run_backtest(), compute_metrics()
+           portfolio_service.py        # get_mapped_data(), build_portfolio_value_series()
               ↓
          core/
-           database.py               # SQLModel engine + Session factory
-           models.py                 # SQLModel ORM models (also Pydantic models)
-           indicators.py             # 37 TA-Lib indicators with registry pattern
-           logging_config.py         # Rotating file log setup (logs/)
-         mutual_funds/
-           analytics.py              # Overlap, sector exposure, rolling returns
-           tradebook.py              # Transaction normalization, fund mapping
-           holdings.py               # Holdings normalization from AdvisorKhoj
-           table_schema.py           # Polars schemas
-           constants.py              # Path constants
-         strategies/
-           base.py                   # Base strategy class
-           rsi.py                    # RSI strategy (vectorbt)
+           database.py                 # SQLModel engine + Session factory
+           models/                     # SQLModel ORM models (split by domain)
+             mutual_fund.py            # MfNav, MfHolding, MfRegistry, etc.
+             stock.py                  # StockOhlcv, StockRegistry
+             trading.py                # Bot, Trade, Order (bot framework)
+           config.py                   # Pydantic Settings (AppConfig)
+           enums.py                    # BotState, RunMode, OrderSide, OrderStatus, etc.
+           exceptions.py               # TradingError, DataFetchError, ExchangeError
+           logging_config.py           # Rotating file log setup (logs/)
+         indicators/                   # 37 TA-Lib indicators (split package)
+           registry.py                 # @register decorator, INDICATOR_REGISTRY, compute_indicators
+           overlays.py                 # 15 overlay indicators (SMA, EMA, BB, SAR, etc.)
+           panels.py                   # 22 panel indicators (RSI, MACD, ATR, etc.)
+         strategies/                   # Trading strategy framework
+           base.py                     # Strategy ABC (indicators, signals, stoploss)
+           rsi.py, macd.py, bollinger.py, sma_crossover.py
+         mutual_funds/                 # MF domain logic
+           analytics.py, tradebook.py, holdings.py, table_schema.py
               ↓
-         data/fetchers/
-           mutual_fund.py            # MFAPI (NAV), AdvisorKhoj (holdings), AMFI master
-           stock.py                  # yfinance + jugaad-data (NSE fallback)
-         data/store/
-           mutual_fund.py            # MF NAV, holdings, registry, fund mapping (PostgreSQL)
-           stock.py                  # Stock OHLCV (PostgreSQL)
-           amfi.py                   # AMFI master data sync + ISIN lookup
-           tradebook.py              # Tradebook import with dedup on trade_id
+         data/fetchers/                # External API clients (HTTP only, no DB)
+           mutual_fund.py              # MFAPI, AdvisorKhoj, AMFI
+           stock.py                    # yfinance + jugaad-data (NSE fallback)
+         data/repositories/            # DB CRUD (one file per aggregate)
+           nav.py                      # NAV load/save/upsert/fetch
+           holdings.py                 # Holdings/sectors/assets CRUD
+           registry.py                 # MfRegistry + SchemeCodeMap
+           fund_mapping.py             # FundMapping CRUD + auto-map
+           amfi.py                     # AMFI master sync + ISIN lookup
+           stock.py                    # Stock OHLCV CRUD + smart caching
+           tradebook.py                # Tradebook import with dedup
+              ↓
+         exchange/                     # Exchange abstraction (for bot framework)
+           base.py                     # ExchangeBase ABC
+           paper.py                    # PaperExchange (simulated fills)
+         bot/                          # Trading bot engine
+           worker.py                   # Worker (state machine: STOPPED/RUNNING/PAUSED)
+           bot.py                      # TradingBot (strategy + exchange + data)
+           data_provider.py            # Unified data interface (backtest & live)
 ```
 
 ### Database (PostgreSQL)
 
-All data is stored in PostgreSQL via SQLModel ORM. Models in `core/models.py`:
+All data is stored in PostgreSQL via SQLModel ORM. Models in `core/models/`:
 
 | Table | Purpose | Key |
 |-------|---------|-----|
@@ -117,6 +125,9 @@ All data is stored in PostgreSQL via SQLModel ORM. Models in `core/models.py`:
 | `stock_registry` | Stock metadata | symbol |
 | `mf_tradebook` | Kite/Zerodha trades (deduped by trade_id) | trade_id |
 | `fund_mapping` | trade_symbol → scheme_name | trade_symbol |
+| `bots` | Bot instances (name, strategy, state) | id |
+| `trades` | Bot trades (entry/exit, P&L) | id |
+| `orders` | Bot orders (side, price, status) | id |
 
 Connection: `DATABASE_URL` env var (default: `postgresql://harshit@localhost:5432/trading`).
 
@@ -133,12 +144,14 @@ Connection: `DATABASE_URL` env var (default: `postgresql://harshit@localhost:543
 ### Key Design Decisions
 
 - **Polars** for data processing, **Pandas** where required (TA-Lib, Plotly, quantstats)
-- **PostgreSQL** via **SQLModel** (Pydantic + SQLAlchemy) — replaced Parquet files
-- **ISIN-based auto-mapping** — tradebook ISINs → AMFI scheme codes → correct NAV data
-- **Time-weighted returns (TWR)** — risk metrics subtract cash flows to show pure market performance
-- **File-based selections** (`data/user/selections.json`) — replaced flaky browser cookies
-- **Decoupled widget state** — `_selected_schemes` (app state) + `_schemes_widget` (widget key) pattern avoids Streamlit session_state conflicts
-- **Indicator registry** — `@register` decorator in `core/indicators.py`, UI reads from `INDICATOR_REGISTRY`
+- **PostgreSQL** via **SQLModel** (Pydantic + SQLAlchemy)
+- **Services layer** — business logic separated from UI; callable by bot, CLI, and Streamlit
+- **Repository pattern** — `data/repositories/` for DB CRUD, `data/fetchers/` for HTTP
+- **Strategy registry** — `@register_strategy` decorator, `STRATEGY_REGISTRY` dict
+- **Indicator registry** — `@register` decorator in `indicators/`, UI reads from `INDICATOR_REGISTRY`
+- **Bot framework** — Worker state machine, exchange abstraction, data provider (inspired by freqtrade)
+- **Ruff** for both linting and formatting (config in `pyproject.toml`)
+- **File-based selections** (`data/user/selections.json`) for UI state persistence
 - **Rotating logs** — `logs/app.log`, `logs/data.log`, `logs/ui.log` (5MB, 3 backups)
 
 ### Package Structure
@@ -162,3 +175,14 @@ Project is installed in editable mode (`uv pip install -e .`). All packages have
 | `jugaad-data` | NSE Indian stock data |
 | `httpx` | HTTP client (API calls) |
 | `beautifulsoup4` | HTML scraping (AdvisorKhoj) |
+| `pydantic-settings` | App configuration |
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)

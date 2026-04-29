@@ -5,7 +5,6 @@ import streamlit as st
 from ui.state.loaders import load_txn_data
 from ui.views.mf_tabs import portfolio
 
-
 st.title("Portfolio")
 
 txn_df = load_txn_data()

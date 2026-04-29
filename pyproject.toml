@@ -24,15 +24,51 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "black>=25.12.0",
     "ipykernel>=7.1.0",
     "pip-check-reqs>=2.5.5",
     "pytest>=9.0.2",
     "ruff>=0.14.10",
+    "pydantic-settings>=2.0",
 ]
 
 [tool.setuptools.packages.find]
-include = ["core*", "data*", "mutual_funds*", "strategies*", "ui*", "scripts*"]
+include = [
+    "core*", "data*", "mutual_funds*", "strategies*", "ui*", "scripts*",
+    "indicators*", "services*", "exchange*", "bot*",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = ["notebooks/", ".venv/", "*.egg-info/"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "RUF",   # ruff-specific rules
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # function call in default arg (common in Streamlit/FastAPI)
+    "SIM108",# ternary operator (readability preference)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "core", "data", "mutual_funds", "strategies", "ui",
+    "indicators", "services", "exchange", "bot",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
 
 [tool.pyrefly]
 project_root = "."

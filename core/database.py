@@ -2,7 +2,8 @@
 
 import logging
 import os
-from sqlmodel import SQLModel, create_engine, Session
+
+from sqlmodel import Session, SQLModel, create_engine
 
 logger = logging.getLogger("data.store.database")
 

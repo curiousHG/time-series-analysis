@@ -1,7 +1,7 @@
 """Overlap & Allocation tab."""
 
-import streamlit as st
 import polars as pl
+import streamlit as st
 
 from mutual_funds.analytics import overlap_matrix
 from ui.charts.plotters import plot_overlap_heatmap, plot_sector_stack

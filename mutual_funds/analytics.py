@@ -1,11 +1,9 @@
-import polars as pl
 import pandas as pd
+import polars as pl
 
 
 # fund overlap
-def compute_overlap(
-    holdings_df: pl.DataFrame, fund_a_slug: str, fund_b_slug: str
-) -> float:
+def compute_overlap(holdings_df: pl.DataFrame, fund_a_slug: str, fund_b_slug: str) -> float:
     df_a = holdings_df.filter(pl.col("schemeSlug") == fund_a_slug).select(
         "instrumentName", pl.col("weight").alias("w_a")
     )
@@ -22,16 +20,10 @@ def compute_overlap(
     )
 
 
-def compute_sector_overlap(
-    sector_df: pl.DataFrame, fund_a_slug: str, fund_b_slug: str
-) -> float:
-    df_a = sector_df.filter(pl.col("schemeSlug") == fund_a_slug).select(
-        "instrumentName", pl.col("weight").alias("w_a")
-    )
+def compute_sector_overlap(sector_df: pl.DataFrame, fund_a_slug: str, fund_b_slug: str) -> float:
+    df_a = sector_df.filter(pl.col("schemeSlug") == fund_a_slug).select("instrumentName", pl.col("weight").alias("w_a"))
 
-    df_b = sector_df.filter(pl.col("schemeSlug") == fund_b_slug).select(
-        "instrumentName", pl.col("weight").alias("w_b")
-    )
+    df_b = sector_df.filter(pl.col("schemeSlug") == fund_b_slug).select("instrumentName", pl.col("weight").alias("w_b"))
 
     return (
         df_a.join(df_b, on="instrumentName", how="inner")
@@ -47,9 +39,7 @@ def overlap_matrix(holdings_df: pl.DataFrame, fund_slugs: list[str]):
     # Pre-filter holdings per slug to avoid repeated .filter() calls
     fund_holdings = {}
     for slug in fund_slugs:
-        fund_holdings[slug] = holdings_df.filter(pl.col("schemeSlug") == slug).select(
-            "instrumentName", "weight"
-        )
+        fund_holdings[slug] = holdings_df.filter(pl.col("schemeSlug") == slug).select("instrumentName", "weight")
 
     data = [[0.0] * n for _ in range(n)]
     for i in range(n):
@@ -81,9 +71,7 @@ def sector_exposure(sector_df: pl.DataFrame, fund_slugs: list[str]) -> pl.DataFr
 def missing_sectors(sector_df: pl.DataFrame, base_fund: str, compare_fund: str):
     base = sector_df.filter(pl.col("schemeSlug") == base_fund).select("sector")
 
-    compare = sector_df.filter(pl.col("schemeSlug") == compare_fund).select(
-        "sector", "weight"
-    )
+    compare = sector_df.filter(pl.col("schemeSlug") == compare_fund).select("sector", "weight")
 
     return compare.join(base, on="sector", how="anti").sort("weight", descending=True)
 

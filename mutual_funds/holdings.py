@@ -1,5 +1,6 @@
-import polars as pl
 from datetime import datetime
+
+import polars as pl
 
 from mutual_funds.table_schema import (
     ASSET_SCHEMA,
@@ -23,9 +24,7 @@ def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
                 "schemeName": h["scheme_name"],
                 "schemeSlug": slug,
                 "schemeCommon": h["scheme_amfi_common"],
-                "portfolioDate": datetime.strptime(
-                    h["portfolio_date"], "%d-%m-%Y"
-                ).date(),
+                "portfolioDate": datetime.strptime(h["portfolio_date"], "%d-%m-%Y").date(),
                 "instrumentName": h["instrument"],
                 "isin": h.get("isin") or "",
                 "issuerName": h.get("issuer_name") or "",
@@ -47,9 +46,7 @@ def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
 
     return (
         pl.DataFrame(rows)
-        .with_columns(
-            [pl.col(c).cast(t, strict=False) for c, t in HOLDINGS_SCHEMA.items()]
-        )
+        .with_columns([pl.col(c).cast(t, strict=False) for c, t in HOLDINGS_SCHEMA.items()])
         .select(HOLDINGS_SCHEMA.keys())
     )
 
@@ -69,9 +66,7 @@ def normalize_sector_allocation(resp: dict, slug: str) -> pl.DataFrame:
             "schemeCode": items[0]["scheme_code"],
             "schemeName": items[0]["scheme_name"],
             "schemeSlug": slug,
-            "portfolioDate": datetime.strptime(
-                items[0]["portfolio_date"], "%d-%m-%Y"
-            ).date(),
+            "portfolioDate": datetime.strptime(items[0]["portfolio_date"], "%d-%m-%Y").date(),
             "sector": k,
             "weight": float(v),
         }
@@ -80,9 +75,7 @@ def normalize_sector_allocation(resp: dict, slug: str) -> pl.DataFrame:
 
     return (
         pl.DataFrame(rows)
-        .with_columns(
-            [pl.col(c).cast(t, strict=False) for c, t in SECTOR_SCHEMA.items()]
-        )
+        .with_columns([pl.col(c).cast(t, strict=False) for c, t in SECTOR_SCHEMA.items()])
         .select(SECTOR_SCHEMA.keys())
     )
 
@@ -102,9 +95,7 @@ def normalize_asset_allocation(resp: dict, slug: str) -> pl.DataFrame:
             "schemeCode": items[0]["scheme_code"],
             "schemeName": items[0]["scheme_name"],
             "schemeSlug": slug,
-            "portfolioDate": datetime.strptime(
-                items[0]["portfolio_date"], "%d-%m-%Y"
-            ).date(),
+            "portfolioDate": datetime.strptime(items[0]["portfolio_date"], "%d-%m-%Y").date(),
             "assetClass": k,
             "weight": float(v),
         }
@@ -113,8 +104,6 @@ def normalize_asset_allocation(resp: dict, slug: str) -> pl.DataFrame:
 
     return (
         pl.DataFrame(rows)
-        .with_columns(
-            [pl.col(c).cast(t, strict=False) for c, t in ASSET_SCHEMA.items()]
-        )
+        .with_columns([pl.col(c).cast(t, strict=False) for c, t in ASSET_SCHEMA.items()])
         .select(ASSET_SCHEMA.keys())
     )

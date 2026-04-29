@@ -1,6 +1,6 @@
-import streamlit as st
-import polars as pl
 import plotly.express as px
+import polars as pl
+import streamlit as st
 
 
 def render_holdings_table(
@@ -44,11 +44,7 @@ def render_holdings_table(
 
     # %7B%22v%22%3A%201%2C%20%22data%22%3A%20%5B%5D%7D
 
-    s = (
-        sector_df.filter(pl.col("schemeSlug") == scheme_slug)
-        .select("sector", "weight")
-        .sort("weight", descending=True)
-    )
+    s = sector_df.filter(pl.col("schemeSlug") == scheme_slug).select("sector", "weight").sort("weight", descending=True)
 
     # --------------------
     # Asset allocation

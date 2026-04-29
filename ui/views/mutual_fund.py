@@ -2,12 +2,11 @@
 
 import streamlit as st
 
-from data.store.mutual_fund import load_registry, save_to_registry
+from data.repositories.registry import load_registry, save_to_registry
 from ui.components.fund_picker import fund_picker
 from ui.state.loaders import load_holdings_data, load_nav_data
 from ui.utils import get_selected_registry
-from ui.views.mf_tabs import overlap, returns, holdings, correlation
-
+from ui.views.mf_tabs import correlation, holdings, overlap, returns
 
 st.title("Mutual Funds")
 

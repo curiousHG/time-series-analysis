@@ -1,18 +1,22 @@
-from data.store.mutual_fund import (
-    ensure_holdings_data,
-    ensure_nav_data,
-    refresh_nav_data as _refresh_nav,
-    refresh_holdings_data as _refresh_holdings,
-)
-from data.store.stock import ensure_stock_data
+from datetime import datetime
+
+import pandas as pd
+import polars as pl
+import streamlit as st
+
 from data.fetchers.mutual_fund import search_advisorkhoj_schemes
 from data.fetchers.stock import query_stocks
-from data.store.tradebook import load_tradebook_from_db
+from data.repositories.holdings import (
+    ensure_holdings_data,
+)
+from data.repositories.holdings import (
+    refresh_holdings_data as _refresh_holdings,
+)
+from data.repositories.nav import ensure_nav_data
+from data.repositories.nav import refresh_nav_data as _refresh_nav
+from data.repositories.stock import ensure_stock_data
+from data.repositories.tradebook import load_tradebook_from_db
 from mutual_funds.tradebook import normalize_transactions
-from datetime import datetime
-import streamlit as st
-import polars as pl
-import pandas as pd
 
 
 @st.cache_data(show_spinner=False)
@@ -34,18 +38,14 @@ def load_holdings_data(scheme_slugs: list[str]):
 
 
 @st.cache_data(show_spinner=True)
-def load_stock_open_close(
-    symbols: list[str], start: datetime = None, end: datetime = None
-) -> pl.DataFrame:
+def load_stock_open_close(symbols: list[str], start: datetime = None, end: datetime = None) -> pl.DataFrame:
     frames: list[pl.DataFrame] = []
 
     for symbol in symbols:
         df = ensure_stock_data(symbol, start, end)
 
         # expected columns: date, open, close
-        df = df.select(["Date", "Open", "Close", "High", "Low", "Volume"]).with_columns(
-            pl.lit(symbol).alias("Symbol")
-        )
+        df = df.select(["Date", "Open", "Close", "High", "Low", "Volume"]).with_columns(pl.lit(symbol).alias("Symbol"))
 
         frames.append(df)
 

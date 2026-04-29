@@ -1,5 +1,5 @@
-import yfinance as yf
 import polars as pl
+import yfinance as yf
 
 
 def fetch(symbol="RELIANCE.NS"):

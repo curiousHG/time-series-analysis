@@ -1,6 +1,7 @@
 import streamlit as st
-from ui.state.loaders import cached_search_stock
+
 from ui.persistence.selections import load_selection, save_selection
+from ui.state.loaders import cached_search_stock
 
 
 def option_formatter(item: tuple[str, str]) -> str:
@@ -25,16 +26,13 @@ def on_add_selected():
 
 
 def stock_picker():
-
     st.sidebar.markdown("### Select Stocks To Analyze")
 
     if "selected_stocks" not in st.session_state:
         st.session_state.selected_stocks = load_selection("selected_stocks", [])
 
     if "selected_stocks_widget" not in st.session_state or st.session_state.pop("_load_stock_defaults", False):
-        st.session_state.selected_stocks_widget = (
-            st.session_state.selected_stocks.copy()
-        )
+        st.session_state.selected_stocks_widget = st.session_state.selected_stocks.copy()
 
     if "yfinance_symbols" not in st.session_state:
         st.session_state.yfinance_symbols = []
@@ -61,9 +59,7 @@ def stock_picker():
         with st.spinner("Searching..."):
             yf_df = cached_search_stock(query).reset_index()
 
-            st.session_state.yfinance_symbols = list(
-                zip(yf_df["symbol"], yf_df["shortName"])
-            )
+            st.session_state.yfinance_symbols = list(zip(yf_df["symbol"], yf_df["shortName"]))
     else:
         st.session_state.yfinance_symbols = []
 

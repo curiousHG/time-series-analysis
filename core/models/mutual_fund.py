@@ -1,7 +1,8 @@
-"""SQLModel ORM models — each model is also a Pydantic BaseModel."""
+"""SQLModel ORM models for mutual fund data."""
 
 import datetime
-from sqlmodel import SQLModel, Field
+
+from sqlmodel import Field, SQLModel
 
 TABLE_ARGS = {"extend_existing": True}
 
@@ -81,29 +82,6 @@ class SchemeCodeMap(SQLModel, table=True):
 
     scheme_name: str = Field(primary_key=True)
     scheme_code: str
-
-
-class StockOhlcv(SQLModel, table=True):
-    __tablename__ = "stock_ohlcv"
-    __table_args__ = TABLE_ARGS
-
-    date: datetime.date = Field(primary_key=True)
-    symbol: str = Field(primary_key=True, index=True)
-    open: float | None = None
-    high: float | None = None
-    low: float | None = None
-    close: float | None = None
-    volume: int | None = None
-
-
-class StockRegistry(SQLModel, table=True):
-    __tablename__ = "stock_registry"
-    __table_args__ = TABLE_ARGS
-
-    symbol: str = Field(primary_key=True)
-    stock_name: str | None = None
-    exchange: str | None = None
-    quote_type: str | None = None
 
 
 class AmfiScheme(SQLModel, table=True):

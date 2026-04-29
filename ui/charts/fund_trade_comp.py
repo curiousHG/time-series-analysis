@@ -2,10 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 
-def fund_trade_comp(
-    fund_df: pd.DataFrame, scheme_nav_df: pd.DataFrame, schemeName: str, symbol: str
-) -> go.Figure:
-
+def fund_trade_comp(fund_df: pd.DataFrame, scheme_nav_df: pd.DataFrame, schemeName: str, symbol: str) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -14,7 +11,7 @@ def fund_trade_comp(
             # use a downward red triangle for markers offset from the line to indicate actual trade prices
             mode="markers",
             marker=dict(symbol="triangle-down", color="Red", size=15),
-            name="Actual Price"
+            name="Actual Price",
         )
     )
     fig.add_trace(

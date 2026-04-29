@@ -1,14 +1,12 @@
-import streamlit as st
-import polars as pl
 import pandas as pd
+import polars as pl
+import streamlit as st
 
+from indicators import INDICATOR_REGISTRY, compute_indicators
 from ui.components.stock_picker import stock_picker
 from ui.state.loaders import load_stock_open_close
-from core.indicators import INDICATOR_REGISTRY, compute_indicators
-
 from ui.views.stock_tabs import chart as chart_tab
 from ui.views.stock_tabs import strategy_backtest as backtest_tab
-
 
 stock_picker()
 
