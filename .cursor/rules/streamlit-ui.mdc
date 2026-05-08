@@ -1,0 +1,13 @@
+---
+description: Streamlit UI layout, loaders, and chart conventions
+globs: ui/**/*.py
+alwaysApply: false
+---
+
+# Streamlit UI (`ui/`)
+
+- **Router:** `ui/app.py` registers pages; new top-level pages live under `ui/views/` and are added to the `pages` list there.
+- **Data:** prefer `@st.cache_data` loaders in **`ui/state/loaders.py`** (or follow existing cache patterns in the file). Loaders call **services** and **`data/repositories`** — not raw fetchers.
+- **Persistence:** user selections and similar state go through **`ui/persistence/`** (e.g. `selections.json`), not ad hoc new roots unless the user asks.
+- **Charts:** builders and theme live under **`ui/charts/`**; reuse the dark theme setup already imported via `ui/charts/theme`.
+- **Tabs:** keep sub-pages in `portfolio_tabs/`, `mf_tabs/`, `stock_tabs/` next to their parent view.

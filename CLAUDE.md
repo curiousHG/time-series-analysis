@@ -154,6 +154,26 @@ Connection: `DATABASE_URL` env var (default: `postgresql://harshit@localhost:543
 - **File-based selections** (`data/user/selections.json`) for UI state persistence
 - **Rotating logs** — `logs/app.log`, `logs/data.log`, `logs/ui.log` (5MB, 3 backups)
 
+### Data fetching policy (DB-first, fetch only the gap)
+
+**Rule**: external data is fetched only for the range or keys that are NOT already in the database. Always check the DB first, compute what's missing, fetch only the missing part, save it back, then return the result from the DB.
+
+This is the project's hard rule for any new data-source integration. Examples already following it:
+- `data/repositories/stock.py:ensure_stock_data` — looks up `(min, max)` date range per symbol in `stock_ohlcv`; fetches only forward and backward gaps. Skips fetches under `MIN_FETCH_DAYS=5` to avoid weekend/holiday noise.
+- `data/repositories/nav.py:ensure_nav_data` — fetches only schemes not already present in `mf_nav`.
+- `data/repositories/holdings.py:ensure_holdings_data` — fetches only slugs not already in `mf_holdings`.
+
+**When adding a new data source**:
+1. Define the DB table and its keys (date+symbol, scheme_name, slug, ISIN, etc.).
+2. Write `load_*` and `save_*` repo functions first.
+3. Write `ensure_*(keys, [start, end])` that: (a) queries DB for what's already cached, (b) computes the missing keys/range, (c) calls the fetcher only for that subset, (d) saves the result, (e) returns the loaded DB rows.
+4. The Streamlit/UI layer always calls `ensure_*` — never the fetcher directly.
+
+**Anti-patterns to avoid**:
+- Calling a fetcher unconditionally and relying on `@st.cache_data` TTL alone — that re-downloads after cache expiry even when the data hasn't moved.
+- Fetching the full history when only the tail is needed — see `data_manager.py` NAV update which now filters fetched rows to `date > last_known` before saving.
+- Adding a new "refresh" button that wipes-and-refills — prefer incremental upsert via `ON CONFLICT DO UPDATE`.
+
 ### Package Structure
 
 Project is installed in editable mode (`uv pip install -e .`). All packages have `__init__.py` files. Run scripts with `uv run python scripts/foo.py`.
@@ -186,3 +206,8 @@ Rules:
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
 - For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
 - After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+
+## Cursor and agents
+
+- **AGENTS.md** — short task-routing and “definition of done” for coding agents (verification, layer boundaries).
+- **`.cursor/rules/*.mdc`** — Cursor project rules (always-on + file-scoped). **`.cursorignore`** trims index noise (venv, notebooks, logs, etc.).

@@ -1,0 +1,12 @@
+---
+description: DB-first fetching and repository patterns under data/
+globs: data/**/*.py
+alwaysApply: false
+---
+
+# Data layer (`data/fetchers`, `data/repositories`)
+
+- **Fetchers** (`data/fetchers/`): HTTP and parsing only — no DB sessions, no Streamlit.
+- **Repositories** (`data/repositories/`): load/save/upsert and **`ensure_*`** entry points. Implement the project rule: query DB for cached keys/ranges, compute gaps, call the fetcher only for gaps, persist, return merged DB-backed results.
+- **Do not** add UI-only “refresh” flows that re-download full history when incremental upsert is possible; prefer `ON CONFLICT DO UPDATE` style patterns consistent with existing repos (see `nav.py`, `stock.py`, `holdings.py` for reference).
+- New external sources: define keys → repo load/save → `ensure_*` → UI/loaders call `ensure_*` only.

@@ -1,0 +1,13 @@
+---
+description: Core layers, verification, and shared Python conventions for this repo
+alwaysApply: true
+---
+
+# Trading platform — core agent rules
+
+- Treat **CLAUDE.md** as the canonical map: commands, page list, layer diagram, DB tables, and the **DB-first / `ensure_*` data policy**. Open or @-mention it before large refactors.
+- **Dependency direction:** `ui/` → `services/` and `ui/state/loaders.py` → `data/repositories/` → `core/models/`. Do not import Streamlit from `services/`. Do not call `data/fetchers/` directly from UI; go through repositories’ `ensure_*` (or loaders that wrap them).
+- **Imports:** top of file only; no lazy or inline imports unless the file already uses that pattern for a documented reason (e.g. optional heavy deps).
+- **Before claiming work is complete:** run `uv run ruff check . --exclude notebooks/` and `uv run pytest` from the repo root; fix failures or state clearly what was skipped and why.
+- **Dataframes:** prefer Polars for new pipeline-style code; use Pandas where the stack already requires it (TA-Lib, Plotly, quantstats, legacy paths).
+- **Scope:** match the user’s request; avoid drive-by refactors and unrelated files. If **graphify-out/** exists, follow the graphify section in CLAUDE.md for cross-module exploration.
