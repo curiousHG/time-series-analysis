@@ -9,8 +9,9 @@ def render_holdings_table(
     assets_df: pl.DataFrame,
     scheme_slug,
     top_n=30,
+    display_name: str | None = None,
 ):
-    st.subheader(f"📋 Portfolio Breakdown – {scheme_slug}")
+    st.subheader(f"📋 Portfolio Breakdown - {display_name or scheme_slug}")
 
     # --------------------
     # Holdings (Top N + Others)

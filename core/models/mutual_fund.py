@@ -73,6 +73,7 @@ class MfRegistry(SQLModel, table=True):
 
     scheme_name: str = Field(primary_key=True)
     scheme_slug: str
+    short_name: str | None = None
     source: str = "advisorkhoj"
 
 
@@ -104,6 +105,30 @@ class FundMapping(SQLModel, table=True):
 
     trade_symbol: str = Field(primary_key=True)
     mapped_nav_fund: str | None = None
+
+
+class MfMetadata(SQLModel, table=True):
+    __tablename__ = "mf_metadata"
+    __table_args__ = TABLE_ARGS
+
+    scheme_name: str = Field(primary_key=True)
+    aum_crores: float | None = None  # Total Assets in ₹ Cr
+    aum_as_of: datetime.date | None = None  # AUM disclosure date
+    expense_ratio: float | None = None  # TER %
+    expense_ratio_as_of: datetime.date | None = None
+    fund_manager: str | None = None
+    benchmark: str | None = None
+    launch_date: datetime.date | None = None
+    exit_load: str | None = None  # full exit load schedule (long text)
+    category: str | None = None
+    asset_class: str | None = None
+    status: str | None = None  # Open Ended / Close Ended
+    min_investment: float | None = None
+    min_topup: float | None = None
+    turnover_ratio: float | None = None  # %
+    fund_house: str | None = None
+    source_url: str | None = None
+    fetched_at: datetime.datetime | None = None
 
 
 class MfTradebook(SQLModel, table=True):

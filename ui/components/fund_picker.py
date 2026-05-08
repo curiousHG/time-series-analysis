@@ -2,6 +2,7 @@ import logging
 
 import streamlit as st
 
+from services.portfolio_holdings import get_active_portfolio_schemes
 from ui.persistence.selections import load_selection, save_selection
 from ui.state.loaders import cached_search
 
@@ -12,8 +13,19 @@ logger = logging.getLogger("ui.components.fund_picker")
 
 
 def _init_schemes():
-    """Initialize app state from disk on first run."""
-    if "_selected_schemes" not in st.session_state:
+    """Initialize app state on first run.
+
+    Default to the user's active tradebook portfolio (schemes with net qty > 0).
+    Falls back to a previously saved selection only if no portfolio is detected.
+    """
+    if "_selected_schemes" in st.session_state:
+        return
+
+    portfolio = get_active_portfolio_schemes()
+    if portfolio:
+        st.session_state._selected_schemes = portfolio
+        save_selection("selected_schemes", portfolio)
+    else:
         st.session_state._selected_schemes = load_selection("selected_schemes", [])
 
 
@@ -75,7 +87,16 @@ def fund_picker(
     st.sidebar.markdown("### Select MFs To Analyze")
 
     # ---- base options from registry
-    registry_names = load_registry()["schemeName"].to_list()
+    registry_df = load_registry()
+    registry_names = registry_df["schemeName"].to_list()
+    name_to_short = (
+        dict(zip(registry_df["schemeName"].to_list(), registry_df["shortName"].to_list(), strict=False))
+        if "shortName" in registry_df.columns
+        else {}
+    )
+
+    def _label(name: str) -> str:
+        return name_to_short.get(name, name)
 
     options = sorted(set(registry_names) | set(st.session_state._selected_schemes))
 
@@ -88,6 +109,7 @@ def fund_picker(
         default=default,
         key="_schemes_widget",
         on_change=_on_widget_change,
+        format_func=_label,
     )
 
     # ---------- AdvisorKhoj search ----------
@@ -111,6 +133,7 @@ def fund_picker(
             "Search results",
             options=st.session_state.ak_results,
             key="ak_selected",
+            format_func=_label,
         )
 
         st.sidebar.button("Add selected", on_click=_on_add_funds)
@@ -126,14 +149,14 @@ def fund_picker(
     if dc1.button("Save as default", key="save_default_funds", use_container_width=True):
         save_selection("default_schemes", st.session_state._selected_schemes)
         st.sidebar.success(f"Saved {len(st.session_state._selected_schemes)} funds as default")
-    if dc2.button("Load defaults", key="load_default_funds", use_container_width=True):
-        defaults = load_selection("default_schemes", [])
-        if defaults:
-            st.session_state._selected_schemes = defaults
-            save_selection("selected_schemes", defaults)
+    if dc2.button("Load portfolio", key="load_portfolio_funds", use_container_width=True):
+        portfolio = get_active_portfolio_schemes()
+        if portfolio:
+            st.session_state._selected_schemes = portfolio
+            save_selection("selected_schemes", portfolio)
             st.session_state._load_fund_defaults = True
             st.rerun()
         else:
-            st.sidebar.warning("No defaults saved yet")
+            st.sidebar.warning("No active portfolio holdings — upload tradebook in Data Manager")
 
     return st.session_state._selected_schemes

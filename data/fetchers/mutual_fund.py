@@ -10,7 +10,6 @@ logger = logging.getLogger("data.fetchers.mutual_fund")
 
 MFAPI_BASE_URL = "https://api.mfapi.in/mf"
 AMFI_NAV_ALL_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
-MF_REGISTRY_URL = "https://www.advisorkhoj.com/mutual-funds-research/autoSuggestAllMfSchemes"
 BASE_OVERVIEW_URL = "https://www.advisorkhoj.com/mutual-funds-research/{scheme_name}"
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
@@ -217,6 +216,114 @@ def search_advisorkhoj_schemes(query: str) -> pl.DataFrame:
     return pl.DataFrame(rows).unique(subset=["schemeName"])
 
 
+def fetch_fund_metadata(scheme_name: str) -> dict:
+    """Scrape AdvisorKhoj fund overview page → metadata dict.
+
+    Returns: {scheme_name, aum_crores, aum_as_of, expense_ratio, expense_ratio_as_of,
+              benchmark, launch_date, category, asset_class, status, min_investment,
+              min_topup, turnover_ratio, exit_load, fund_house, source_url}
+    Fields not found are returned as None.
+    """
+    from datetime import datetime as dt
+
+    html = fetch_fund_overview_html(scheme_name)
+    soup = BeautifulSoup(html, "html.parser")
+    url = BASE_OVERVIEW_URL.format(scheme_name=quote(scheme_name))
+
+    out: dict = {
+        "scheme_name": scheme_name,
+        "aum_crores": None,
+        "aum_as_of": None,
+        "expense_ratio": None,
+        "expense_ratio_as_of": None,
+        "benchmark": None,
+        "launch_date": None,
+        "category": None,
+        "asset_class": None,
+        "status": None,
+        "min_investment": None,
+        "min_topup": None,
+        "turnover_ratio": None,
+        "exit_load": None,
+        "fund_house": None,
+        "source_url": url,
+    }
+
+    # Pull all label/value cells from the overview tables.
+    cells: list[str] = []
+    for table in soup.select("table.sch_over_table"):
+        for td in table.select("td"):
+            cells.append(td.get_text(" ", strip=True))
+
+    def _find(prefix: str) -> str | None:
+        for c in cells:
+            if c.lower().startswith(prefix.lower()):
+                return c.split(":", 1)[1].strip() if ":" in c else None
+        return None
+
+    def _parse_date(s: str | None) -> "datetime.date | None":
+        if not s:
+            return None
+        for fmt in ("%d-%m-%Y", "%d-%b-%Y", "%d/%m/%Y"):
+            try:
+                return dt.strptime(s.strip(), fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    def _parse_float(s: str | None) -> float | None:
+        if not s:
+            return None
+        m = re.search(r"-?\d[\d,]*\.?\d*", s.replace(",", ""))
+        return float(m.group()) if m else None
+
+    out["category"] = _find("Category")
+    out["asset_class"] = _find("Asset Class")
+    out["benchmark"] = _find("Benchmark")
+    out["status"] = _find("Status")
+    out["launch_date"] = _parse_date(_find("Launch Date"))
+    out["min_investment"] = _parse_float(_find("Minimum Investment"))
+    out["min_topup"] = _parse_float(_find("Minimum Topup"))
+
+    # TER: "0.62% As on (30-03-2026)"
+    ter_raw = _find("TER")
+    if ter_raw:
+        out["expense_ratio"] = _parse_float(ter_raw)
+        m = re.search(r"\((\d{2}-\d{2}-\d{4})\)", ter_raw)
+        if m:
+            out["expense_ratio_as_of"] = _parse_date(m.group(1))
+
+    # Total Assets: "128,966.48 Cr As on 31-03-2026(Source:AMFI)"
+    aum_raw = _find("Total Assets")
+    if aum_raw:
+        out["aum_crores"] = _parse_float(aum_raw)
+        m = re.search(r"(\d{2}-\d{2}-\d{4})", aum_raw)
+        if m:
+            out["aum_as_of"] = _parse_date(m.group(1))
+
+    # Turnover: "46.5%"
+    turnover_raw = _find("Turn over") or _find("Turnover")
+    if turnover_raw:
+        out["turnover_ratio"] = _parse_float(turnover_raw)
+
+    # Exit Load — capital-E "Exit Load:" is the structured field; lowercase
+    # "exit load:" appears inline in the schedule text and shouldn't terminate the match.
+    # Also skip the short "Exit Load: Yes/No/Nil" indicator if a longer one follows.
+    joined = " ".join(cells)
+    candidates = []
+    for m in re.finditer(r"Exit Load\s*:\s*(.+?)(?=Exit Load\s*:|Turn ?over\s*:|$)", joined, re.DOTALL):
+        cleaned = re.sub(r"\s+", " ", m.group(1)).strip()
+        if cleaned:
+            candidates.append(cleaned)
+    if candidates:
+        # Prefer the longest candidate; if all are short tokens like "Yes"/"Nil", keep that.
+        out["exit_load"] = max(candidates, key=len)[:1000]
+
+    # fund_house intentionally left None here — the repository layer fills it
+    # from `amfi_schemes` (already populated by AMFI master sync).
+    return out
+
+
 def fetch_fund_overview_html(scheme_name: str) -> str:
     """
     scheme_name example:
@@ -256,25 +363,6 @@ def build_nav_params(scheme_name: str, launch_date: str) -> dict:
         "scheme_amfi_name": encoded,
         "scheme_inception_date": launch_date,
     }
-
-
-def fetch_scheme_registry(query: str) -> pl.DataFrame:
-    """
-    Fetch all mutual fund scheme codes and names from AMFI
-    and add AdvisorKhoj-compatible slug
-    """
-    HEADERS = {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "X-Requested-With": "XMLHttpRequest",
-        "Origin": "https://www.advisorkhoj.com",
-        "Referer": "https://www.advisorkhoj.com/mutual-funds-research/",
-    }
-    resp = httpx.post(MF_REGISTRY_URL, timeout=30, headers=HEADERS, data=f"query={query}")
-    resp.raise_for_status()
-
-    names: list[str] = resp.json()
-
-    return pl.DataFrame({"schemeName": names})
 
 
 def fetch_amfi_master() -> list[dict]:

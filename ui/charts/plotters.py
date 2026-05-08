@@ -4,22 +4,44 @@ import plotly.express as px
 import plotly.graph_objects as go
 import polars as pl
 
-from mutual_funds.analytics import sector_exposure
+from mutual_funds.analytics import sector_exposure, sector_exposure_average
 
 
-def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str]):
+def plot_sector_stack(sector_df: pl.DataFrame, fund_slugs: list[str], slug_to_short: dict[str, str] | None = None):
     df = sector_exposure(sector_df, fund_slugs).sort(by="weight", descending=True).to_pandas()
-    return px.bar(
+    if slug_to_short:
+        df["fund"] = df["schemeSlug"].map(lambda s: slug_to_short.get(s, s))
+        color_col = "fund"
+    else:
+        color_col = "schemeSlug"
+    fig = px.bar(
         df,
         x="weight",
         y="sector",
-        color="schemeSlug",
+        color=color_col,
         orientation="h",
-        title="Sector Exposure Comparison",
+        barmode="group",
+        title="Sector Exposure by Fund",
     )
+    return fig.update_layout(xaxis_title="Weight (% of fund)")
 
 
-def plot_overlap_heatmap(matrix: pd.DataFrame):
+def plot_sector_average(sector_df: pl.DataFrame, fund_slugs: list[str]):
+    df = sector_exposure_average(sector_df, fund_slugs).to_pandas()
+    fig = px.pie(
+        df,
+        values="avg_weight",
+        names="sector",
+        title=f"Average Sector Exposure (across {len(fund_slugs)} selected funds)",
+        hover_data=["fund_count"],
+    )
+    return fig.update_traces(textposition="inside", textinfo="percent+label")
+
+
+def plot_overlap_heatmap(matrix: pd.DataFrame, slug_to_short: dict[str, str] | None = None):
+    if slug_to_short:
+        rename_map = {s: slug_to_short.get(s, s) for s in matrix.columns}
+        matrix = matrix.rename(index=rename_map, columns=rename_map)
     fig = px.imshow(
         matrix,
         text_auto=".1f",

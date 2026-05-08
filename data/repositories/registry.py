@@ -8,6 +8,7 @@ from sqlmodel import col, select
 
 from core.database import get_session
 from core.models import MfRegistry
+from mutual_funds.display import short_scheme_name
 
 logger = logging.getLogger("data.repositories.registry")
 
@@ -20,11 +21,14 @@ def load_registry() -> pl.DataFrame:
     with get_session() as session:
         rows = session.exec(select(MfRegistry).order_by(col(MfRegistry.scheme_name))).all()
     if not rows:
-        return pl.DataFrame(schema={"schemeName": pl.Utf8, "schemeSlug": pl.Utf8, "source": pl.Utf8})
+        return pl.DataFrame(
+            schema={"schemeName": pl.Utf8, "schemeSlug": pl.Utf8, "shortName": pl.Utf8, "source": pl.Utf8}
+        )
     return pl.DataFrame(
         {
             "schemeName": [r.scheme_name for r in rows],
             "schemeSlug": [r.scheme_slug for r in rows],
+            "shortName": [r.short_name or short_scheme_name(r.scheme_name) for r in rows],
             "source": [r.source for r in rows],
         }
     )
@@ -37,7 +41,12 @@ def save_to_registry(names: list[str]):
         for name in names:
             stmt = (
                 pg_insert(MfRegistry)
-                .values(scheme_name=name, scheme_slug=make_slug(name), source="advisorkhoj")
+                .values(
+                    scheme_name=name,
+                    scheme_slug=make_slug(name),
+                    short_name=short_scheme_name(name),
+                    source="advisorkhoj",
+                )
                 .on_conflict_do_nothing(index_elements=["scheme_name"])
             )
             session.exec(stmt)

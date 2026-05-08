@@ -3,6 +3,8 @@
 import streamlit as st
 
 from data.repositories.registry import load_registry, save_to_registry
+from ui.components import funds_library
+from ui.components.freshness_banner import render_freshness_banner
 from ui.components.fund_picker import fund_picker
 from ui.state.loaders import load_holdings_data, load_nav_data
 from ui.utils import get_selected_registry
@@ -15,6 +17,9 @@ fund_picker(load_registry=load_registry, save_to_registry=save_to_registry)
 selected_registry = get_selected_registry(load_registry)
 selected_scheme_names = selected_registry["schemeName"].to_list()
 selected_scheme_slugs = selected_registry["schemeSlug"].to_list()
+
+render_freshness_banner(selected_scheme_names, selected_scheme_slugs)
+funds_library.render(selected_registry)
 
 # ---- cached data loads
 nav_df = load_nav_data(selected_scheme_names)
@@ -29,13 +34,13 @@ tab_overlap, tab_returns, tab_holdings, tab_corr = st.tabs(
 )
 
 with tab_overlap:
-    overlap.render(holdings_df, sectors_df, selected_scheme_slugs)
+    overlap.render(holdings_df, sectors_df, selected_registry)
 
 with tab_returns:
     returns.render(nav_pd, selected_registry, nav_df)
 
 with tab_holdings:
-    holdings.render(holdings_df, sectors_df, assets_df, selected_scheme_slugs)
+    holdings.render(holdings_df, sectors_df, assets_df, selected_registry)
 
 with tab_corr:
     correlation.render(nav_pd)

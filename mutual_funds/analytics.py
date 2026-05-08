@@ -68,6 +68,25 @@ def sector_exposure(sector_df: pl.DataFrame, fund_slugs: list[str]) -> pl.DataFr
     )
 
 
+def sector_exposure_average(sector_df: pl.DataFrame, fund_slugs: list[str]) -> pl.DataFrame:
+    """Average sector weight across the selected funds.
+
+    Each fund's per-sector weights already sum to ~100, so averaging across
+    funds is a normalized portfolio-level read of sector exposure (assuming
+    equal-weighted across the selected funds).
+    """
+    n = max(len(fund_slugs), 1)
+    return (
+        sector_df.filter(pl.col("schemeSlug").is_in(fund_slugs))
+        .group_by("sector")
+        .agg(
+            (pl.sum("weight") / n).alias("avg_weight"),
+            pl.col("schemeSlug").n_unique().alias("fund_count"),
+        )
+        .sort("avg_weight", descending=True)
+    )
+
+
 def missing_sectors(sector_df: pl.DataFrame, base_fund: str, compare_fund: str):
     base = sector_df.filter(pl.col("schemeSlug") == base_fund).select("sector")
 

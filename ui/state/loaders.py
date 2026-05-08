@@ -37,6 +37,19 @@ def load_holdings_data(scheme_slugs: list[str]):
     return ensure_holdings_data(scheme_slugs)
 
 
+@st.cache_data(ttl=3600, show_spinner="Loading Nifty 50…")
+def load_nifty_returns(start: datetime | None = None, end: datetime | None = None) -> pd.Series:
+    """Daily Nifty 50 percent-change series (date-indexed). Returns empty Series on fetch failure."""
+    try:
+        df = ensure_stock_data("^NSEI", start, end)
+    except Exception:
+        return pd.Series(dtype="float64", name="nifty")
+    if df.is_empty():
+        return pd.Series(dtype="float64", name="nifty")
+    pdf = df.select(["Date", "Close"]).to_pandas().set_index("Date").sort_index()
+    return pdf["Close"].pct_change().dropna().rename("nifty")
+
+
 @st.cache_data(show_spinner=True)
 def load_stock_open_close(symbols: list[str], start: datetime = None, end: datetime = None) -> pl.DataFrame:
     frames: list[pl.DataFrame] = []
@@ -67,6 +80,13 @@ def load_stock_open_close(symbols: list[str], start: datetime = None, end: datet
 @st.cache_data(ttl=24 * 3600)
 def cached_search(query: str):
     return search_advisorkhoj_schemes(query)
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def load_metadata_cached(scheme_names: tuple[str, ...]) -> pl.DataFrame:
+    from data.repositories.metadata import load_metadata
+
+    return load_metadata(list(scheme_names))
 
 
 @st.cache_data(ttl=24 * 3600)

@@ -10,11 +10,16 @@ def render(
     holdings_df: pl.DataFrame,
     sectors_df: pl.DataFrame,
     assets_df: pl.DataFrame,
-    slugs: list[str],
+    selected_registry: pl.DataFrame,
 ):
     if not holdings_df.height:
         st.info("No holdings data. Fetch it from the Data Manager page.")
         return
 
-    for scheme in slugs:
-        render_holdings_table(holdings_df, sectors_df, assets_df, scheme)
+    slug_to_short = (
+        dict(zip(selected_registry["schemeSlug"].to_list(), selected_registry["shortName"].to_list(), strict=False))
+        if "shortName" in selected_registry.columns
+        else {}
+    )
+    for slug in selected_registry["schemeSlug"].to_list():
+        render_holdings_table(holdings_df, sectors_df, assets_df, slug, display_name=slug_to_short.get(slug, slug))

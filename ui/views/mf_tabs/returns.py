@@ -13,6 +13,7 @@ def render(nav_pd: pd.DataFrame, selected_registry: pl.DataFrame, nav_df: pl.Dat
         st.info("No NAV data available.")
         return
 
-    pct = nav_pd.pivot(index="date", columns="schemeName", values="nav").pct_change().dropna()
+    label_col = "shortName" if "shortName" in nav_pd.columns else "schemeName"
+    pct = nav_pd.pivot(index="date", columns=label_col, values="nav").pct_change(fill_method=None).dropna()
     st.plotly_chart(plot_kde_returns(pct), use_container_width=True, key="kde-returns")
     show_rolling_returns_info(selected_registry, nav_df)

@@ -14,6 +14,7 @@ from data.fetchers.mutual_fund import (
     fetch_nav_from_mfapi,
     resolve_mfapi_code,
 )
+from data.repositories.amfi import lookup_scheme_code_by_exact_name
 
 logger = logging.getLogger("data.repositories.nav")
 
@@ -45,6 +46,13 @@ def _save_scheme_code_map(code_map: dict[str, str]):
 def _get_or_resolve_scheme_code(scheme_name: str, code_map: dict[str, str]) -> str | None:
     if scheme_name in code_map:
         return code_map[scheme_name]
+    # Fast path: exact match in AMFI master (one DB query, no network).
+    # MFAPI uses the same scheme_code as AMFI, so this is sufficient for any AMFI-listed scheme.
+    code = lookup_scheme_code_by_exact_name(scheme_name)
+    if code:
+        code_map[scheme_name] = code
+        return code
+    # Fallback: fuzzy MFAPI search for schemes not in AMFI master (rare).
     code = resolve_mfapi_code(scheme_name)
     if code:
         code_map[scheme_name] = code

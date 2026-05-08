@@ -1,6 +1,6 @@
 import traceback
-from datetime import datetime
 
+import pandas as pd
 import polars as pl
 import streamlit as st
 
@@ -27,6 +27,9 @@ from mutual_funds.holdings import (
     normalize_holdings,
     normalize_sector_allocation,
 )
+from services.data_freshness import compute_holdings_freshness, compute_nav_freshness
+from services.db_stats import get_db_stats
+from ui.components.freshness_banner import clear_freshness_cache
 from ui.components.fund_picker import fund_picker
 from ui.state.loaders import load_holdings_data, load_nav_data, load_txn_data
 from ui.utils import get_selected_registry
@@ -47,67 +50,83 @@ if selected_registry.height == 0:
 
 scheme_names = selected_registry["schemeName"].to_list()
 scheme_slugs = selected_registry["schemeSlug"].to_list()
+short_by_name = (
+    dict(zip(selected_registry["schemeName"].to_list(), selected_registry["shortName"].to_list(), strict=False))
+    if "shortName" in selected_registry.columns
+    else {n: n for n in scheme_names}
+)
 
 # ---- Load existing data from DB to show status
 nav_df = load_nav_df(scheme_names)
 holdings_df = load_holdings(scheme_slugs)
 
-# ---- Build status table
+nav_report = compute_nav_freshness(scheme_names, scheme_slugs)
+holdings_report = compute_holdings_freshness(scheme_names, scheme_slugs)
+
+_STATUS_STYLES = {
+    "Fresh": "background-color: #86efac; color: #14532d",
+    "Stale": "background-color: #fde68a; color: #78350f",
+    "Missing": "background-color: #fca5a5; color: #7f1d1d",
+}
+
+
+def _color_status(val: str) -> str:
+    return _STATUS_STYLES.get(val, "")
+
+
+st.caption(f"Current date: {nav_report.current_date}")
+
+# ---- NAV status table
 st.subheader("NAV Data Status")
+st.write(f"Stale: **{nav_report.stale_count} / {nav_report.total}**")
 
 nav_status_rows = []
-for name, slug in zip(scheme_names, scheme_slugs):
-    scheme_nav = nav_df.filter(pl.col("schemeName") == name)
-    if scheme_nav.height > 0:
-        dates = scheme_nav.select("date").to_series()
-        nav_status_rows.append(
-            {
-                "Fund": name,
-                "Slug": slug,
-                "Records": scheme_nav.height,
-                "First Date": str(dates.min()),
-                "Last Date": str(dates.max()),
-                "Days Old": (datetime.today().date() - dates.max()).days,
-            }
-        )
-    else:
-        nav_status_rows.append(
-            {
-                "Fund": name,
-                "Slug": slug,
-                "Records": 0,
-                "First Date": "-",
-                "Last Date": "-",
-                "Days Old": None,
-            }
-        )
+for row in nav_report.rows:
+    scheme_nav = nav_df.filter(pl.col("schemeName") == row.scheme_name)
+    first_date = str(scheme_nav.select("date").to_series().min()) if scheme_nav.height > 0 else "-"
+    nav_status_rows.append(
+        {
+            "Fund": short_by_name.get(row.scheme_name, row.scheme_name),
+            "Slug": row.slug,
+            "Records": scheme_nav.height,
+            "First Date": first_date,
+            "Last Date": str(row.last_date) if row.last_date else "-",
+            "Days Old": row.days_old,
+            "Status": row.status.capitalize(),
+        }
+    )
 
-nav_status_df = pl.DataFrame(nav_status_rows)
+nav_status_pd = pl.DataFrame(nav_status_rows).to_pandas()
 st.dataframe(
-    nav_status_df,
+    nav_status_pd.style.map(_color_status, subset=["Status"]),
     use_container_width=True,
     hide_index=True,
-    column_config={
-        "Days Old": st.column_config.NumberColumn(help="Days since last available NAV data point"),
-    },
 )
 
 # ---- Holdings status
 st.subheader("Holdings Data Status")
+st.write(f"Stale: **{holdings_report.stale_count} / {holdings_report.total}**")
 
 holdings_status_rows = []
-for name, slug in zip(scheme_names, scheme_slugs):
-    scheme_holdings = holdings_df.filter(pl.col("schemeSlug") == slug)
+for row in holdings_report.rows:
+    scheme_holdings = holdings_df.filter(pl.col("schemeSlug") == row.slug)
     holdings_status_rows.append(
         {
-            "Fund": name,
-            "Slug": slug,
+            "Fund": short_by_name.get(row.scheme_name, row.scheme_name),
+            "Slug": row.slug,
             "Holdings Count": scheme_holdings.height,
+            "Last Portfolio Date": str(row.last_date) if row.last_date else "-",
+            "Days Old": row.days_old,
+            "Status": row.status.capitalize(),
         }
     )
 
-holdings_status_df = pl.DataFrame(holdings_status_rows)
-st.dataframe(holdings_status_df, use_container_width=True, hide_index=True)
+holdings_status_pd = pl.DataFrame(holdings_status_rows).to_pandas()
+st.dataframe(
+    holdings_status_pd.style.map(_color_status, subset=["Status"]),
+    use_container_width=True,
+    hide_index=True,
+)
 
 # ---- Update controls
 st.divider()
@@ -122,28 +141,39 @@ if update_nav or update_all:
     st.markdown("#### NAV Update Progress")
     code_map = _load_scheme_code_map()
 
-    # Delete existing NAV for selected schemes
-    from sqlmodel import delete
-
-    from core.database import get_session
-    from core.models import MfAssetAllocation, MfHolding, MfNav, MfSectorAllocation
-
-    with get_session() as session:
-        session.exec(delete(MfNav).where(MfNav.scheme_name.in_(scheme_names)))
-        session.commit()
+    last_date_by_scheme = {row.scheme_name: row.last_date for row in nav_report.rows}
 
     progress = st.progress(0, text="Starting NAV updates...")
-    success_count = 0
+    new_records_total = 0
+    updated_count = 0
+    skipped_count = 0
 
     for i, name in enumerate(scheme_names):
         progress.progress(i / len(scheme_names), text=f"Fetching NAV: {name}")
 
         try:
             df = _fetch_single_nav(name, code_map)
+            last_known = last_date_by_scheme.get(name)
+            api_max = df.select("date").to_series().max() if df.height > 0 else None
+
+            if last_known is not None:
+                df = df.filter(pl.col("date") > last_known)
+
+            if df.height == 0:
+                if api_max is None:
+                    st.warning(f"**{name}** -- source returned no NAV rows")
+                elif last_known is not None and api_max <= last_known:
+                    st.info(f"**{name}** -- source up to {api_max}; DB already at {last_known}")
+                else:
+                    st.info(f"**{name}** -- already up to date (source: {api_max})")
+                skipped_count += 1
+                continue
+
             save_nav_df(df)
             dates = df.select("date").to_series()
-            st.success(f"**{name}** -- {df.height} records, {dates.min()} to {dates.max()}")
-            success_count += 1
+            st.success(f"**{name}** -- {df.height} new rows, {dates.min()} to {dates.max()}")
+            new_records_total += df.height
+            updated_count += 1
         except Exception as e:
             st.error(f"**{name}** -- Failed: {e}")
             with st.expander("Error details"):
@@ -152,7 +182,9 @@ if update_nav or update_all:
     progress.progress(1.0, text="Done!")
     _save_scheme_code_map(code_map)
     load_nav_data.clear()
-    st.toast(f"Saved NAV data for {success_count}/{len(scheme_names)} funds")
+    clear_freshness_cache()
+    st.toast(f"NAV: {updated_count} updated ({new_records_total} new rows), {skipped_count} already current")
+    st.rerun()
 
 
 if update_holdings or update_all:
@@ -196,7 +228,9 @@ if update_holdings or update_all:
 
     progress.progress(1.0, text="Done!")
     load_holdings_data.clear()
+    clear_freshness_cache()
     st.toast(f"Saved holdings data for {success_count}/{len(scheme_slugs)} funds")
+    st.rerun()
 
 # ==== AMFI Master Section ====
 st.divider()
@@ -262,3 +296,35 @@ if stats["total_trades"] > 0 and amfi_count > 0:
             load_nav_data.clear()
         else:
             st.warning("No ISINs could be mapped.")
+
+# ==== Database Statistics ====
+st.divider()
+st.subheader("Database Statistics")
+
+db_stats = get_db_stats()
+
+m1, m2, m3 = st.columns(3)
+m1.metric("Database", db_stats.db_name)
+m2.metric("Total size", db_stats.db_pretty)
+m3.metric("Tables", db_stats.table_count)
+
+table_stats_pd = pd.DataFrame(
+    [
+        {
+            "Table": t.name,
+            "Rows": t.rows,
+            "Size": t.total_pretty,
+            "Bytes": t.total_bytes,
+        }
+        for t in db_stats.tables
+    ]
+)
+st.dataframe(
+    table_stats_pd,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Rows": st.column_config.NumberColumn(format="%d"),
+        "Bytes": st.column_config.NumberColumn(help="Total bytes (table + indexes + toast)", format="%d"),
+    },
+)

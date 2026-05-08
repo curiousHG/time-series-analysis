@@ -55,9 +55,14 @@ def lookup_by_isin(isin: str) -> AmfiScheme | None:
 def lookup_by_name(query: str) -> list[AmfiScheme]:
     """Search schemes by name (case-insensitive LIKE)."""
     with get_session() as session:
-        return (
-            session.exec(select(AmfiScheme).where(col(AmfiScheme.scheme_name).ilike(f"%{query}%"))).all()
-        )
+        return list(session.exec(select(AmfiScheme).where(col(AmfiScheme.scheme_name).ilike(f"%{query}%"))).all())
+
+
+def lookup_scheme_code_by_exact_name(name: str) -> str | None:
+    """Exact-name lookup → MFAPI/AMFI scheme_code, or None if not found."""
+    with get_session() as session:
+        row = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == name)).first()
+    return str(row) if row else None
 
 
 def get_scheme_count() -> int:

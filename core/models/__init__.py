@@ -5,6 +5,7 @@ from core.models.mutual_fund import (  # noqa: F401
     FundMapping,
     MfAssetAllocation,
     MfHolding,
+    MfMetadata,
     MfNav,
     MfRegistry,
     MfSectorAllocation,

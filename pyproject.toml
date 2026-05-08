@@ -18,8 +18,10 @@ dependencies = [
     "sqlmodel>=0.0.22",
     "ta-lib>=0.6",
     "quantstats>=0.0.77",
+    "scipy>=1.13",
     "jugaad-data>=0.30",
     "streamlit-lightweight-charts>=0.7",
+    "watchdog>=6.0.0",
 ]
 
 [dependency-groups]
