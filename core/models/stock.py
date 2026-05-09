@@ -2,6 +2,7 @@
 
 import datetime
 
+from sqlalchemy import BigInteger, Column
 from sqlmodel import Field, SQLModel
 
 TABLE_ARGS = {"extend_existing": True}
@@ -17,7 +18,8 @@ class StockOhlcv(SQLModel, table=True):
     high: float | None = None
     low: float | None = None
     close: float | None = None
-    volume: int | None = None
+    # BigInteger required — index volumes (Nifty 100, etc.) routinely exceed 32-bit INTEGER's ~2.1B max.
+    volume: int | None = Field(default=None, sa_column=Column(BigInteger, nullable=True))
 
 
 class StockRegistry(SQLModel, table=True):

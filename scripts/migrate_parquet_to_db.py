@@ -11,7 +11,6 @@ from core.models import (
     MfAssetAllocation,
     MfHolding,
     MfNav,
-    MfRegistry,
     MfSectorAllocation,
     SchemeCodeMap,
     StockOhlcv,
@@ -47,7 +46,6 @@ def migrate():
     init_schema()
 
     _migrate_nav()
-    _migrate_registry()
     _migrate_holdings()
     _migrate_sectors()
     _migrate_assets()
@@ -74,28 +72,6 @@ def _migrate_nav():
             session.exec(stmt)
         session.commit()
     print(f"Migrated {df.height} NAV rows")
-
-
-def _migrate_registry():
-    path = PARQUET_DIR / "advisorkhoj_registry.parquet"
-    if not path.exists():
-        print("No registry parquet found, skipping")
-        return
-    df = pl.read_parquet(path)
-    with get_session() as session:
-        for row in df.iter_rows(named=True):
-            stmt = (
-                pg_insert(MfRegistry)
-                .values(
-                    scheme_name=row["schemeName"],
-                    scheme_slug=row["schemeSlug"],
-                    source=row.get("source", "advisorkhoj"),
-                )
-                .on_conflict_do_nothing(index_elements=["scheme_name"])
-            )
-            session.exec(stmt)
-        session.commit()
-    print(f"Migrated {df.height} registry entries")
 
 
 def _migrate_holdings():

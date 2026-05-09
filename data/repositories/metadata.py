@@ -6,7 +6,7 @@ from datetime import datetime
 
 import polars as pl
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import col, select
+from sqlmodel import col, func, select
 
 from core.database import get_session
 from core.models import AmfiScheme, MfMetadata
@@ -114,3 +114,14 @@ def ensure_metadata(scheme_names: list[str]) -> pl.DataFrame:
 def refresh_metadata(scheme_name: str) -> dict:
     """Force re-fetch of one scheme's metadata, replacing the existing row."""
     return fetch_and_save(scheme_name)
+
+
+def count_metadata() -> int:
+    """Return total number of mf_metadata rows."""
+    with get_session() as session:
+        return int(session.exec(select(func.count()).select_from(MfMetadata)).one() or 0)
+
+
+def load_metadata_all() -> pl.DataFrame:
+    """Load every mf_metadata row."""
+    return load_metadata(None)

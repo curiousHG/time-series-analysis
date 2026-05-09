@@ -58,4 +58,4 @@ def render_freshness_banner(scheme_names: list[str], scheme_slugs: list[str]) ->
         lines.append(_holdings_line(holdings_report))
 
     st.warning("\n\n".join(lines))
-    st.page_link("ui/views/data_manager.py", label="Open Data Manager to refresh", icon="🛠")
+    st.page_link("ui/views/settings.py", label="Open Settings to refresh", icon="🛠")

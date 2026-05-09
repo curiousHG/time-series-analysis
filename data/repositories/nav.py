@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import polars as pl
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import col, delete, select
+from sqlmodel import col, delete, func, select
 
 from core.database import get_session
 from core.models import MfNav, SchemeCodeMap
@@ -175,3 +175,9 @@ def refresh_nav_data(scheme_names: list[str]) -> pl.DataFrame:
         save_nav_df(df)
 
     return load_nav_df(scheme_names)
+
+
+def count_distinct_nav_schemes() -> int:
+    """Number of distinct schemes that have any NAV history."""
+    with get_session() as session:
+        return int(session.exec(select(func.count(func.distinct(MfNav.scheme_name)))).one() or 0)

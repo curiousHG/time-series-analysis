@@ -3,9 +3,11 @@
 import polars as pl
 import streamlit as st
 
-from data.repositories.registry import load_registry
+from services.registry_service import load_registry
 from ui.components.freshness_banner import render_freshness_banner
-from ui.views.portfolio_tabs import allocation, drawdown, fund_returns, growth, risk_metrics
+from ui.state.loaders import load_holdings_data
+from ui.views.mf_tabs import holdings, overlap
+from ui.views.portfolio_tabs import allocation, drawdown, fund_returns, growth, risk_metrics, risk_vs_return
 from ui.views.portfolio_tabs.helpers import build_portfolio_value_series, get_mapped_data
 
 
@@ -30,8 +32,10 @@ def render(txn_df: pl.DataFrame | None):
     )
     registry = load_registry()
     name_to_slug = dict(zip(registry["schemeName"].to_list(), registry["schemeSlug"].to_list(), strict=False))
-    active_slugs = [name_to_slug.get(n, "") for n in active_names]
+    active_slugs = [slug for n in active_names if (slug := name_to_slug.get(n))]
+    active_registry = registry.filter(pl.col("schemeName").is_in(active_names))
     render_freshness_banner(active_names, active_slugs)
+    holdings_df, sectors_df, assets_df = load_holdings_data(active_slugs)
 
     pv_series = build_portfolio_value_series(mapped, portfolio_nav)
 
@@ -39,8 +43,17 @@ def render(txn_df: pl.DataFrame | None):
         st.info("Not enough data to compute portfolio analytics.")
         return
 
-    t_alloc, t_growth, t_drawdown, t_risk, t_returns = st.tabs(
-        ["Allocation", "Growth", "Drawdown", "Risk Metrics", "Fund Returns"]
+    t_alloc, t_growth, t_drawdown, t_risk, t_rvr, t_returns, t_overlap, t_holdings = st.tabs(
+        [
+            "Allocation",
+            "Growth",
+            "Drawdown",
+            "Risk Metrics",
+            "Risk vs Return",
+            "Fund Returns",
+            "Overlap & Allocation",
+            "Holdings",
+        ]
     )
 
     with t_alloc:
@@ -55,5 +68,14 @@ def render(txn_df: pl.DataFrame | None):
     with t_risk:
         risk_metrics.render(pv_series, mapped)
 
+    with t_rvr:
+        risk_vs_return.render(mapped, portfolio_nav)
+
     with t_returns:
         fund_returns.render(mapped, portfolio_nav)
+
+    with t_overlap:
+        overlap.render(holdings_df, sectors_df, active_registry)
+
+    with t_holdings:
+        holdings.render(holdings_df, sectors_df, assets_df, active_registry)

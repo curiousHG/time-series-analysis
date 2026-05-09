@@ -1,4 +1,3 @@
-import pandas as pd
 import polars as pl
 
 
@@ -49,29 +48,6 @@ def compute_current_holdings(txn_df: pl.DataFrame) -> pl.DataFrame:
         )
         .filter(pl.col("units") > 0)
     )
-
-
-def apply_fund_mapping(
-    txn_df: pl.DataFrame,
-    mapping_df: pd.DataFrame,
-) -> pl.DataFrame:
-    mapping_df_pl = (
-        pl.from_pandas(mapping_df)
-        .rename(
-            {
-                "Trade Symbol": "symbol",
-                "Mapped NAV Fund": "schemeName",
-            }
-        )
-        .filter(pl.col("schemeName").is_not_null() & (pl.col("schemeName") != ""))
-    )
-    txn_mapped = txn_df.join(mapping_df_pl, on="symbol", how="left")
-
-    # st.dataframe(
-    #     txn_mapped.select(["symbol", "schemeName", "signed_qty", "trade_date"])
-    # )
-
-    return txn_mapped
 
 
 def compute_daily_units(txn_df: pl.DataFrame) -> pl.DataFrame:

@@ -72,9 +72,12 @@ class MfRegistry(SQLModel, table=True):
     __table_args__ = TABLE_ARGS
 
     scheme_name: str = Field(primary_key=True)
-    scheme_slug: str
-    short_name: str | None = None
-    source: str = "advisorkhoj"
+    scheme_code: int | None = Field(default=None, index=True)
+    nav_status: str = Field(default="pending")  # pending | available | unavailable
+    holdings_status: str = Field(default="pending")
+    metadata_status: str = Field(default="pending")
+    added_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+    last_attempted_at: datetime.datetime | None = None
 
 
 class SchemeCodeMap(SQLModel, table=True):
@@ -97,14 +100,6 @@ class AmfiScheme(SQLModel, table=True):
     nav_date: datetime.date | None = None
     fund_house: str | None = None
     category: str | None = None
-
-
-class FundMapping(SQLModel, table=True):
-    __tablename__ = "fund_mapping"
-    __table_args__ = TABLE_ARGS
-
-    trade_symbol: str = Field(primary_key=True)
-    mapped_nav_fund: str | None = None
 
 
 class MfMetadata(SQLModel, table=True):

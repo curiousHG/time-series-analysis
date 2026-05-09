@@ -4,8 +4,8 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
-from data.fetchers.mutual_fund import search_advisorkhoj_schemes
 from data.fetchers.stock import query_stocks
+from data.repositories.amfi import search_amfi
 from data.repositories.holdings import (
     ensure_holdings_data,
 )
@@ -37,17 +37,23 @@ def load_holdings_data(scheme_slugs: list[str]):
     return ensure_holdings_data(scheme_slugs)
 
 
-@st.cache_data(ttl=3600, show_spinner="Loading Nifty 50…")
-def load_nifty_returns(start: datetime | None = None, end: datetime | None = None) -> pd.Series:
-    """Daily Nifty 50 percent-change series (date-indexed). Returns empty Series on fetch failure."""
-    try:
-        df = ensure_stock_data("^NSEI", start, end)
-    except Exception:
-        return pd.Series(dtype="float64", name="nifty")
+@st.cache_data(ttl=3600, show_spinner="Loading benchmark…")
+def load_benchmark_returns(symbol: str, start: datetime, end: datetime) -> pd.Series:
+    """Daily percent-change series for a benchmark `symbol`.
+
+    Raises on fetch/parse failure — the caller is expected to surface the error.
+    Returns an empty Series only when the underlying fetcher legitimately yields no rows.
+    """
+    df = ensure_stock_data(symbol, start, end)
     if df.is_empty():
-        return pd.Series(dtype="float64", name="nifty")
+        return pd.Series(dtype="float64", name=symbol)
     pdf = df.select(["Date", "Close"]).to_pandas().set_index("Date").sort_index()
-    return pdf["Close"].pct_change().dropna().rename("nifty")
+    return pdf["Close"].pct_change().dropna().rename(symbol)
+
+
+def load_nifty_returns(start: datetime, end: datetime) -> pd.Series:
+    """Daily Nifty 50 percent-change series — thin wrapper over load_benchmark_returns."""
+    return load_benchmark_returns("^NSEI", start, end).rename("nifty")
 
 
 @st.cache_data(show_spinner=True)
@@ -78,8 +84,9 @@ def load_stock_open_close(symbols: list[str], start: datetime = None, end: datet
 
 
 @st.cache_data(ttl=24 * 3600)
-def cached_search(query: str):
-    return search_advisorkhoj_schemes(query)
+def cached_search(query: str) -> pl.DataFrame:
+    """Fuzzy-search AMFI schemes by name. Returns a DataFrame with schemeName + metadata."""
+    return search_amfi(query)
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -87,6 +94,20 @@ def load_metadata_cached(scheme_names: tuple[str, ...]) -> pl.DataFrame:
     from data.repositories.metadata import load_metadata
 
     return load_metadata(list(scheme_names))
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_short_names(scheme_names: tuple[str, ...]) -> dict[str, str]:
+    from mutual_funds.display import short_scheme_name
+
+    return {n: short_scheme_name(n) for n in scheme_names}
+
+
+@st.cache_data(ttl=3600, show_spinner="Computing risk metrics…")
+def load_metrics_cached() -> pl.DataFrame:
+    from services.mf_metrics import compute_all_metrics
+
+    return compute_all_metrics()
 
 
 @st.cache_data(ttl=24 * 3600)

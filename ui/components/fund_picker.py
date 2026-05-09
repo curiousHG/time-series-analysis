@@ -15,18 +15,12 @@ logger = logging.getLogger("ui.components.fund_picker")
 def _init_schemes():
     """Initialize app state on first run.
 
-    Default to the user's active tradebook portfolio (schemes with net qty > 0).
-    Falls back to a previously saved selection only if no portfolio is detected.
+    Initialize from previously saved selection.
     """
     if "_selected_schemes" in st.session_state:
         return
 
-    portfolio = get_active_portfolio_schemes()
-    if portfolio:
-        st.session_state._selected_schemes = portfolio
-        save_selection("selected_schemes", portfolio)
-    else:
-        st.session_state._selected_schemes = load_selection("selected_schemes", [])
+    st.session_state._selected_schemes = load_selection("selected_schemes", [])
 
 
 def _on_widget_change():
@@ -68,6 +62,8 @@ def add_schemes(names: list[str]):
 def fund_picker(
     load_registry,
     save_to_registry,
+    *,
+    use_sidebar: bool = True,
 ) -> list[str]:
     """
     Fund picker with:
@@ -84,7 +80,8 @@ def fund_picker(
     if "ak_results" not in st.session_state:
         st.session_state.ak_results = []
 
-    st.sidebar.markdown("### Select MFs To Analyze")
+    ui = st.sidebar if use_sidebar else st
+    ui.markdown("### Select MFs To Analyze")
 
     # ---- base options from registry
     registry_df = load_registry()
@@ -103,7 +100,7 @@ def fund_picker(
     # Default value comes from app state; widget syncs back via callback
     default = [s for s in st.session_state._selected_schemes if s in options]
 
-    st.sidebar.multiselect(
+    ui.multiselect(
         "Selected Funds",
         options=options,
         default=default,
@@ -112,31 +109,31 @@ def fund_picker(
         format_func=_label,
     )
 
-    # ---------- AdvisorKhoj search ----------
-    st.sidebar.markdown("### Add more funds")
+    # ---------- AMFI fuzzy search ----------
+    ui.markdown("### Add more funds")
 
-    query = st.sidebar.text_input(
-        "Search fund name",
-        placeholder="Type fund name...",
+    query = ui.text_input(
+        "Search fund name (AMFI universe, ~14K schemes)",
+        placeholder="e.g. parag parikh flexi cap",
         key="ak_query",
     )
 
-    if query and len(query) >= 3:
-        with st.spinner("Searching..."):
+    if query and len(query) >= 2:
+        with st.spinner("Searching AMFI…"):
             ak_df = cached_search(query)
             st.session_state.ak_results = ak_df["schemeName"].to_list()
     else:
         st.session_state.ak_results = []
 
     if st.session_state.ak_results:
-        st.sidebar.multiselect(
+        ui.multiselect(
             "Search results",
             options=st.session_state.ak_results,
             key="ak_selected",
             format_func=_label,
         )
 
-        st.sidebar.button("Add selected", on_click=_on_add_funds)
+        ui.button("Add selected", on_click=_on_add_funds)
 
     # Auto-save new funds to registry
     newly_added = set(st.session_state._selected_schemes) - set(registry_names)
@@ -144,11 +141,11 @@ def fund_picker(
         save_to_registry(list(newly_added))
 
     # ---- Defaults
-    st.sidebar.divider()
-    dc1, dc2 = st.sidebar.columns(2)
+    ui.divider()
+    dc1, dc2 = ui.columns(2)
     if dc1.button("Save as default", key="save_default_funds", use_container_width=True):
         save_selection("default_schemes", st.session_state._selected_schemes)
-        st.sidebar.success(f"Saved {len(st.session_state._selected_schemes)} funds as default")
+        ui.success(f"Saved {len(st.session_state._selected_schemes)} funds as default")
     if dc2.button("Load portfolio", key="load_portfolio_funds", use_container_width=True):
         portfolio = get_active_portfolio_schemes()
         if portfolio:
@@ -157,6 +154,6 @@ def fund_picker(
             st.session_state._load_fund_defaults = True
             st.rerun()
         else:
-            st.sidebar.warning("No active portfolio holdings — upload tradebook in Data Manager")
+            ui.warning("No active portfolio holdings — upload tradebook in Data Manager")
 
     return st.session_state._selected_schemes

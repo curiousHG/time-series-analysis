@@ -2,7 +2,6 @@
 
 from core.models.mutual_fund import (  # noqa: F401
     AmfiScheme,
-    FundMapping,
     MfAssetAllocation,
     MfHolding,
     MfMetadata,

@@ -1,6 +1,6 @@
 import logging
 import re
-from urllib.parse import quote, quote_plus
+from urllib.parse import quote
 
 import httpx
 import polars as pl
@@ -154,66 +154,6 @@ def fetch_nav_from_advisorkhoj(
         "launch_date": launch_date,
         "nav_data": resp.json(),
     }
-
-
-def search_advisorkhoj_schemes(query: str) -> pl.DataFrame:
-    """
-    Search AdvisorKhoj Scheme page and extract:
-    - schemeName
-    - schemeSlug
-
-    Returns empty DataFrame if nothing found
-    """
-    if not query or len(query.strip()) < 2:
-        return pl.DataFrame(
-            schema={
-                "schemeName": pl.Utf8,
-                "schemeSlug": pl.Utf8,
-            }
-        )
-
-    url = f"https://www.advisorkhoj.com/search?page=Scheme&keyword={quote_plus(query)}"
-
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120 Safari/537.36"
-        )
-    }
-
-    resp = httpx.get(url, headers=headers, timeout=30)
-    resp.raise_for_status()
-
-    soup = BeautifulSoup(resp.text, "html.parser")
-
-    rows = []
-
-    for a in soup.select("ul.padding-0 li a[href^='/mutual-funds-research/']"):
-        name = a.get_text(strip=True)
-        href = a.get("href", "").strip()
-
-        if not name or not href:
-            continue
-
-        slug = href.replace("/mutual-funds-research/", "").strip("/")
-
-        rows.append(
-            {
-                "schemeName": name,
-                "schemeSlug": slug.lower(),
-            }
-        )
-
-    if not rows:
-        return pl.DataFrame(
-            schema={
-                "schemeName": pl.Utf8,
-                "schemeSlug": pl.Utf8,
-            }
-        )
-
-    return pl.DataFrame(rows).unique(subset=["schemeName"])
 
 
 def fetch_fund_metadata(scheme_name: str) -> dict:
