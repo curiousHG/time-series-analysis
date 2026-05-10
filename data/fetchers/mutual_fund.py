@@ -1,3 +1,5 @@
+import contextlib
+import datetime
 import logging
 import re
 from urllib.parse import quote
@@ -70,7 +72,7 @@ def resolve_mfapi_code(scheme_name: str) -> str | None:
     Returns scheme code as string, or None if no good match found.
     """
     # Use first 3-4 meaningful words for search
-    words = [w for w in scheme_name.split() if len(w) > 1 and w.upper() not in ("-", "–")]
+    words = [w for w in scheme_name.split() if len(w) > 1 and w.upper() not in ("-",)]
     search_query = " ".join(words[:4])
 
     results = search_mfapi(search_query)
@@ -201,7 +203,7 @@ def fetch_fund_metadata(scheme_name: str) -> dict:
                 return c.split(":", 1)[1].strip() if ":" in c else None
         return None
 
-    def _parse_date(s: str | None) -> "datetime.date | None":
+    def _parse_date(s: str | None) -> datetime.date | None:
         if not s:
             return None
         for fmt in ("%d-%m-%Y", "%d-%b-%Y", "%d/%m/%Y"):
@@ -349,18 +351,14 @@ def fetch_amfi_master() -> list[dict]:
         nav_str = parts[4].strip() if len(parts) > 4 else None
         nav = None
         if nav_str and nav_str not in ("N.A.", "-"):
-            try:
+            with contextlib.suppress(ValueError):
                 nav = float(nav_str)
-            except ValueError:
-                pass
 
         nav_date = None
         if len(parts) > 5:
             date_str = parts[5].strip()
-            try:
+            with contextlib.suppress(ValueError):
                 nav_date = dt.strptime(date_str, "%d-%b-%Y").date()
-            except ValueError:
-                pass
 
         schemes.append(
             {

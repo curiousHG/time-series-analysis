@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 
 import polars as pl
@@ -8,6 +9,22 @@ from mutual_funds.table_schema import (
     SECTOR_SCHEMA,
     empty_df,
 )
+
+# ISO 6166 ISIN: 2-letter country, 9 alphanumerics, 1 numeric check digit.
+_ISIN_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}\d$")
+
+
+def _clean_isin(value: str | None) -> str:
+    """Return a valid ISIN string, or `""` if the value isn't a real ISIN.
+
+    AdvisorKhoj abuses the field for arbitrage funds (`Short`, `Long`, etc.) — those go
+    in `assetSubClass` instead, so we drop them here rather than letting fake ISINs leak
+    into our `mf_holdings.isin` column.
+    """
+    if not value:
+        return ""
+    v = str(value).strip().upper()
+    return v if _ISIN_RE.match(v) else ""
 
 
 def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
@@ -26,7 +43,7 @@ def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
                 "schemeCommon": h["scheme_amfi_common"],
                 "portfolioDate": datetime.strptime(h["portfolio_date"], "%d-%m-%Y").date(),
                 "instrumentName": h["instrument"],
-                "isin": h.get("isin") or "",
+                "isin": _clean_isin(h.get("isin")),
                 "issuerName": h.get("issuer_name") or "",
                 "assetClass": h["asset_class"],
                 "assetSubClass": h.get("asset_subclass") or "",

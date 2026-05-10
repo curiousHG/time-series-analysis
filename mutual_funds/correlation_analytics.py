@@ -5,7 +5,6 @@ import pandas as pd
 from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.spatial.distance import squareform
 
-
 _LABEL_COL = "shortName"
 
 

@@ -143,6 +143,33 @@ def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: dateti
     return _load_ohlcv(symbol, start, end)
 
 
+def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
+    """Force-fetch the forward gap from db_max to today, bypassing MIN_FETCH_DAYS.
+
+    Used by callers that need guaranteed-fresh data (e.g. the benchmark for the metrics
+    recompute). Returns (today_date, db_max_after) — `db_max_after` is None if nothing
+    was fetched. No-op if already current.
+    """
+    from datetime import date as _date
+    from datetime import timedelta
+
+    today = _date.today()
+    existing = _get_date_range(symbol)
+    if existing is None:
+        # Cold cache: pull a 10Y backfill so all rolling-CAGR windows have data.
+        start = today - timedelta(days=365 * 10)
+        _fetch_and_save(symbol, start, today + timedelta(days=1))
+    else:
+        _, db_max = existing
+        if db_max >= today:
+            return today, db_max
+        # Force-fetch the gap regardless of MIN_FETCH_DAYS.
+        _fetch_and_save(symbol, db_max, today + timedelta(days=1))
+
+    new_range = _get_date_range(symbol)
+    return today, (new_range[1] if new_range else None)
+
+
 def load_stock_registry() -> pl.DataFrame:
     with get_session() as session:
         rows = session.exec(select(StockRegistry)).all()

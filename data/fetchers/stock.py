@@ -17,7 +17,17 @@ def query_stocks(query: str) -> pd.DataFrame:
 def fetch_symbol_data(symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame | None:
     """Fetch historical data for a given stock symbol using yfinance."""
     try:
-        data = yf.download(symbol, start=start, end=end, interval=interval, multi_level_index=False)
+        # auto_adjust=True matches yfinance's new default (silences FutureWarning) and gives
+        # split/dividend-adjusted closes, which is what we want for return calculations.
+        data = yf.download(
+            symbol,
+            start=start,
+            end=end,
+            interval=interval,
+            multi_level_index=False,
+            auto_adjust=True,
+            progress=False,
+        )
         return data
     except Exception as e:
         logger.error(f"Error fetching data for symbol {symbol}: {e}")

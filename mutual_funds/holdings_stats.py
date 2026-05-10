@@ -7,7 +7,7 @@ caches the inputs; this module just does the math.
 from __future__ import annotations
 
 import polars as pl
-from sqlmodel import select
+from sqlmodel import func, select
 
 from core.database import get_session
 from core.models import MfAssetAllocation, MfHolding
@@ -27,21 +27,60 @@ def _norm_to_pct(values: list[float]) -> list[float]:
 
 def asset_breakdown(slug: str) -> dict[str, float]:
     """Return {asset_class -> %} for a fund. Always normalised to 100%."""
+    from data.repositories.holdings import _resolve_slug
+
+    code = _resolve_slug(slug)
+    if code is None:
+        return {}
     with get_session() as session:
+        latest_date_subq = (
+            select(func.max(MfAssetAllocation.portfolio_date))
+            .where(MfAssetAllocation.scheme_code == code)
+            .scalar_subquery()
+        )
         rows = session.exec(
-            select(MfAssetAllocation.asset_class, MfAssetAllocation.weight).where(MfAssetAllocation.scheme_slug == slug)
+            select(MfAssetAllocation.asset_class, MfAssetAllocation.weight)
+            .where(MfAssetAllocation.scheme_code == code)
+            .where(MfAssetAllocation.portfolio_date == latest_date_subq)
         ).all()
     if not rows:
         return {}
-    classes = [r[0] or "Other" for r in rows]
-    weights = [float(r[1] or 0.0) for r in rows]
+    # Latest snapshot can still have row-level duplicates from legacy refreshes; collapse
+    # by asset_class taking max weight (duplicates hold identical values).
+    by_class: dict[str, float] = {}
+    for cls, wt in rows:
+        key = cls or "Other"
+        by_class[key] = max(by_class.get(key, 0.0), float(wt or 0.0))
+    classes = list(by_class.keys())
+    weights = list(by_class.values())
     pct = _norm_to_pct(weights)
     return dict(zip(classes, pct, strict=False))
 
 
 def holdings_for_slug(slug: str) -> pl.DataFrame:
     """Load all `mf_holdings` rows for one slug as polars (used by helpers below)."""
+    from data.repositories.holdings import _resolve_slug
+
+    code = _resolve_slug(slug)
+    if code is None:
+        return pl.DataFrame(
+            schema={
+                "instrument_name": pl.Utf8,
+                "weight": pl.Float64,
+                "asset_class": pl.Utf8,
+                "market_cap": pl.Utf8,
+                "credit_rating": pl.Utf8,
+                "industry": pl.Utf8,
+            }
+        )
     with get_session() as session:
+        # Restrict to the latest portfolio_date — `mf_holdings` carries multiple snapshots
+        # per scheme, and would otherwise inflate counts and weights.
+        latest_date_subq = (
+            select(func.max(MfHolding.portfolio_date))
+            .where(MfHolding.scheme_code == code)
+            .scalar_subquery()
+        )
         rows = session.exec(
             select(
                 MfHolding.instrument_name,
@@ -50,7 +89,9 @@ def holdings_for_slug(slug: str) -> pl.DataFrame:
                 MfHolding.market_cap,
                 MfHolding.credit_rating,
                 MfHolding.industry,
-            ).where(MfHolding.scheme_slug == slug)
+            )
+            .where(MfHolding.scheme_code == code)
+            .where(MfHolding.portfolio_date == latest_date_subq)
         ).all()
     if not rows:
         return pl.DataFrame(
@@ -72,7 +113,7 @@ def holdings_for_slug(slug: str) -> pl.DataFrame:
             "credit_rating": [r[4] for r in rows],
             "industry": [r[5] for r in rows],
         }
-    )
+    ).unique(subset=["instrument_name"], keep="first")
 
 
 def market_cap_breakdown(holdings: pl.DataFrame) -> dict[str, float]:

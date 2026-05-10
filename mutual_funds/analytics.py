@@ -2,48 +2,24 @@ import pandas as pd
 import polars as pl
 
 
-# fund overlap
-def compute_overlap(holdings_df: pl.DataFrame, fund_a_slug: str, fund_b_slug: str) -> float:
-    df_a = holdings_df.filter(pl.col("schemeSlug") == fund_a_slug).select(
-        "instrumentName", pl.col("weight").alias("w_a")
-    )
+def overlap_matrix(holdings_df: pl.DataFrame, fund_slugs: list[str]) -> pd.DataFrame:
+    """NxN heatmap of pairwise holdings overlap (% of weight in common).
 
-    df_b = holdings_df.filter(pl.col("schemeSlug") == fund_b_slug).select(
-        "instrumentName", pl.col("weight").alias("w_b")
-    )
-
-    return (
-        df_a.join(df_b, on="instrumentName", how="inner")
-        .select(pl.min_horizontal("w_a", "w_b").alias("overlap"))
-        .select(pl.sum("overlap"))
-        .item()
-    )
-
-
-def compute_sector_overlap(sector_df: pl.DataFrame, fund_a_slug: str, fund_b_slug: str) -> float:
-    df_a = sector_df.filter(pl.col("schemeSlug") == fund_a_slug).select("instrumentName", pl.col("weight").alias("w_a"))
-
-    df_b = sector_df.filter(pl.col("schemeSlug") == fund_b_slug).select("instrumentName", pl.col("weight").alias("w_b"))
-
-    return (
-        df_a.join(df_b, on="instrumentName", how="inner")
-        .select(pl.min_horizontal("w_a", "w_b").alias("overlap"))
-        .select(pl.sum("overlap"))
-        .item()
-    )
-
-
-def overlap_matrix(holdings_df: pl.DataFrame, fund_slugs: list[str]):
+    Assumes `holdings_df` is the latest-snapshot, deduped view from
+    `data.repositories.holdings.load_holdings`. Each cell is capped at 100 — arbitrage
+    funds can report gross long+short exposures summing to >100, which would otherwise
+    blow up the heatmap colour scale.
+    """
     n = len(fund_slugs)
 
-    # Pre-filter holdings per slug to avoid repeated .filter() calls
-    fund_holdings = {}
-    for slug in fund_slugs:
-        fund_holdings[slug] = holdings_df.filter(pl.col("schemeSlug") == slug).select("instrumentName", "weight")
+    fund_holdings = {
+        slug: holdings_df.filter(pl.col("schemeSlug") == slug).select("instrumentName", "weight")
+        for slug in fund_slugs
+    }
 
     data = [[0.0] * n for _ in range(n)]
     for i in range(n):
-        data[i][i] = fund_holdings[fund_slugs[i]]["weight"].sum()
+        data[i][i] = min(float(fund_holdings[fund_slugs[i]]["weight"].sum()), 100.0)
         for j in range(i + 1, n):
             df_a = fund_holdings[fund_slugs[i]].rename({"weight": "w_a"})
             df_b = fund_holdings[fund_slugs[j]].rename({"weight": "w_b"})
@@ -53,8 +29,9 @@ def overlap_matrix(holdings_df: pl.DataFrame, fund_slugs: list[str]):
                 .select(pl.sum("overlap"))
                 .item()
             )
-            data[i][j] = val
-            data[j][i] = val
+            capped = min(val, 100.0)
+            data[i][j] = capped
+            data[j][i] = capped
 
     return pd.DataFrame(data, index=fund_slugs, columns=fund_slugs).round(2)
 

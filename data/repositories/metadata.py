@@ -9,20 +9,35 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, func, select
 
 from core.database import get_session
-from core.models import AmfiScheme, MfMetadata
+from core.models import AmfiScheme, MfAmc, MfCategory, MfMetadata
 from data.fetchers.mutual_fund import fetch_fund_metadata
+from data.repositories.amfi import upsert_amc, upsert_category
 
 logger = logging.getLogger("data.repositories.metadata")
 
 
 def _attach_amfi_fields(meta: dict) -> dict:
-    """Look up fund_house and (fallback) category from amfi_schemes by exact name."""
+    """Look up fund_house and category text from amfi_schemes via the dim tables.
+
+    Reads through `fund_house_id` / `category_id` since the legacy text columns on
+    `amfi_schemes` were dropped in the Phase 1 normalisation.
+    """
     with get_session() as session:
-        row = session.exec(select(AmfiScheme).where(AmfiScheme.scheme_name == meta["scheme_name"])).first()
-    if row is not None:
-        meta["fund_house"] = row.fund_house
-        if not meta.get("category"):
-            meta["category"] = row.category
+        row = session.exec(
+            select(AmfiScheme.fund_house_id, AmfiScheme.category_id)
+            .where(AmfiScheme.scheme_name == meta["scheme_name"])
+        ).first()
+        if row is None:
+            return meta
+        fh_id, cat_id = row
+        if fh_id is not None and not meta.get("fund_house"):
+            amc = session.exec(select(MfAmc.name).where(MfAmc.id == fh_id)).first()
+            if amc is not None:
+                meta["fund_house"] = amc[0] if isinstance(amc, tuple) else amc
+        if cat_id is not None and not meta.get("category"):
+            cat = session.exec(select(MfCategory.name).where(MfCategory.id == cat_id)).first()
+            if cat is not None:
+                meta["category"] = cat[0] if isinstance(cat, tuple) else cat
     return meta
 
 
@@ -30,25 +45,72 @@ def save_metadata(meta: dict) -> None:
     meta = dict(meta)
     meta = _attach_amfi_fields(meta)
     meta["fetched_at"] = datetime.utcnow()
+    scheme_name = meta.pop("scheme_name")
     with get_session() as session:
+        # Phase 2: mf_metadata is keyed on scheme_code, not scheme_name. Resolve via
+        # amfi_schemes; if the scheme isn't there yet, mint a synthetic-negative row so
+        # the FK doesn't violate.
+        scheme_code = session.exec(
+            select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)
+        ).first()
+        # session.exec(select(SingleCol)).first() can return either a scalar or a 1-tuple
+        # Row depending on the SQLAlchemy code path — unwrap defensively.
+        if isinstance(scheme_code, tuple):
+            scheme_code = scheme_code[0]
+        minted_synthetic = False
+        if scheme_code is None:
+            min_code = session.exec(select(func.min(AmfiScheme.scheme_code))).one() or 0
+            if isinstance(min_code, tuple):
+                min_code = min_code[0] or 0
+            scheme_code = min(min_code, 0) - 1
+            session.exec(
+                pg_insert(AmfiScheme)
+                .values(scheme_code=scheme_code, scheme_name=scheme_name)
+                .on_conflict_do_nothing(index_elements=["scheme_code"])
+            )
+            minted_synthetic = True
+            logger.warning("Assigned synthetic code %d for new metadata scheme %s", scheme_code, scheme_name)
+        meta["scheme_code"] = scheme_code
+        # Resolve dim FKs: get-or-create rows in mf_amc / mf_category, then drop the text
+        # versions before insert — those columns no longer exist on mf_metadata.
+        meta["fund_house_id"] = upsert_amc(session, meta.pop("fund_house", None))
+        meta["category_id"] = upsert_category(session, meta.pop("category", None))
         stmt = (
             pg_insert(MfMetadata)
             .values(**meta)
             .on_conflict_do_update(
-                index_elements=["scheme_name"],
-                set_={k: v for k, v in meta.items() if k != "scheme_name"},
+                index_elements=["scheme_code"],
+                set_={k: v for k, v in meta.items() if k != "scheme_code"},
             )
         )
         session.exec(stmt)
         session.commit()
-    logger.info("Saved metadata for %s (AUM=%s)", meta["scheme_name"], meta.get("aum_crores"))
+    if minted_synthetic:
+        from data.repositories.holdings import clear_slug_cache
+
+        clear_slug_cache()
+    logger.info("Saved metadata for %s (AUM=%s)", scheme_name, meta.get("aum_crores"))
 
 
 def load_metadata(scheme_names: list[str] | None = None) -> pl.DataFrame:
+    """Read metadata via JOIN through `amfi_schemes` for the scheme_name + dims for AMC /
+    category text. Phase 2: mf_metadata is keyed on scheme_code; the JOIN to amfi_schemes
+    surfaces scheme_name for callers who still pass names.
+    """
     with get_session() as session:
-        stmt = select(MfMetadata)
+        stmt = (
+            select(
+                AmfiScheme.scheme_name,
+                MfMetadata,
+                MfAmc.name.label("amc_name"),
+                MfCategory.name.label("category_name"),
+            )
+            .join(AmfiScheme, MfMetadata.scheme_code == AmfiScheme.scheme_code)
+            .join(MfAmc, MfMetadata.fund_house_id == MfAmc.id, isouter=True)
+            .join(MfCategory, MfMetadata.category_id == MfCategory.id, isouter=True)
+        )
         if scheme_names:
-            stmt = stmt.where(col(MfMetadata.scheme_name).in_(scheme_names))
+            stmt = stmt.where(col(AmfiScheme.scheme_name).in_(scheme_names))
         rows = session.exec(stmt).all()
 
     if not rows:
@@ -57,24 +119,24 @@ def load_metadata(scheme_names: list[str] | None = None) -> pl.DataFrame:
     return pl.DataFrame(
         [
             {
-                "schemeName": r.scheme_name,
-                "aumCrores": r.aum_crores,
-                "aumAsOf": r.aum_as_of,
-                "expenseRatio": r.expense_ratio,
-                "expenseRatioAsOf": r.expense_ratio_as_of,
-                "benchmark": r.benchmark,
-                "launchDate": r.launch_date,
-                "category": r.category,
-                "assetClass": r.asset_class,
-                "status": r.status,
-                "minInvestment": r.min_investment,
-                "minTopup": r.min_topup,
-                "turnoverRatio": r.turnover_ratio,
-                "exitLoad": r.exit_load,
-                "fundHouse": r.fund_house,
-                "fundManager": r.fund_manager,
-                "sourceUrl": r.source_url,
-                "fetchedAt": r.fetched_at,
+                "schemeName": r[0],
+                "aumCrores": r[1].aum_crores,
+                "aumAsOf": r[1].aum_as_of,
+                "expenseRatio": r[1].expense_ratio,
+                "expenseRatioAsOf": r[1].expense_ratio_as_of,
+                "benchmark": r[1].benchmark,
+                "launchDate": r[1].launch_date,
+                "category": r[3],  # JOIN'd from mf_category
+                "assetClass": r[1].asset_class,
+                "status": r[1].status,
+                "minInvestment": r[1].min_investment,
+                "minTopup": r[1].min_topup,
+                "turnoverRatio": r[1].turnover_ratio,
+                "exitLoad": r[1].exit_load,
+                "fundHouse": r[2],  # JOIN'd from mf_amc
+                "fundManager": r[1].fund_manager,
+                "sourceUrl": r[1].source_url,
+                "fetchedAt": r[1].fetched_at,
             }
             for r in rows
         ]

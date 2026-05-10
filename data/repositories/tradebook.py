@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, select
 
 from core.database import get_session
-from core.models import MfTradebook
+from core.models import AmfiScheme, MfTradebook
 
 logger = logging.getLogger("data.store.tradebook")
 
@@ -31,8 +31,31 @@ def import_tradebook_bytes(file_bytes: bytes) -> tuple[int, int]:
     return _import_tradebook_df(df)
 
 
+def _resolve_isin_to_scheme_code(session, isins: list[str]) -> dict[str, int]:
+    """Bulk-resolve ISINs against amfi_schemes (growth or reinvestment match)."""
+    from core.models import AmfiScheme
+
+    if not isins:
+        return {}
+    rows = session.exec(
+        select(AmfiScheme.scheme_code, AmfiScheme.isin_growth, AmfiScheme.isin_reinvestment).where(
+            (col(AmfiScheme.isin_growth).in_(isins)) | (col(AmfiScheme.isin_reinvestment).in_(isins))
+        )
+    ).all()
+    out: dict[str, int] = {}
+    for code, isin_g, isin_r in rows:
+        if isin_g:
+            out[isin_g] = code
+        if isin_r and isin_r not in out:
+            out[isin_r] = code
+    return out
+
+
 def _import_tradebook_df(df: pl.DataFrame) -> tuple[int, int]:
-    """Upsert a tradebook DataFrame. Returns (new_count, skipped_count)."""
+    """Upsert a tradebook DataFrame. Returns (new_count, skipped_count).
+
+    Phase 3: also denormalises `scheme_code` on import via ISIN→amfi_schemes resolution.
+    """
     if df.is_empty():
         return 0, 0
 
@@ -40,14 +63,20 @@ def _import_tradebook_df(df: pl.DataFrame) -> tuple[int, int]:
     new_count = 0
 
     with get_session() as session:
+        # Bulk-resolve ISINs once before the row loop
+        unique_isins = list({str(r) for r in df["isin"].drop_nulls().to_list()})
+        isin_to_code = _resolve_isin_to_scheme_code(session, unique_isins)
+
         for row in df.iter_rows(named=True):
             trade_id = str(row["trade_id"])
+            isin = row["isin"]
             stmt = (
                 pg_insert(MfTradebook)
                 .values(
                     trade_id=trade_id,
                     symbol=row["symbol"],
-                    isin=row["isin"],
+                    isin=isin,
+                    scheme_code=isin_to_code.get(isin),
                     trade_date=row["trade_date"],
                     exchange=row.get("exchange"),
                     segment=row.get("segment"),
@@ -72,9 +101,16 @@ def _import_tradebook_df(df: pl.DataFrame) -> tuple[int, int]:
 
 
 def load_tradebook_from_db() -> pl.DataFrame:
-    """Load all tradebook transactions from database as a Polars DataFrame."""
+    """Load all tradebook transactions, with `scheme_code` (denormalised at import time)
+    and `schemeName` JOINed in from `amfi_schemes`. Trades whose `scheme_code` is NULL
+    (couldn't be resolved at import) come back with `schemeName=None`.
+    """
     with get_session() as session:
-        rows = session.exec(select(MfTradebook).order_by(col(MfTradebook.trade_date))).all()
+        rows = session.exec(
+            select(MfTradebook, AmfiScheme.scheme_name)
+            .join(AmfiScheme, MfTradebook.scheme_code == AmfiScheme.scheme_code, isouter=True)
+            .order_by(col(MfTradebook.trade_date))
+        ).all()
 
     if not rows:
         return pl.DataFrame(
@@ -85,17 +121,21 @@ def load_tradebook_from_db() -> pl.DataFrame:
                 "trade_type": pl.Utf8,
                 "quantity": pl.Float64,
                 "price": pl.Float64,
+                "scheme_code": pl.Int64,
+                "schemeName": pl.Utf8,
             }
         )
 
     return pl.DataFrame(
         {
-            "symbol": [r.symbol for r in rows],
-            "isin": [r.isin for r in rows],
-            "trade_date": [r.trade_date for r in rows],
-            "trade_type": [r.trade_type for r in rows],
-            "quantity": [r.quantity for r in rows],
-            "price": [r.price for r in rows],
+            "symbol": [r[0].symbol for r in rows],
+            "isin": [r[0].isin for r in rows],
+            "trade_date": [r[0].trade_date for r in rows],
+            "trade_type": [r[0].trade_type for r in rows],
+            "quantity": [r[0].quantity for r in rows],
+            "price": [r[0].price for r in rows],
+            "scheme_code": [r[0].scheme_code for r in rows],
+            "schemeName": [r[1] for r in rows],
         }
     )
 
