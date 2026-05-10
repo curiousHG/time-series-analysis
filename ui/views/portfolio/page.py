@@ -1,28 +1,33 @@
-"""Portfolio tab — orchestrates sub-tabs."""
+"""Portfolio page — Streamlit entry.
+
+Composes the eight portfolio sub-tabs (allocation, growth, drawdown, risk metrics, risk
+vs return, fund returns, overlap, holdings) on top of the user's tradebook. Holdings and
+overlap views are shared with the MF Analysis page and live in `ui.views.mutual_fund.*`.
+"""
+
+from __future__ import annotations
 
 import polars as pl
 import streamlit as st
 
 from services.registry_service import load_registry
-from ui.components.freshness_banner import render_freshness_banner
-from ui.state.loaders import load_holdings_data
-from ui.views.mf_tabs import holdings, overlap
-from ui.views.portfolio_tabs import allocation, drawdown, fund_returns, growth, risk_metrics, risk_vs_return
-from ui.views.portfolio_tabs.helpers import build_portfolio_value_series, get_mapped_data
+from ui.state.loaders import load_holdings_data, load_txn_data
+from ui.views.mutual_fund import holdings, overlap
+from ui.views.portfolio import allocation, drawdown, fund_returns, growth, risk_metrics, risk_vs_return
+from ui.views.portfolio.helpers import build_portfolio_value_series, get_mapped_data
 
 
-def render(txn_df: pl.DataFrame | None):
+def _render(txn_df: pl.DataFrame | None) -> None:
     if txn_df is None:
-        st.info("Upload a tradebook CSV from the Data Manager page.")
+        st.info("Upload a tradebook CSV from the Settings page.")
         return
 
     result = get_mapped_data(txn_df)
     if result is None:
-        st.info("No fund mappings. Sync AMFI data and upload a tradebook in the Data Manager.")
+        st.info("No fund mappings. Sync AMFI data and upload a tradebook in Settings.")
         return
 
     mapped, portfolio_nav = result
-
     active_names = (
         mapped.group_by("schemeName")
         .agg(pl.col("signed_qty").sum().alias("units"))
@@ -34,11 +39,9 @@ def render(txn_df: pl.DataFrame | None):
     name_to_slug = dict(zip(registry["schemeName"].to_list(), registry["schemeSlug"].to_list(), strict=False))
     active_slugs = [slug for n in active_names if (slug := name_to_slug.get(n))]
     active_registry = registry.filter(pl.col("schemeName").is_in(active_names))
-    render_freshness_banner(active_names, active_slugs)
+
     holdings_df, sectors_df, assets_df = load_holdings_data(active_slugs)
-
     pv_series = build_portfolio_value_series(mapped, portfolio_nav)
-
     if pv_series is None or pv_series.empty:
         st.info("Not enough data to compute portfolio analytics.")
         return
@@ -55,27 +58,23 @@ def render(txn_df: pl.DataFrame | None):
             "Holdings",
         ]
     )
-
     with t_alloc:
         allocation.render(mapped, portfolio_nav)
-
     with t_growth:
         growth.render(mapped, pv_series)
-
     with t_drawdown:
         drawdown.render(pv_series)
-
     with t_risk:
         risk_metrics.render(pv_series, mapped)
-
     with t_rvr:
         risk_vs_return.render(mapped, portfolio_nav)
-
     with t_returns:
         fund_returns.render(mapped, portfolio_nav)
-
     with t_overlap:
         overlap.render(holdings_df, sectors_df, active_registry)
-
     with t_holdings:
         holdings.render(holdings_df, sectors_df, assets_df, active_registry)
+
+
+st.title("Portfolio")
+_render(load_txn_data())

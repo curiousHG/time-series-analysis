@@ -6,7 +6,7 @@ import polars as pl
 import streamlit as st
 
 from data.repositories.stock import ensure_stock_data
-from ui.views.portfolio_tabs.helpers import get_signed_invested
+from ui.views.portfolio.helpers import get_signed_invested
 
 
 def render(mapped: pl.DataFrame, pv: pd.DataFrame):

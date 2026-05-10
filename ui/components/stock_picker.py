@@ -59,7 +59,7 @@ def stock_picker():
         with st.spinner("Searching..."):
             yf_df = cached_search_stock(query).reset_index()
 
-            st.session_state.yfinance_symbols = list(zip(yf_df["symbol"], yf_df["shortName"]))
+            st.session_state.yfinance_symbols = list(zip(yf_df["symbol"], yf_df["shortName"], strict=False))
     else:
         st.session_state.yfinance_symbols = []
 

@@ -9,11 +9,8 @@ import plotly.graph_objects as go
 import polars as pl
 import quantstats as qs
 import streamlit as st
-from sqlmodel import select
 
-from core.database import get_session
-from core.models import AmfiScheme
-from data.repositories.amfi import load_amfi_df
+from data.repositories.amfi import get_scheme_details_by_name, load_amfi_df
 from data.repositories.holdings import load_assets, load_holdings, load_sectors
 from data.repositories.metadata import load_metadata
 from data.repositories.nav import load_nav_df
@@ -207,9 +204,8 @@ if nav_status == "unavailable":
 if metadata_status == "unavailable":
     st.warning("Metadata not available for this fund — header AMC/AUM/TER/benchmark fields will be partial.")
 
-# ---- Header — AMFI + metadata at a glance
-with get_session() as session:
-    amfi_row = session.exec(select(AmfiScheme).where(AmfiScheme.scheme_name == selected)).first()
+# ---- Header — AMFI + metadata at a glance.
+amfi_row = get_scheme_details_by_name(selected)
 
 meta_df = load_metadata([selected])
 meta = meta_df.row(0, named=True) if meta_df.height else {}
@@ -217,8 +213,8 @@ meta = meta_df.row(0, named=True) if meta_df.height else {}
 st.markdown(f"### {short_scheme_name(selected)}")
 st.caption(selected)
 
-amc = (meta.get("fundHouse") or (amfi_row.fund_house if amfi_row else None)) or "—"
-category = (meta.get("category") or (amfi_row.category if amfi_row else None)) or "—"
+amc = (meta.get("fundHouse") or (amfi_row["fund_house"] if amfi_row else None)) or "—"
+category = (meta.get("category") or (amfi_row["category"] if amfi_row else None)) or "—"
 aum = meta.get("aumCrores")
 ter = meta.get("expenseRatio")
 benchmark = meta.get("benchmark") or "—"
@@ -596,11 +592,11 @@ with tab_about:
     if amfi_row:
         rows.extend(
             [
-                ("Scheme Code (AMFI)", amfi_row.scheme_code),
-                ("ISIN (Growth)", amfi_row.isin_growth or "—"),
-                ("ISIN (Reinvestment)", amfi_row.isin_reinvestment or "—"),
-                ("AMFI Latest NAV", amfi_row.nav),
-                ("AMFI NAV Date", amfi_row.nav_date),
+                ("Scheme Code (AMFI)", amfi_row["scheme_code"]),
+                ("ISIN (Growth)", amfi_row["isin_growth"] or "—"),
+                ("ISIN (Reinvestment)", amfi_row["isin_reinvestment"] or "—"),
+                ("AMFI Latest NAV", amfi_row["nav"]),
+                ("AMFI NAV Date", amfi_row["nav_date"]),
             ]
         )
     if meta:

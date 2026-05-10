@@ -1,3 +1,7 @@
+"""Stock Analysis page — Streamlit entry. Two tabs: candlestick chart + strategy backtest."""
+
+from __future__ import annotations
+
 import pandas as pd
 import polars as pl
 import streamlit as st
@@ -5,8 +9,8 @@ import streamlit as st
 from indicators import INDICATOR_REGISTRY, compute_indicators
 from ui.components.stock_picker import stock_picker
 from ui.state.loaders import load_stock_open_close
-from ui.views.stock_tabs import chart as chart_tab
-from ui.views.stock_tabs import strategy_backtest as backtest_tab
+from ui.views.stock_analysis import chart as chart_tab
+from ui.views.stock_analysis import strategy_backtest as backtest_tab
 
 stock_picker()
 
@@ -21,7 +25,6 @@ with st.sidebar:
     )
 
 df = load_stock_open_close(st.session_state.selected_stocks, start_date, end_date)
-
 symbols = df.select("Symbol").unique().to_series().to_list()
 symbol = st.selectbox("Select stock", symbols)
 
@@ -36,20 +39,16 @@ if symbol:
     tab_chart, tab_backtest = st.tabs(["Chart", "Strategy Backtest"])
 
     with tab_chart:
-        # Indicator sidebar controls
         with st.sidebar:
             st.markdown("### Indicators")
-
             overlay_names = [n for n, e in INDICATOR_REGISTRY.items() if e["overlay"]]
             panel_names = [n for n, e in INDICATOR_REGISTRY.items() if not e["overlay"]]
-
             selected_overlays = st.multiselect(
                 "Overlays (on price chart)",
                 options=overlay_names,
                 default=["SMA 20", "SMA 50"],
                 key="selected_overlays",
             )
-
             selected_panels = st.multiselect(
                 "Panels (below chart)",
                 options=panel_names,

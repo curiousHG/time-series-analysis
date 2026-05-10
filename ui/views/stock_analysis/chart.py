@@ -118,12 +118,10 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
         )
 
         panel_colors = ["#6366f1", "#f59e0b", "#10b981", "#ef4444"]
-        panel_idx = 0
 
-        for ind_name in selected_panels:
+        for panel_idx, ind_name in enumerate(selected_panels, start=1):
             entry = INDICATOR_REGISTRY[ind_name]
             result = entry["fn"](sdf)
-            panel_idx += 1
 
             for i, (series_name, values) in enumerate(result.items()):
                 if series_name == "Histogram":

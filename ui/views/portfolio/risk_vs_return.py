@@ -23,8 +23,8 @@ from mutual_funds.display import short_scheme_name
 from services.benchmarks import BENCHMARK_CHOICES, DEFAULT_BENCHMARK_LABEL
 from services.mf_metrics import (
     compute_alpha_beta,
-    compute_metrics_for_scheme,
     compute_metrics_from_returns,
+    load_cached_metrics,
     nav_series,
 )
 from services.portfolio_service import build_portfolio_returns_series
@@ -131,19 +131,21 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
             )
             mode = MODE_CAGR_VOL
 
+    # Single SELECT against mf_scheme_metrics for every active fund — replaces the per-fund
+    # quantstats compute that used to fire on every Streamlit rerun.
+    cached_metrics = load_cached_metrics(active_names)
+    metrics_by_name: dict[str, dict] = {}
+    if cached_metrics.height:
+        for r in cached_metrics.iter_rows(named=True):
+            metrics_by_name[r["scheme_name"]] = r
+
     rows: list[dict] = []
     skipped: list[str] = []
     insufficient: list[str] = []  # has history but <60 day overlap with chosen benchmark
-    with st.spinner("Computing per-fund risk metrics…"):
+    with st.spinner("Loading per-fund risk metrics…"):
         for name in active_names:
-            try:
-                m = compute_metrics_for_scheme(name)
-            except Exception as e:
-                logger.exception("Per-fund metrics failed for %s", name)
-                st.toast(f"Metrics failed for {short_scheme_name(name)}: {e}", icon="⚠️")
-                skipped.append(name)
-                continue
-            if m is None or m.get("vol_1y") is None or m.get("cagr_1y") is None:
+            m = metrics_by_name.get(name)
+            if not m or m.get("vol_1y") is None or m.get("cagr_1y") is None:
                 skipped.append(name)
                 continue
 
