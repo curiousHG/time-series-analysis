@@ -3,18 +3,19 @@
 import pandas as pd
 import polars as pl
 
+from core.timing import timeit
 from data.repositories.nav import load_nav_df
 from mutual_funds.tradebook import compute_daily_units
-from services.scheme_lookup import resolve_tradebook
 
 
+@timeit("portfolio.get_mapped_data")
 def get_mapped_data(txn_df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame] | None:
     """Return (mapped_txn, portfolio_nav) or None if unavailable.
 
-    Tradebook ISINs resolved live against amfi_schemes — no fund_mapping table.
+    Trusts the `scheme_code` / `schemeName` columns produced at load time by
+    `load_tradebook_from_db` (denormalised on import via ISIN→amfi_schemes resolution).
     """
-    mapped = resolve_tradebook(txn_df).rename({"scheme_name": "schemeName"})
-    mapped = mapped.filter(pl.col("schemeName").is_not_null() & (pl.col("schemeName") != ""))
+    mapped = txn_df.filter(pl.col("schemeName").is_not_null() & (pl.col("schemeName") != ""))
 
     if mapped.is_empty():
         return None
