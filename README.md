@@ -54,14 +54,14 @@ ui/views/portfolio_tabs/          portfolio sub-tabs (allocation, growth, drawdo
                                   risk_vs_return, fund_returns)
 ui/views/mf_tabs/                 MF analysis helper tabs (correlation, holdings, overlap, ...)
 ui/views/stock_tabs/              stock chart + strategy backtest
-ui/components/                    reusable widgets (fund_picker, freshness_banner, ...)
+ui/components/                    reusable widgets (freshness_banner, funds_library, stock_picker, ...)
 ui/charts/                        plotly chart builders + dark theme
 ui/state/loaders.py               @st.cache_data wrappers
                 ↓
 services/                         business logic — no streamlit imports
   registry_service.py             single source of truth for tracked funds (mf_registry)
-                                  · list_tracked / add_funds / backfill_missing /
-                                    retry_unavailable / remove_fund
+                                  · list_tracked / backfill_missing /
+                                    retry_unavailable / remove_fund / save_to_registry
   scheme_lookup.py                tradebook ISIN → scheme_name live join
   mf_metrics.py                   per-fund quantstats: cagr_1y/3y/5y/10y, vol, sharpe, sortino,
                                   max_dd, pct_from_ath, tracking_error
@@ -148,10 +148,7 @@ export DATABASE_URL=postgresql://$USER@localhost:5432/trading   # adjust if need
 uv sync
 uv pip install -e .
 
-# 3. Migrate any pre-existing parquet snapshots (idempotent; skipped if files absent)
-uv run python scripts/migrate_parquet_to_db.py
-
-# 4. Run
+# 3. Run
 streamlit run main.py
 ```
 

@@ -22,7 +22,11 @@ uv run pytest
 
 # Database setup
 createdb trading
-uv run python scripts/migrate_parquet_to_db.py
+
+# Schema migrations (idempotent) — run manually after pulling model changes.
+# NOT run on Streamlit boot: some steps (ALTER COLUMN TYPE, UPDATE backfills, GIN index
+# builds) take >2 minutes. Per-step timings land in logs/perf.log.
+uv run python scripts/migrate.py
 
 # Sync AMFI master data (14K+ mutual fund schemes with ISIN codes)
 # Also available via "Sync AMFI Master" button in Data Manager UI
