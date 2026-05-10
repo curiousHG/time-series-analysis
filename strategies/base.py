@@ -1,10 +1,12 @@
+from typing import ClassVar
+
 import pandas as pd
 
 
 class Strategy:
     name = "Base"
     # Typed params for UI auto-generation: {name: {default, min, max, step, help}}
-    params: dict = {}
+    params: ClassVar[dict] = {}
     # Default risk management (overridable per strategy)
     stoploss: float = -0.10  # -10% hard stoploss
     trailing_stop: bool = False

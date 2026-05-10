@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from strategies import register_strategy
 from strategies.base import Strategy
 
@@ -5,7 +7,7 @@ from strategies.base import Strategy
 @register_strategy
 class RSIStrategy(Strategy):
     name = "RSI"
-    params = {
+    params: ClassVar[dict] = {
         "window": {"default": 14, "min": 2, "max": 50, "step": 1, "help": "RSI lookback period"},
         "oversold": {"default": 30, "min": 5, "max": 50, "step": 5, "help": "Buy when RSI drops below this"},
         "overbought": {"default": 70, "min": 50, "max": 95, "step": 5, "help": "Sell when RSI rises above this"},

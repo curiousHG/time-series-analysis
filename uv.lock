@@ -2067,6 +2067,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-decouple"
+version = "3.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/97/373dcd5844ec0ea5893e13c39a2c67e7537987ad8de3842fe078db4582fa/python-decouple-3.8.tar.gz", hash = "sha256:ba6e2657d4f376ecc46f77a3a615e058d93ba5e465c01bbe57289bfb7cce680f", size = 9612, upload-time = "2023-03-01T19:38:38.143Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a2/d4/9193206c4563ec771faf2ccf54815ca7918529fe81f6adb22ee6d0e06622/python_decouple-3.8-py3-none-any.whl", hash = "sha256:d0d45340815b25f4de59c974b855bb38d03151d81b037d9e3f463b0c9f8cbd66", size = 9947, upload-time = "2023-03-01T19:38:36.015Z" },
+]
+
+[[package]]
 name = "python-dotenv"
 version = "1.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2698,6 +2707,20 @@ wheels = [
 ]
 
 [[package]]
+name = "streamlit-aggrid"
+version = "1.2.1.post2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pandas" },
+    { name = "python-decouple" },
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/47/18/2b1e99ca2c803d920bbc1beb6a7c60a954f587e23a861dd44b57d00744d7/streamlit_aggrid-1.2.1.post2.tar.gz", hash = "sha256:ad186998894af9356d7fa1d6de9f324a376714583cccc31d87c8c003334089fc", size = 5669190, upload-time = "2025-12-29T14:00:34.187Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1a/dc/baec10d371834ca2fbf26a71289d73be79e031c734a9830d7cc2879aeb83/streamlit_aggrid-1.2.1.post2-py3-none-any.whl", hash = "sha256:a812274e69bc6dcdebdd390c2eca7d0502e90420b869d4abf9d74ca3af47bc51", size = 5732799, upload-time = "2025-12-29T14:00:30.524Z" },
+]
+
+[[package]]
 name = "streamlit-lightweight-charts"
 version = "0.7.20"
 source = { registry = "https://pypi.org/simple" }
@@ -2801,6 +2824,7 @@ dependencies = [
     { name = "scipy" },
     { name = "sqlmodel" },
     { name = "streamlit" },
+    { name = "streamlit-aggrid" },
     { name = "streamlit-lightweight-charts" },
     { name = "ta-lib" },
     { name = "vectorbt" },
@@ -2831,6 +2855,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.13" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "streamlit", specifier = ">=1.52.2" },
+    { name = "streamlit-aggrid", specifier = ">=1.2.1.post2" },
     { name = "streamlit-lightweight-charts", specifier = ">=0.7" },
     { name = "ta-lib", specifier = ">=0.6" },
     { name = "vectorbt", specifier = ">=0.28.2" },

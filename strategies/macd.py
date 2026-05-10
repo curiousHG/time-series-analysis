@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from strategies import register_strategy
 from strategies.base import Strategy
 
@@ -5,7 +7,7 @@ from strategies.base import Strategy
 @register_strategy
 class MACDStrategy(Strategy):
     name = "MACD Crossover"
-    params = {
+    params: ClassVar[dict] = {
         "fast_period": {"default": 12, "min": 2, "max": 50, "step": 1, "help": "Fast EMA period"},
         "slow_period": {"default": 26, "min": 10, "max": 100, "step": 1, "help": "Slow EMA period"},
         "signal_period": {"default": 9, "min": 2, "max": 30, "step": 1, "help": "Signal line period"},

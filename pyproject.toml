@@ -22,6 +22,7 @@ dependencies = [
     "jugaad-data>=0.30",
     "streamlit-lightweight-charts>=0.7",
     "watchdog>=6.0.0",
+    "streamlit-aggrid>=1.2.1.post2",
 ]
 
 [dependency-groups]

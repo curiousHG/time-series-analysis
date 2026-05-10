@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from strategies import register_strategy
 from strategies.base import Strategy
 
@@ -5,7 +7,7 @@ from strategies.base import Strategy
 @register_strategy
 class BollingerStrategy(Strategy):
     name = "Bollinger Bands"
-    params = {
+    params: ClassVar[dict] = {
         "bb_period": {"default": 20, "min": 5, "max": 50, "step": 1, "help": "Bollinger Band lookback period"},
         "bb_std": {"default": 2.0, "min": 0.5, "max": 4.0, "step": 0.5, "help": "Standard deviation multiplier"},
         "rsi_guard": {

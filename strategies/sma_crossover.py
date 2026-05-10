@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from strategies import register_strategy
 from strategies.base import Strategy
 
@@ -5,7 +7,7 @@ from strategies.base import Strategy
 @register_strategy
 class SMACrossoverStrategy(Strategy):
     name = "SMA Crossover"
-    params = {
+    params: ClassVar[dict] = {
         "fast_period": {"default": 20, "min": 5, "max": 100, "step": 5, "help": "Fast SMA period"},
         "slow_period": {"default": 50, "min": 20, "max": 200, "step": 10, "help": "Slow SMA period"},
     }
