@@ -23,13 +23,10 @@ uv run pytest
 # Database setup
 createdb trading
 
-# Schema migrations — run manually after pulling model changes.
+# Schema migrations — Alembic owns all schema deltas. Run manually after pulling model
+# changes (kept off Streamlit boot: ALTER COLUMN TYPE / GIN index builds can be slow).
+# Idempotent — safe to re-run; on an existing pre-Alembic DB just run upgrade head.
 uv run alembic upgrade head
-
-# Legacy hand-written migrations retained for older drift fixes.
-# NOT run on Streamlit boot: some steps (ALTER COLUMN TYPE, UPDATE backfills, GIN index builds)
-# can be slow. Per-step timings land in logs/perf.log.
-uv run python scripts/migrate.py
 
 # Sync AMFI master data (14K+ mutual fund schemes with ISIN codes)
 # Also available via "Sync AMFI Master" button in Settings

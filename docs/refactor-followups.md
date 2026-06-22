@@ -34,27 +34,26 @@ Continuation notes for the YAGNI cleanup refactor. Everything below is on `main`
 
 ## Remaining work
 
-### 1. Phase 2 — unify schema migrations on Alembic (deferred; biggest item)
+### 1. Phase 2 — unify schema migrations on Alembic — ✅ DONE
 
-Three schema mechanisms still coexist: `core/database.py:init_schema` (`create_all` on
-boot), `migrations/runner.py` (hand-written, run via `scripts/migrate.py`), and `alembic/`
-(one baseline revision `20260613_0001`). Port the 3 `migrations/runner.py` steps into
-Alembic revisions chained after `20260613_0001`:
+Alembic is now the single owner of schema deltas. The three `migrations/runner.py` steps
+were ported into revision `alembic/versions/20260622_0002_port_handwritten_migrations.py`
+(chained after `20260613_0001`): 42 `mf_scheme_metrics ADD COLUMN IF NOT EXISTS`,
+`stock_ohlcv.volume` INTEGER→BIGINT (guarded), and `pg_trgm` + GIN index (in a SAVEPOINT
+so a missing-privilege role degrades to ILIKE without poisoning the migration). All steps
+idempotent; downgrade is non-destructive (drops only the rebuildable GIN index).
 
-1. 24 `ALTER TABLE mf_scheme_metrics ADD COLUMN IF NOT EXISTS …` (metrics columns).
-2. `stock_ohlcv.volume` INTEGER → BIGINT (idempotent type check first).
-3. `pg_trgm` extension + GIN index for fuzzy scheme-name search.
+`core/database.py:init_schema` now documents create_all as first-run table creation only;
+`migrations/` and `scripts/migrate.py` deleted; `CLAUDE.md` updated.
 
-Optional extra revision: drop legacy `bots` / `trades` / `orders` tables (the code is gone
-as of `f29d587`; the tables were intentionally left in place).
+**Verified** on a scratch `trading_test` DB (real `trading` untouched): `init_schema`
+then `alembic upgrade head` twice — 2nd run a no-op; confirmed 58 cols on
+`mf_scheme_metrics`, `volume` bigint, `pg_trgm` + `idx_amfi_scheme_name_trgm` present,
+`alembic_version` = `20260622_0002`; `uv run pytest` → 30 passed. Existing pre-Alembic DBs
+can just run `uv run alembic upgrade head` (every step is idempotent — no stamp needed).
 
-Then: document `alembic stamp 20260613_0001` for pre-Alembic DBs; reword `init_schema`
-docstring to "first-run table creation only"; delete `migrations/` + `scripts/migrate.py`;
-update `CLAUDE.md` + `README.md`.
-
-**Why deferred:** needs a live Postgres to verify idempotency. Verify with
-`createdb trading_test` then `uv run alembic upgrade head` run **twice** (must be a no-op
-the second time); confirm all schema objects exist; `uv run pytest`.
+Not done (intentionally): dropping legacy `bots`/`trades`/`orders` tables — skipped to
+honour the "no data deleted" constraint. Revisit as a separate opt-in revision if wanted.
 
 ### 2. Ruff leftovers (91 findings — not safely auto-fixable)
 

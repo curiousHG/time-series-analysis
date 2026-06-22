@@ -17,13 +17,14 @@ def get_session() -> Session:
 
 
 def init_schema() -> None:
-    """Create any missing tables on startup. Migrations are NOT run here — they live in
-    the `migrations` package and must be invoked manually after model changes via
-    `scripts/migrate.py` (see CLAUDE.md).
+    """Create any missing tables on startup (first-run table creation only).
 
-    Why: migrations include heavy operations (ALTER COLUMN TYPE, GIN index builds) that
-    can take >2 minutes. `SQLModel.metadata.create_all` alone is idempotent and fast
-    (~60ms) — safe to call on every Streamlit boot.
+    `create_all` owns first-time table creation: it is idempotent, fast (~60ms), and only
+    ever CREATEs *missing* tables — it never ALTERs existing ones. Schema **deltas**
+    (added columns, type widenings, extensions/indexes) are Alembic's job: run
+    `uv run alembic upgrade head` after pulling model changes (see CLAUDE.md). Deltas are
+    kept out of boot because they include heavy operations (ALTER COLUMN TYPE, GIN index
+    builds) that can take minutes.
     """
     from core.timing import timed
 
@@ -32,4 +33,4 @@ def init_schema() -> None:
 
     with timed("init_schema.create_all"):
         SQLModel.metadata.create_all(engine)
-    logger.info("Database schema initialized (run scripts/migrate.py for schema migrations)")
+    logger.info("Database schema initialized (run 'alembic upgrade head' for schema migrations)")
