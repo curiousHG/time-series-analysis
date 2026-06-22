@@ -39,9 +39,7 @@ def _resolve_names(scheme_codes: list[int]) -> dict[int, str]:
         return {}
     with get_session() as session:
         rows = session.exec(
-            select(AmfiScheme.scheme_code, AmfiScheme.scheme_name).where(
-                col(AmfiScheme.scheme_code).in_(scheme_codes)
-            )
+            select(AmfiScheme.scheme_code, AmfiScheme.scheme_name).where(col(AmfiScheme.scheme_code).in_(scheme_codes))
         ).all()
     return {r[0]: r[1] for r in rows}
 

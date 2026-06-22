@@ -77,9 +77,7 @@ def holdings_for_slug(slug: str) -> pl.DataFrame:
         # Restrict to the latest portfolio_date — `mf_holdings` carries multiple snapshots
         # per scheme, and would otherwise inflate counts and weights.
         latest_date_subq = (
-            select(func.max(MfHolding.portfolio_date))
-            .where(MfHolding.scheme_code == code)
-            .scalar_subquery()
+            select(func.max(MfHolding.portfolio_date)).where(MfHolding.scheme_code == code).scalar_subquery()
         )
         rows = session.exec(
             select(

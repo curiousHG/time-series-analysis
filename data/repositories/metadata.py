@@ -25,8 +25,9 @@ def _attach_amfi_fields(meta: dict) -> dict:
     """
     with get_session() as session:
         row = session.exec(
-            select(AmfiScheme.fund_house_id, AmfiScheme.category_id)
-            .where(AmfiScheme.scheme_name == meta["scheme_name"])
+            select(AmfiScheme.fund_house_id, AmfiScheme.category_id).where(
+                AmfiScheme.scheme_name == meta["scheme_name"]
+            )
         ).first()
         if row is None:
             return meta
@@ -52,9 +53,7 @@ def save_metadata(meta: dict) -> None:
         # amfi_schemes; if the scheme isn't there yet, mint a synthetic-negative row so
         # the FK doesn't violate. The mint shares this session so it commits atomically
         # with the metadata insert below.
-        scheme_code = session.exec(
-            select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)
-        ).first()
+        scheme_code = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)).first()
         # session.exec(select(SingleCol)).first() can return either a scalar or a 1-tuple
         # Row depending on the SQLAlchemy code path — unwrap defensively.
         if isinstance(scheme_code, tuple):

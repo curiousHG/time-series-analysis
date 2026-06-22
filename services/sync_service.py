@@ -157,10 +157,7 @@ def refresh_holdings_for_schemes(
     done = 0
 
     with ThreadPoolExecutor(max_workers=HOLDINGS_FETCH_WORKERS) as pool:
-        future_to_pair = {
-            pool.submit(_fetch_normalize_holdings, slug): (name, slug)
-            for name, slug in pairs
-        }
+        future_to_pair = {pool.submit(_fetch_normalize_holdings, slug): (name, slug) for name, slug in pairs}
         for future in as_completed(future_to_pair):
             name, _slug = future_to_pair[future]
             done += 1

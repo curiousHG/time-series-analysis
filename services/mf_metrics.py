@@ -121,13 +121,10 @@ def _holdings_composition(scheme_name: str) -> dict[str, float]:
     from core.models import AmfiScheme, MfHolding
     from mutual_funds.display import make_slug  # noqa: F401  (kept for back-compat callers)
 
-    nan = {k: math.nan for k in ("pct_equity", "pct_debt", "pct_cash",
-                                  "pct_top3", "pct_top5", "pct_top10")}  # fmt: skip
+    nan = dict.fromkeys(("pct_equity", "pct_debt", "pct_cash", "pct_top3", "pct_top5", "pct_top10"), math.nan)  # fmt: skip
     # Phase 3: mf_holdings is keyed on scheme_code; resolve from scheme_name via AmfiScheme.
     with get_session() as session:
-        code_row = session.exec(
-            select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)
-        ).first()
+        code_row = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)).first()
         if code_row is None:
             return nan
         code = int(code_row) if not isinstance(code_row, tuple) else int(code_row[0])
@@ -210,7 +207,10 @@ def compute_metrics_for_scheme(
         worst_return = float(bad.loc[bad.abs().idxmax()])
         logger.warning(
             "Skipping '%s' — %d corrupt NAV day(s); worst on %s (%.0f%% single-day move)",
-            scheme_name, len(bad), worst_date, worst_return * 100,
+            scheme_name,
+            len(bad),
+            worst_date,
+            worst_return * 100,
         )
         return None
 
@@ -474,9 +474,7 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
         with get_session() as session:
             scheme_names = list(
                 session.exec(
-                    select(AmfiScheme.scheme_name)
-                    .join(MfNav, MfNav.scheme_code == AmfiScheme.scheme_code)
-                    .distinct()
+                    select(AmfiScheme.scheme_name).join(MfNav, MfNav.scheme_code == AmfiScheme.scheme_code).distinct()
                 ).all()
             )
 
@@ -488,9 +486,10 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
 
     rows: list[dict] = []
     skipped: list[str] = []
-    with timed(f"mf_metrics.recompute_metrics.parallel(n={len(scheme_names)})"), ThreadPoolExecutor(
-        max_workers=max_workers
-    ) as pool:
+    with (
+        timed(f"mf_metrics.recompute_metrics.parallel(n={len(scheme_names)})"),
+        ThreadPoolExecutor(max_workers=max_workers) as pool,
+    ):
         futures = {pool.submit(compute_metrics_for_scheme, n, bench_returns): n for n in scheme_names}
         for future in as_completed(futures):
             name = futures[future]

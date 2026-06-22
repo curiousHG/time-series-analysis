@@ -33,12 +33,8 @@ def _build_display_pdf(filtered: pl.DataFrame, visible_metrics: list[str]) -> pd
     # Per-source tracking glyphs (✓ / ✗ / —) so the user can see which datasets are
     # missing per fund without leaving the screener.
     pdf["NAV"] = pdf["nav_status"].apply(status_cell) if "nav_status" in pdf.columns else "—"
-    pdf["Holdings"] = (
-        pdf["holdings_status"].apply(status_cell) if "holdings_status" in pdf.columns else "—"
-    )
-    pdf["Metadata"] = (
-        pdf["metadata_status"].apply(status_cell) if "metadata_status" in pdf.columns else "—"
-    )
+    pdf["Holdings"] = pdf["holdings_status"].apply(status_cell) if "holdings_status" in pdf.columns else "—"
+    pdf["Metadata"] = pdf["metadata_status"].apply(status_cell) if "metadata_status" in pdf.columns else "—"
 
     # DB-named columns → display names, ordered as in METRIC_RENAME so they don't shuffle.
     db_cols_in_order = [c for c in METRIC_RENAME if c in pdf.columns]
@@ -46,9 +42,7 @@ def _build_display_pdf(filtered: pl.DataFrame, visible_metrics: list[str]) -> pd
     pdf = pdf[db_cols_in_order + extra_status].rename(columns=METRIC_RENAME)
 
     # Visibility filter: identity always shown + user-selected metrics.
-    visible = [c for c in IDENTITY_COLS if c in pdf.columns] + [
-        c for c in visible_metrics if c in pdf.columns
-    ]
+    visible = [c for c in IDENTITY_COLS if c in pdf.columns] + [c for c in visible_metrics if c in pdf.columns]
     pdf = pdf[visible]
 
     # Re-order to canonical left-to-right so columns don't shuffle as the user toggles.
@@ -86,18 +80,16 @@ def _build_grid_options(pdf: pd.DataFrame):
 
     # Multi-row selection — header checkbox = select-all, per-row checkbox in Scheme column.
     gob.configure_selection(selection_mode="multiple", use_checkbox=True, header_checkbox=True)
-    gob.configure_column(
-        "Scheme", pinned="left", minWidth=300, checkboxSelection=True, headerCheckboxSelection=True
-    )
+    gob.configure_column("Scheme", pinned="left", minWidth=300, checkboxSelection=True, headerCheckboxSelection=True)
 
     gob.configure_grid_options(
         domLayout="normal",
         suppressHorizontalScroll=False,
         alwaysShowVerticalScroll=True,
         enableCellTextSelection=True,  # cells are text-selectable for native browser copy
-        ensureDomOrder=True,             # Cmd/Ctrl+C honours visual order, not insertion order
+        ensureDomOrder=True,  # Cmd/Ctrl+C honours visual order, not insertion order
         suppressCopyRowsToClipboard=False,
-        copyHeadersToClipboard=True,     # include column names in the clipboard payload
+        copyHeadersToClipboard=True,  # include column names in the clipboard payload
     )
     return gob.build()
 

@@ -13,8 +13,7 @@ def overlap_matrix(holdings_df: pl.DataFrame, fund_slugs: list[str]) -> pd.DataF
     n = len(fund_slugs)
 
     fund_holdings = {
-        slug: holdings_df.filter(pl.col("schemeSlug") == slug).select("instrumentName", "weight")
-        for slug in fund_slugs
+        slug: holdings_df.filter(pl.col("schemeSlug") == slug).select("instrumentName", "weight") for slug in fund_slugs
     }
 
     data = [[0.0] * n for _ in range(n)]

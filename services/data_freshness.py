@@ -186,9 +186,7 @@ def build_nav_status_rows(
     rows: list[dict] = []
     for r in report.rows:
         scheme_nav = nav_df.filter(pl.col("schemeName") == r.scheme_name)
-        first_date = (
-            str(scheme_nav.select("date").to_series().min()) if scheme_nav.height > 0 else "-"
-        )
+        first_date = str(scheme_nav.select("date").to_series().min()) if scheme_nav.height > 0 else "-"
         rows.append(
             {
                 "Fund": short_by_name.get(r.scheme_name, r.scheme_name),

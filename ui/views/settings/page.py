@@ -101,9 +101,7 @@ def _render_overview() -> None:
 
 
 def _render_tabs() -> None:
-    portfolio_tab, fund_tab, system_tab, reference_tab = st.tabs(
-        ["Portfolio Data", "Fund Data", "System", "Reference"]
-    )
+    portfolio_tab, fund_tab, system_tab, reference_tab = st.tabs(["Portfolio Data", "Fund Data", "System", "Reference"])
 
     with portfolio_tab:
         st.markdown("### Portfolio Data")

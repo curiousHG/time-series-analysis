@@ -97,9 +97,7 @@ def _nav_matches(conn, syn_code: int, real_code: int) -> tuple[bool, float | Non
         text("SELECT nav FROM mf_nav WHERE scheme_code = :c ORDER BY date DESC LIMIT 1"),
         {"c": syn_code},
     ).first()
-    amfi_nav_row = conn.execute(
-        text("SELECT nav FROM amfi_schemes WHERE scheme_code = :c"), {"c": real_code}
-    ).first()
+    amfi_nav_row = conn.execute(text("SELECT nav FROM amfi_schemes WHERE scheme_code = :c"), {"c": real_code}).first()
     our_nav = float(our_nav_row[0]) if our_nav_row and our_nav_row[0] is not None else None
     amfi_nav = float(amfi_nav_row[0]) if amfi_nav_row and amfi_nav_row[0] is not None else None
     if our_nav is None:
@@ -166,9 +164,7 @@ def _propose_merges(conn, *, prefer_regular: bool = False) -> list[tuple[int, st
     # Build an index of real-code rows keyed by (stem, plan, option). One synthetic-stem
     # may map to many real rows (different IDCW frequencies, payout flavours, etc.); we
     # only accept a merge when there's exactly one real row at the same (plan, option).
-    real_rows = conn.execute(
-        text("SELECT scheme_code, scheme_name FROM amfi_schemes WHERE scheme_code > 0")
-    ).all()
+    real_rows = conn.execute(text("SELECT scheme_code, scheme_name FROM amfi_schemes WHERE scheme_code > 0")).all()
     by_key: dict[tuple[str, str, str], list[tuple[int, str]]] = {}
     for code, name in real_rows:
         key = (_stem(name), detect_plan(name) or "", detect_option(name) or "")
@@ -209,9 +205,7 @@ def _propose_merges(conn, *, prefer_regular: bool = False) -> list[tuple[int, st
                     candidates.append((syn_code, syn_name, real_code, real_name))
                     pass3_added += 1
                 else:
-                    nav_rejections.append(
-                        (syn_code, syn_name, real_code, real_name, our_nav or 0.0, amfi_nav or 0.0)
-                    )
+                    nav_rejections.append((syn_code, syn_name, real_code, real_name, our_nav or 0.0, amfi_nav or 0.0))
             elif len(bucket) > 1:
                 pass3_ambiguous += 1
 
@@ -220,15 +214,25 @@ def _propose_merges(conn, *, prefer_regular: bool = False) -> list[tuple[int, st
         "Pass 1 (LOWER=LOWER): %d matches. Pass 2 (stem+plan+option): +%d matches, %d ambiguous. "
         "Pass 3 (--prefer-regular): +%d matches, %d ambiguous. "
         "NAV sanity rejected: %d candidates (>%d%% NAV deviation = wrong fund).",
-        len(pass1_candidates), pass2_added, ambiguous, pass3_added, pass3_ambiguous,
-        len(nav_rejections), int(_NAV_TOLERANCE * 100),
+        len(pass1_candidates),
+        pass2_added,
+        ambiguous,
+        pass3_added,
+        pass3_ambiguous,
+        len(nav_rejections),
+        int(_NAV_TOLERANCE * 100),
     )
     if nav_rejections:
         for syn_code, syn_name, real_code, _real_name, our_nav, amfi_nav in nav_rejections:
             delta_pct = (our_nav - amfi_nav) / amfi_nav * 100 if amfi_nav else 0
             log.warning(
                 "NAV-mismatch rejection: syn=%d (%r) → real=%d  our_nav=%.2f  amfi_nav=%.2f  Δ=%.1f%%",
-                syn_code, syn_name[:60], real_code, our_nav, amfi_nav, delta_pct,
+                syn_code,
+                syn_name[:60],
+                real_code,
+                our_nav,
+                amfi_nav,
+                delta_pct,
             )
     return candidates
 
@@ -333,7 +337,8 @@ def main() -> int:
             log.info(
                 "[%s] syn=%-5d → real=%-7d  %r  (rows: %s)",
                 "MERGE " if args.apply else "WOULD ",
-                syn_code, real_code,
+                syn_code,
+                real_code,
                 syn_name[:70],
                 ", ".join(f"{k}={v}" for k, v in counts.items()) or "no dependent rows",
             )
@@ -356,7 +361,10 @@ def main() -> int:
             log.info(
                 "Done. Merged %d synthetic codes — moved %d rows, dropped %d duplicates. "
                 "%d synthetic codes remain (no AMFI counterpart).",
-                totals["merged"], totals["rows_moved"], totals["rows_dropped"], remaining,
+                totals["merged"],
+                totals["rows_moved"],
+                totals["rows_dropped"],
+                remaining,
             )
         else:
             log.info(

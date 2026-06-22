@@ -137,9 +137,8 @@ def find_stale_schemes() -> list[str]:
         latest_nav = {r[0]: r[1] for r in session.exec(nav_stmt).all()}
 
         # All cached metric rows.
-        m_stmt = (
-            select(AmfiScheme.scheme_name, MfSchemeMetrics.computed_at_nav_date)
-            .join(AmfiScheme, MfSchemeMetrics.scheme_code == AmfiScheme.scheme_code)
+        m_stmt = select(AmfiScheme.scheme_name, MfSchemeMetrics.computed_at_nav_date).join(
+            AmfiScheme, MfSchemeMetrics.scheme_code == AmfiScheme.scheme_code
         )
         cached = {r[0]: r[1] for r in session.exec(m_stmt).all()}
 
@@ -156,9 +155,7 @@ def clear_metrics(scheme_names: list[str] | None = None) -> int:
     with get_session() as session:
         if scheme_names:
             codes = list(
-                session.exec(
-                    select(AmfiScheme.scheme_code).where(col(AmfiScheme.scheme_name).in_(scheme_names))
-                ).all()
+                session.exec(select(AmfiScheme.scheme_code).where(col(AmfiScheme.scheme_name).in_(scheme_names))).all()
             )
             if not codes:
                 return 0

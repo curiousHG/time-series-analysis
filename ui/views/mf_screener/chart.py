@@ -61,9 +61,7 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
         st.session_state["_screener_cache_busted"] = True
         load_screener_df_cached.clear()
         load_metrics_cached.clear()
-        st.toast(
-            f"Refreshing screener cache to pick up the new `{risk_db_col}` column…", icon="🔄"
-        )
+        st.toast(f"Refreshing screener cache to pick up the new `{risk_db_col}` column…", icon="🔄")
         st.rerun()
     if risk_db_col not in chart_pdf.columns:
         st.error(
@@ -85,9 +83,7 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
         )
         return
 
-    chart_pdf["__risk__"] = (
-        chart_pdf[risk_db_col].abs() if risk_take_abs else chart_pdf[risk_db_col]
-    )
+    chart_pdf["__risk__"] = chart_pdf[risk_db_col].abs() if risk_take_abs else chart_pdf[risk_db_col]
 
     # All stored fractions are decimals — multiply by 100 for human-readable axes.
     chart_pdf["__risk__"] *= 100
@@ -115,15 +111,12 @@ def _resolve_return_axis(chart_pdf, return_choice: str) -> tuple[str, str]:
         nifty_cagr = nifty_1y_cagr()
         if nifty_cagr is None:
             st.warning(
-                "Couldn't load Nifty 50 history to compute the IR-numerator axis. "
-                "Falling back to Jensen's alpha."
+                "Couldn't load Nifty 50 history to compute the IR-numerator axis. Falling back to Jensen's alpha."
             )
             chart_pdf["__return__"] = chart_pdf.get("alpha_1y")
             return "Jensen's Alpha (Nifty fallback)", "alpha_1y"
         chart_pdf["__return__"] = chart_pdf["cagr_1y"] - nifty_cagr
-        label = (
-            f"{RETURN_AXIS_OPTIONS[return_choice]} — Nifty 50 1Y CAGR = {nifty_cagr * 100:.2f}%"
-        )
+        label = f"{RETURN_AXIS_OPTIONS[return_choice]} — Nifty 50 1Y CAGR = {nifty_cagr * 100:.2f}%"
         return label, "cagr_1y"
     chart_pdf["__return__"] = chart_pdf.get(return_choice)
     return RETURN_AXIS_OPTIONS[return_choice], return_choice
@@ -148,14 +141,18 @@ def _draw_scatter(chart_pdf, risk_label: str, return_label: str, color_mode: str
     if color_mode == "Sharpe" and "sharpe_1y" in chart_pdf.columns:
         chart_pdf["__color__"] = chart_pdf["sharpe_1y"]
         color_kwargs.update(
-            color="__color__", color_continuous_scale="RdYlGn",
-            color_continuous_midpoint=0, labels={"__color__": "Sharpe"},
+            color="__color__",
+            color_continuous_scale="RdYlGn",
+            color_continuous_midpoint=0,
+            labels={"__color__": "Sharpe"},
         )
     elif color_mode == "Sortino" and "sortino_1y" in chart_pdf.columns:
         chart_pdf["__color__"] = chart_pdf["sortino_1y"]
         color_kwargs.update(
-            color="__color__", color_continuous_scale="RdYlGn",
-            color_continuous_midpoint=0, labels={"__color__": "Sortino"},
+            color="__color__",
+            color_continuous_scale="RdYlGn",
+            color_continuous_midpoint=0,
+            labels={"__color__": "Sortino"},
         )
     elif color_mode == "Category" and "category" in chart_pdf.columns:
         chart_pdf["__color__"] = chart_pdf["category"].fillna("(uncategorised)")
@@ -165,10 +162,18 @@ def _draw_scatter(chart_pdf, risk_label: str, return_label: str, color_mode: str
         color_kwargs.update(color="__color__", labels={"__color__": "Asset class"})
 
     hover_cols = [
-        c for c in (
-            "scheme_name", "fund_house", "category", "aum_crores",
-            "sharpe_1y", "sortino_1y", "alpha_1y", "beta_1y",
-        ) if c in chart_pdf.columns
+        c
+        for c in (
+            "scheme_name",
+            "fund_house",
+            "category",
+            "aum_crores",
+            "sharpe_1y",
+            "sortino_1y",
+            "alpha_1y",
+            "beta_1y",
+        )
+        if c in chart_pdf.columns
     ]
 
     fig = px.scatter(

@@ -194,9 +194,7 @@ def _latest_per_scheme(df: pl.DataFrame, dedup_keys: list[str]) -> pl.DataFrame:
     """Keep only the latest `portfolioDate` row per scheme, deduped by `dedup_keys`."""
     if df.is_empty() or "portfolioDate" not in df.columns:
         return df
-    latest = df.group_by("schemeCode").agg(
-        pl.col("portfolioDate").max().alias("_latest")
-    )
+    latest = df.group_by("schemeCode").agg(pl.col("portfolioDate").max().alias("_latest"))
     return (
         df.join(latest, on="schemeCode", how="inner")
         .filter(pl.col("portfolioDate") == pl.col("_latest"))

@@ -32,8 +32,6 @@ def render() -> None:
         hide_index=True,
         column_config={
             "Rows": st.column_config.NumberColumn(format="%d"),
-            "Bytes": st.column_config.NumberColumn(
-                help="Total bytes (table + indexes + toast)", format="%d"
-            ),
+            "Bytes": st.column_config.NumberColumn(help="Total bytes (table + indexes + toast)", format="%d"),
         },
     )

@@ -92,9 +92,7 @@ def list_tracked() -> pl.DataFrame:
 def _resolve_scheme_code(scheme_name: str) -> int | None:
     """Look up scheme_code in amfi_schemes by exact name match."""
     with get_session() as session:
-        row = session.exec(
-            select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)
-        ).first()
+        row = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)).first()
     return int(row) if row is not None else None
 
 

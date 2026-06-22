@@ -118,9 +118,7 @@ def _outcome_glyph(outcome: str) -> str:
     return {"updated": "✓", "skipped": "•", "failed": "✗"}.get(outcome, "?")
 
 
-def _make_progress_renderer(
-    progress, counter_slot, log_slot, short_by_name: dict[str, str], counter_fmt
-):
+def _make_progress_renderer(progress, counter_slot, log_slot, short_by_name: dict[str, str], counter_fmt):
     """Build a callback that updates the Streamlit progress bar + counters + log slot.
     `counter_fmt(counters)` shapes the markdown line; `counters` carries running totals."""
     recent: list[str] = []
@@ -166,8 +164,7 @@ def _run_nav_update(scheme_names: list[str], short_by_name: dict[str, str]) -> N
 
     progress.progress(
         1.0,
-        text=f"Done — {result.updated_count} updated, {result.skipped_count} skipped, "
-        f"{len(result.failures)} failed",
+        text=f"Done — {result.updated_count} updated, {result.skipped_count} skipped, {len(result.failures)} failed",
     )
     counter_slot.markdown(
         f"**Updated:** {result.updated_count} · **Skipped:** {result.skipped_count} · "
@@ -180,10 +177,7 @@ def _run_nav_update(scheme_names: list[str], short_by_name: dict[str, str]) -> N
         with st.expander(f"{len(result.failures)} failure(s)"):
             for name, err in result.failures:
                 st.error(f"**{short_by_name.get(name, name)}** — {err}")
-    st.toast(
-        f"NAV: {result.updated_count} updated ({result.new_rows_total} new rows), "
-        f"{result.skipped_count} skipped"
-    )
+    st.toast(f"NAV: {result.updated_count} updated ({result.new_rows_total} new rows), {result.skipped_count} skipped")
     st.rerun()
 
 

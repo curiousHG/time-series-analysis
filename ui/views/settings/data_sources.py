@@ -79,48 +79,76 @@ _DATA_SOURCES = pd.DataFrame(
 _SCHEMA_TABLES = pd.DataFrame(
     [
         # ----- Dim tables -----
-        {"Table": "amfi_schemes", "PK": "scheme_code (int)",
-         "Holds": "Canonical scheme dim. Includes synthetic negative codes for tracked funds AMFI doesn't list.",
-         "FK targets": "mf_amc.id, mf_category.id"},
-        {"Table": "mf_amc", "PK": "id (serial)",
-         "Holds": "Asset Management Companies (~50 distinct values). Replaces fund_house TEXT repeated 14k times before normalisation.",
-         "FK targets": "—"},
-        {"Table": "mf_category", "PK": "id (serial)",
-         "Holds": "Scheme categories (~110 distinct values). Replaces category TEXT repeated 14k times before normalisation.",
-         "FK targets": "—"},
+        {
+            "Table": "amfi_schemes",
+            "PK": "scheme_code (int)",
+            "Holds": "Canonical scheme dim. Includes synthetic negative codes for tracked funds AMFI doesn't list.",
+            "FK targets": "mf_amc.id, mf_category.id",
+        },
+        {
+            "Table": "mf_amc",
+            "PK": "id (serial)",
+            "Holds": "Asset Management Companies (~50 distinct values). Replaces fund_house TEXT repeated 14k times before normalisation.",
+            "FK targets": "—",
+        },
+        {
+            "Table": "mf_category",
+            "PK": "id (serial)",
+            "Holds": "Scheme categories (~110 distinct values). Replaces category TEXT repeated 14k times before normalisation.",
+            "FK targets": "—",
+        },
         # ----- Scheme-keyed tables -----
-        {"Table": "mf_nav", "PK": "(scheme_code, date)",
-         "Holds": "Daily NAV per scheme (~2.3M rows). Phase 2 saved ~336 MB by switching from scheme_name TEXT PK to scheme_code int FK.",
-         "FK targets": "amfi_schemes.scheme_code"},
-        {"Table": "mf_metadata", "PK": "scheme_code",
-         "Holds": "AdvisorKhoj-sourced metadata: AUM, TER, benchmark, fund manager, exit load, launch date, etc.",
-         "FK targets": "amfi_schemes.scheme_code, mf_amc.id, mf_category.id"},
-        {"Table": "mf_scheme_metrics", "PK": "scheme_code",
-         "Holds": "31 pre-computed risk/return metrics per scheme. Backed by services.mf_metrics.recompute_metrics; auto-recomputes after every NAV save.",
-         "FK targets": "amfi_schemes.scheme_code"},
-        {"Table": "mf_registry", "PK": "scheme_code",
-         "Holds": "Tracked-funds list with per-source nav/holdings/metadata status. Keyed on scheme_code with FK to amfi_schemes.",
-         "FK targets": "amfi_schemes.scheme_code"},
+        {
+            "Table": "mf_nav",
+            "PK": "(scheme_code, date)",
+            "Holds": "Daily NAV per scheme (~2.3M rows). Phase 2 saved ~336 MB by switching from scheme_name TEXT PK to scheme_code int FK.",
+            "FK targets": "amfi_schemes.scheme_code",
+        },
+        {
+            "Table": "mf_metadata",
+            "PK": "scheme_code",
+            "Holds": "AdvisorKhoj-sourced metadata: AUM, TER, benchmark, fund manager, exit load, launch date, etc.",
+            "FK targets": "amfi_schemes.scheme_code, mf_amc.id, mf_category.id",
+        },
+        {
+            "Table": "mf_scheme_metrics",
+            "PK": "scheme_code",
+            "Holds": "31 pre-computed risk/return metrics per scheme. Backed by services.mf_metrics.recompute_metrics; auto-recomputes after every NAV save.",
+            "FK targets": "amfi_schemes.scheme_code",
+        },
+        {
+            "Table": "mf_registry",
+            "PK": "scheme_code",
+            "Holds": "Tracked-funds list with per-source nav/holdings/metadata status. Keyed on scheme_code with FK to amfi_schemes.",
+            "FK targets": "amfi_schemes.scheme_code",
+        },
         # ----- Holdings family -----
-        {"Table": "mf_holdings, mf_sector_allocation, mf_asset_allocation", "PK": "id (auto)",
-         "Holds": "Per-fund holdings + sector + asset weights from AdvisorKhoj. Slugs are derived at the API boundary; persisted rows FK by scheme_code.",
-         "FK targets": "amfi_schemes.scheme_code"},
+        {
+            "Table": "mf_holdings, mf_sector_allocation, mf_asset_allocation",
+            "PK": "id (auto)",
+            "Holds": "Per-fund holdings + sector + asset weights from AdvisorKhoj. Slugs are derived at the API boundary; persisted rows FK by scheme_code.",
+            "FK targets": "amfi_schemes.scheme_code",
+        },
         # ----- Tradebook -----
-        {"Table": "mf_tradebook", "PK": "trade_id (str)",
-         "Holds": "Kite/Zerodha trade rows. Resolution to scheme_name happens live via mf_tradebook.isin = amfi_schemes.isin_growth.",
-         "FK targets": "(planned) amfi_schemes.scheme_code"},
+        {
+            "Table": "mf_tradebook",
+            "PK": "trade_id (str)",
+            "Holds": "Kite/Zerodha trade rows. Resolution to scheme_name happens live via mf_tradebook.isin = amfi_schemes.isin_growth.",
+            "FK targets": "(planned) amfi_schemes.scheme_code",
+        },
         # ----- Stock side -----
-        {"Table": "stock_ohlcv", "PK": "(symbol, date)",
-         "Holds": "Daily OHLCV bars for Indian stocks + benchmark indices (^NSEI etc).",
-         "FK targets": "—"},
+        {
+            "Table": "stock_ohlcv",
+            "PK": "(symbol, date)",
+            "Holds": "Daily OHLCV bars for Indian stocks + benchmark indices (^NSEI etc).",
+            "FK targets": "—",
+        },
     ]
 )
 
 
 def render() -> None:
-    st.caption(
-        "Where each kind of data comes from, what input is required to fetch it, and where it lands."
-    )
+    st.caption("Where each kind of data comes from, what input is required to fetch it, and where it lands.")
     st.dataframe(_DATA_SOURCES, use_container_width=True, hide_index=True)
 
     st.markdown("**Schema map** — every MF table now FKs through `amfi_schemes.scheme_code`.")

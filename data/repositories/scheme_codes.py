@@ -41,9 +41,7 @@ def resolve_codes(scheme_names: list[str]) -> dict[str, int]:
         return {}
     with get_session() as session:
         rows = session.exec(
-            select(AmfiScheme.scheme_name, AmfiScheme.scheme_code).where(
-                col(AmfiScheme.scheme_name).in_(scheme_names)
-            )
+            select(AmfiScheme.scheme_name, AmfiScheme.scheme_code).where(col(AmfiScheme.scheme_name).in_(scheme_names))
         ).all()
     return {r[0]: r[1] for r in rows}
 
