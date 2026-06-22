@@ -48,12 +48,12 @@ The data table includes computed risk metrics (CAGR 1Y/3Y/5Y/10Y, vol, Sharpe, M
 ## Architecture at a glance
 
 ```
-ui/views/                         pages: portfolio.py / mutual_fund.py / stock_analysis.py /
-                                  mf_screener.py / settings.py
-ui/views/portfolio_tabs/          portfolio sub-tabs (allocation, growth, drawdown, risk_metrics,
+ui/views/                         page folders: portfolio/ mutual_fund/ stock_analysis/
+                                  mf_screener/ settings/
+ui/views/portfolio/               portfolio sections (allocation, growth, drawdown, risk_metrics,
                                   risk_vs_return, fund_returns)
-ui/views/mf_tabs/                 MF analysis helper tabs (correlation, holdings, overlap, ...)
-ui/views/stock_tabs/              stock chart + strategy backtest
+ui/views/mutual_fund/             single-fund deep dive + reusable MF views
+ui/views/stock_analysis/          stock chart + strategy backtest
 ui/components/                    reusable widgets (freshness_banner, funds_library, stock_picker, ...)
 ui/charts/                        plotly chart builders + dark theme
 ui/state/loaders.py               @st.cache_data wrappers
@@ -62,10 +62,11 @@ services/                         business logic — no streamlit imports
   registry_service.py             single source of truth for tracked funds (mf_registry)
                                   · list_tracked / backfill_missing /
                                     retry_unavailable / remove_fund / save_to_registry
-  scheme_lookup.py                tradebook ISIN → scheme_name live join
   mf_metrics.py                   per-fund quantstats: cagr_1y/3y/5y/10y, vol, sharpe, sortino,
                                   max_dd, pct_from_ath, tracking_error
   portfolio_service.py            tradebook → portfolio value series
+  sync_service.py                 safe NAV / holdings refresh orchestration
+  screener_service.py             MF screener DataFrame assembly and filters
   data_freshness.py               per-fund NAV / holdings staleness checks
   db_stats.py                     PostgreSQL stats for Settings page
                 ↓
@@ -92,6 +93,8 @@ data/repositories/                DB-first; ensures fetch only the gap
   nav.py                          NAV load/save/upsert/fetch
   holdings.py                     holdings/sector/asset CRUD
   metadata.py                     fund metadata (AUM, TER, etc.)
+  scheme_metrics.py               cached MF metric CRUD
+  screener.py                     DB-backed screener view
   tradebook.py                    Kite CSV import with dedup
   stock.py                        OHLCV smart-cache
 ```
@@ -152,7 +155,7 @@ uv pip install -e .
 streamlit run main.py
 ```
 
-On first run the app creates all tables, applies idempotent migrations (incl. `pg_trgm` setup), and renders the navigation. From the **Settings** page, click **Sync AMFI Master** to populate `amfi_schemes`. Then go to **MF Screener**, filter to a fund family of interest, and **Fetch for top N filtered funds** to bring NAV + metadata in.
+On first run the app creates any missing tables and renders the navigation. Run `uv run alembic upgrade head` after pulling schema changes. From the **Settings** page, click **Sync AMFI Master** to populate `amfi_schemes`. Then go to **MF Screener**, filter to a fund family of interest, and **Fetch for top N filtered funds** to bring NAV + metadata in.
 
 ## Common commands
 
@@ -162,6 +165,7 @@ streamlit run main.py
 uv run ruff check . --exclude notebooks/        # lint
 uv run ruff format . --exclude notebooks/       # format
 uv run pytest                                   # tests
+uv run alembic upgrade head                     # schema migrations
 
 # Data ops (CLI alternatives to Settings buttons)
 uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi_master()"

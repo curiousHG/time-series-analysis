@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python=">=3.11"
 dependencies = [
+    "alembic>=1.17.2",
     "beautifulsoup4>=4.12.0",
     "httpx>=0.28.1",
     "numpy>=2.3.5",
@@ -23,6 +24,7 @@ dependencies = [
     "streamlit-lightweight-charts>=0.7",
     "watchdog>=6.0.0",
     "streamlit-aggrid>=1.2.1.post2",
+    "pydantic-settings>=2.0",
 ]
 
 [dependency-groups]
@@ -31,7 +33,9 @@ dev = [
     "pip-check-reqs>=2.5.5",
     "pytest>=9.0.2",
     "ruff>=0.14.10",
-    "pydantic-settings>=2.0",
+    "pre-commit>=4.0",   # runs ruff + hygiene hooks on every commit
+    "vulture>=2.14",     # finds dead code (unused funcs/classes/vars) — see core/config.py, bot/, exchange/
+    "pyrefly>=0.16",     # type checker (config already in [tool.pyrefly])
 ]
 
 [tool.setuptools.packages.find]
@@ -47,20 +51,37 @@ exclude = ["notebooks/", ".venv/", "*.egg-info/"]
 
 [tool.ruff.lint]
 select = [
-    "E",     # pycodestyle errors
-    "W",     # pycodestyle warnings
-    "F",     # pyflakes
-    "I",     # isort
-    "UP",    # pyupgrade
-    "B",     # flake8-bugbear
-    "SIM",   # flake8-simplify
-    "RUF",   # ruff-specific rules
+    "E",       # pycodestyle errors
+    "W",       # pycodestyle warnings
+    "F",       # pyflakes
+    "I",       # isort
+    "UP",      # pyupgrade
+    "B",       # flake8-bugbear
+    "SIM",     # flake8-simplify
+    "RUF",     # ruff-specific rules
+    "C4",      # flake8-comprehensions (collapse loops → comprehensions)
+    "PIE",     # flake8-pie (unnecessary code)
+    "RET",     # flake8-return (simplify return flows)
+    "PERF",    # perflint (avoidable overhead in loops)
+    "PTH",     # flake8-use-pathlib (os.path → pathlib)
+    "LOG",     # flake8-logging (correct logger usage)
+    "TID",     # flake8-tidy-imports (ban relative imports)
+    "TC",      # flake8-type-checking (move type-only imports into TYPE_CHECKING)
+    "PLC0415", # import-outside-top-level (flags the function-local imports)
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
     "B008",  # function call in default arg (common in Streamlit/FastAPI)
     "SIM108",# ternary operator (readability preference)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]      # re-export modules without noqa noise
+"tests/*" = ["PLC0415"]       # local imports in tests are fine
+"ui/views/**" = ["E402"]      # Streamlit pages run module-level code after st.* setup
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"  # always use absolute imports (core.x, services.y)
 
 [tool.ruff.lint.isort]
 known-first-party = [
@@ -72,6 +93,12 @@ known-first-party = [
 quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
+
+[tool.vulture]
+min_confidence = 80
+paths = ["core", "data", "services", "ui", "mutual_funds", "indicators"]
+exclude = ["notebooks/", "*/__pycache__/"]
+# Run: uv run vulture  (reports unused functions/classes/vars at >=80% confidence)
 
 [tool.pyrefly]
 project_root = "."

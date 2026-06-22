@@ -9,7 +9,7 @@ from ui.charts.plotters import plot_overlap_heatmap, plot_sector_average, plot_s
 
 def render(holdings_df: pl.DataFrame, sectors_df: pl.DataFrame, selected_registry: pl.DataFrame):
     if not holdings_df.height:
-        st.info("No holdings data. Fetch it from the Data Manager page.")
+        st.info("No holdings data. Fetch it from Settings.")
         return
 
     slugs = selected_registry["schemeSlug"].to_list()

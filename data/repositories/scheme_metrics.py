@@ -74,7 +74,7 @@ def _resolve_codes_with_synthetic(scheme_names: list[str]) -> dict[str, int]:
             for name in missing:
                 session.exec(
                     pg_insert(AmfiScheme)
-                    .values(scheme_code=next_neg, scheme_name=name)
+                    .values(scheme_code=next_neg, scheme_name=name, db_added_at=dt.datetime.utcnow())
                     .on_conflict_do_nothing(index_elements=["scheme_code"])
                 )
                 out[name] = next_neg
@@ -181,12 +181,11 @@ def clear_metrics(scheme_names: list[str] | None = None) -> int:
     """Drop cached metrics for the given names (or all). Useful when the metrics schema changes."""
     with get_session() as session:
         if scheme_names:
-            codes = [
-                r[0]
-                for r in session.exec(
+            codes = list(
+                session.exec(
                     select(AmfiScheme.scheme_code).where(col(AmfiScheme.scheme_name).in_(scheme_names))
                 ).all()
-            ]
+            )
             if not codes:
                 return 0
             result = session.exec(delete(MfSchemeMetrics).where(col(MfSchemeMetrics.scheme_code).in_(codes)))

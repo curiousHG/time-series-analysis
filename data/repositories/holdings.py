@@ -305,6 +305,16 @@ def delete_holdings_for_slugs(slugs: list[str]) -> int:
 # ---- ensure / refresh --------------------------------------------------------------------
 
 
+def fetch_holdings_frames(slug: str) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Fetch and normalize one fund's holdings payload."""
+    resp = fetch_portfolio_by_slug(slug)
+    return (
+        normalize_holdings(resp, slug),
+        normalize_sector_allocation(resp, slug),
+        normalize_asset_allocation(resp, slug),
+    )
+
+
 def ensure_holdings_data(slugs: list[str]) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     holdings = load_holdings(slugs)
     sectors = load_sectors(slugs)
@@ -315,14 +325,14 @@ def ensure_holdings_data(slugs: list[str]) -> tuple[pl.DataFrame, pl.DataFrame, 
 
     if missing:
         with ThreadPoolExecutor(max_workers=4) as pool:
-            future_to_slug = {pool.submit(fetch_portfolio_by_slug, slug): slug for slug in missing}
+            future_to_slug = {pool.submit(fetch_holdings_frames, slug): slug for slug in missing}
             for future in as_completed(future_to_slug):
                 slug = future_to_slug[future]
                 try:
-                    resp = future.result()
-                    save_holdings(normalize_holdings(resp, slug))
-                    save_sectors(normalize_sector_allocation(resp, slug))
-                    save_assets(normalize_asset_allocation(resp, slug))
+                    h, s, a = future.result()
+                    save_holdings(h)
+                    save_sectors(s)
+                    save_assets(a)
                 except Exception as e:
                     logger.error("Failed to fetch holdings for %s: %s", slug, e)
 
@@ -334,25 +344,25 @@ def ensure_holdings_data(slugs: list[str]) -> tuple[pl.DataFrame, pl.DataFrame, 
 
 
 def refresh_holdings_data(slugs: list[str]) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Re-fetch holdings data for given slugs, replacing existing entries."""
-    codes = _resolve_slugs(slugs)
-    if codes:
-        with get_session() as session:
-            session.exec(delete(MfHolding).where(col(MfHolding.scheme_code).in_(codes)))
-            session.exec(delete(MfSectorAllocation).where(col(MfSectorAllocation.scheme_code).in_(codes)))
-            session.exec(delete(MfAssetAllocation).where(col(MfAssetAllocation.scheme_code).in_(codes)))
-            session.commit()
+    """Re-fetch holdings data for given slugs, replacing successful fetches only."""
+    fetched: list[tuple[str, pl.DataFrame, pl.DataFrame, pl.DataFrame]] = []
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        future_to_slug = {pool.submit(fetch_portfolio_by_slug, slug): slug for slug in slugs}
+        future_to_slug = {pool.submit(fetch_holdings_frames, slug): slug for slug in slugs}
         for future in as_completed(future_to_slug):
             slug = future_to_slug[future]
             try:
-                resp = future.result()
-                save_holdings(normalize_holdings(resp, slug))
-                save_sectors(normalize_sector_allocation(resp, slug))
-                save_assets(normalize_asset_allocation(resp, slug))
+                h, s, a = future.result()
+                fetched.append((slug, h, s, a))
             except Exception as e:
                 logger.error("Failed to refresh holdings for %s: %s", slug, e)
+
+    successful_slugs = [slug for slug, _, _, _ in fetched]
+    if successful_slugs:
+        delete_holdings_for_slugs(successful_slugs)
+        for _, h, s, a in fetched:
+            save_holdings(h)
+            save_sectors(s)
+            save_assets(a)
 
     return load_holdings(slugs), load_sectors(slugs), load_assets(slugs)

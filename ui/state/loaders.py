@@ -5,7 +5,6 @@ import polars as pl
 import streamlit as st
 
 from core.timing import timeit
-from data.fetchers.stock import query_stocks
 from data.repositories.amfi import search_amfi
 from data.repositories.holdings import (
     ensure_holdings_data,
@@ -15,7 +14,7 @@ from data.repositories.holdings import (
 )
 from data.repositories.nav import ensure_nav_data
 from data.repositories.nav import refresh_nav_data as _refresh_nav
-from data.repositories.stock import ensure_stock_data
+from data.repositories.stock import ensure_stock_data, search_stock_symbols
 from data.repositories.tradebook import load_tradebook_from_db
 from mutual_funds.tradebook import normalize_transactions
 
@@ -148,7 +147,7 @@ def load_metrics_cached() -> pl.DataFrame:
 @st.cache_data(ttl=24 * 3600)
 @timeit("loaders.cached_search_stock")
 def cached_search_stock(query: str) -> pd.DataFrame:
-    return query_stocks(query)
+    return search_stock_symbols(query)
 
 
 def get_trade_symbols(trades_df: pl.DataFrame) -> list[str]:

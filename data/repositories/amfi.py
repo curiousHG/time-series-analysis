@@ -15,6 +15,7 @@ Process-level caches
 """
 
 import logging
+from datetime import datetime
 
 import polars as pl
 from sqlalchemy import select as sa_select
@@ -97,6 +98,31 @@ def upsert_category(session, name: str | None) -> int | None:
     return new_id
 
 
+def _prepare_sync_row(
+    scheme: dict,
+    *,
+    existing_codes: set[int],
+    fund_house_id: int | None,
+    category_id: int | None,
+    synced_at: datetime,
+) -> dict:
+    """Shape one AMFI sync row for insert/update.
+
+    `db_added_at` means "inserted into our local DB", so include it only when the
+    scheme_code is not already present. On conflict updates explicitly preserve
+    the existing value.
+    """
+    row = dict(scheme)
+    code = int(row["scheme_code"])
+    row.pop("fund_house", None)
+    row.pop("category", None)
+    row["fund_house_id"] = fund_house_id
+    row["category_id"] = category_id
+    if code not in existing_codes:
+        row["db_added_at"] = synced_at
+    return row
+
+
 def sync_amfi_master() -> int:
     """Fetch AMFI NAVAll.txt and upsert all schemes into DB. Returns count.
 
@@ -106,21 +132,27 @@ def sync_amfi_master() -> int:
     before insert.
     """
     schemes = fetch_amfi_master()
+    synced_at = datetime.utcnow()
 
     with get_session() as session:
         _refresh_dim_caches(session)
+        existing_codes = set(session.exec(select(AmfiScheme.scheme_code)).all())
         for s in schemes:
-            row = dict(s)  # don't mutate the caller's dict
-            fund_house_id = upsert_amc(session, row.pop("fund_house", None))
-            category_id = upsert_category(session, row.pop("category", None))
-            row["fund_house_id"] = fund_house_id
-            row["category_id"] = category_id
+            fund_house_id = upsert_amc(session, s.get("fund_house"))
+            category_id = upsert_category(session, s.get("category"))
+            row = _prepare_sync_row(
+                s,
+                existing_codes=existing_codes,
+                fund_house_id=fund_house_id,
+                category_id=category_id,
+                synced_at=synced_at,
+            )
             stmt = (
                 pg_insert(AmfiScheme)
                 .values(**row)
                 .on_conflict_do_update(
                     index_elements=["scheme_code"],
-                    set_={k: v for k, v in row.items() if k != "scheme_code"},
+                    set_={k: v for k, v in row.items() if k not in ("scheme_code", "db_added_at")},
                 )
             )
             session.exec(stmt)
@@ -279,6 +311,47 @@ def get_scheme_count() -> int:
     """Return total number of schemes in DB."""
     with get_session() as session:
         return int(session.exec(select(func.count()).select_from(AmfiScheme)).one() or 0)
+
+
+def load_recent_additions(limit: int = 25) -> pl.DataFrame:
+    """Recent AMFI schemes added to the local database."""
+    with get_session() as session:
+        rows = session.execute(
+            sa_select(
+                col(AmfiScheme.scheme_code),
+                col(AmfiScheme.scheme_name),
+                col(MfAmc.name).label("fund_house"),
+                col(MfCategory.name).label("category"),
+                col(AmfiScheme.isin_growth),
+                col(AmfiScheme.db_added_at),
+            )
+            .join(MfAmc, col(AmfiScheme.fund_house_id) == col(MfAmc.id), isouter=True)
+            .join(MfCategory, col(AmfiScheme.category_id) == col(MfCategory.id), isouter=True)
+            .where(col(AmfiScheme.db_added_at).is_not(None))
+            .order_by(col(AmfiScheme.db_added_at).desc(), col(AmfiScheme.scheme_code).desc())
+            .limit(limit)
+        ).all()
+    if not rows:
+        return pl.DataFrame(
+            schema={
+                "schemeCode": pl.Int64,
+                "schemeName": pl.Utf8,
+                "fundHouse": pl.Utf8,
+                "category": pl.Utf8,
+                "isinGrowth": pl.Utf8,
+                "dbAddedAt": pl.Datetime,
+            }
+        )
+    return pl.DataFrame(
+        {
+            "schemeCode": [r[0] for r in rows],
+            "schemeName": [r[1] for r in rows],
+            "fundHouse": [r[2] for r in rows],
+            "category": [r[3] for r in rows],
+            "isinGrowth": [r[4] for r in rows],
+            "dbAddedAt": [r[5] for r in rows],
+        }
+    )
 
 
 def load_amfi_df() -> pl.DataFrame:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 
 import polars as pl
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -108,7 +109,7 @@ def save_nav_df(df: pl.DataFrame) -> None:
             for name in missing_names:
                 session.exec(
                     pg_insert(AmfiScheme)
-                    .values(scheme_code=next_neg, scheme_name=name)
+                    .values(scheme_code=next_neg, scheme_name=name, db_added_at=datetime.utcnow())
                     .on_conflict_do_nothing(index_elements=["scheme_code"])
                 )
                 name_to_code[name] = next_neg
@@ -169,7 +170,7 @@ def load_nav_df(scheme_names: list[str] | None = None) -> pl.DataFrame:
     )
 
 
-def _fetch_single_nav(scheme_name: str) -> pl.DataFrame:
+def fetch_single_nav(scheme_name: str) -> pl.DataFrame:
     """Fetch NAV for a single scheme. Tries MFAPI first, falls back to AdvisorKhoj."""
     scheme_code = _get_or_resolve_scheme_code(scheme_name)
     if scheme_code:
@@ -183,12 +184,16 @@ def _fetch_single_nav(scheme_name: str) -> pl.DataFrame:
     return nav_json_to_df(data["nav_data"], scheme_name)
 
 
+# Backwards-compatible alias for older callers.
+_fetch_single_nav = fetch_single_nav
+
+
 @timeit("nav.fetch_nav_parallel")
 def fetch_nav_parallel(scheme_names: list[str]) -> list[pl.DataFrame]:
     """Fetch NAV data for multiple schemes in parallel."""
     new_frames = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        future_to_scheme = {pool.submit(_fetch_single_nav, scheme): scheme for scheme in scheme_names}
+        future_to_scheme = {pool.submit(fetch_single_nav, scheme): scheme for scheme in scheme_names}
         for future in as_completed(future_to_scheme):
             scheme = future_to_scheme[future]
             try:
@@ -232,15 +237,21 @@ def ensure_nav_data(scheme_names: list[str]) -> pl.DataFrame:
 
 
 def refresh_nav_data(scheme_names: list[str]) -> pl.DataFrame:
-    """Re-fetch NAV data for given schemes, replacing existing entries."""
-    name_to_code = _resolve_codes(scheme_names)
+    """Re-fetch NAV data for given schemes, replacing existing entries.
+
+    Only schemes that fetch successfully are deleted/replaced. A transient upstream
+    failure should not erase the last good local NAV history.
+    """
+    new_frames = fetch_nav_parallel(scheme_names)
+    fetched_schemes = [name for df in new_frames if df.height for name in df["schemeName"].unique().to_list()]
+
+    name_to_code = _resolve_codes(fetched_schemes)
     codes = list(name_to_code.values())
     if codes:
         with get_session() as session:
             session.exec(delete(MfNav).where(col(MfNav.scheme_code).in_(codes)))
             session.commit()
 
-    new_frames = fetch_nav_parallel(scheme_names)
     saved_schemes: list[str] = []
     for df in new_frames:
         save_nav_df(df)

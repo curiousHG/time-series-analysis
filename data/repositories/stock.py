@@ -8,7 +8,7 @@ from sqlmodel import col, select
 
 from core.database import get_session
 from core.models import StockOhlcv, StockRegistry
-from data.fetchers.stock import fetch_symbol_data, fetch_symbol_data_jugaad
+from data.fetchers.stock import fetch_symbol_data, fetch_symbol_data_jugaad, query_stocks
 
 logger = logging.getLogger("data.store.stock")
 
@@ -168,6 +168,11 @@ def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
 
     new_range = _get_date_range(symbol)
     return today, (new_range[1] if new_range else None)
+
+
+def search_stock_symbols(query: str):
+    """Search stock symbols through the repository boundary."""
+    return query_stocks(query)
 
 
 def load_stock_registry() -> pl.DataFrame:

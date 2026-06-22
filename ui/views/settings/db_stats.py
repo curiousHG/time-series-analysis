@@ -9,9 +9,6 @@ from services.db_stats import get_db_stats
 
 
 def render() -> None:
-    st.divider()
-    st.subheader("Database Statistics")
-
     db_stats = get_db_stats()
     m1, m2, m3 = st.columns(3)
     m1.metric("Database", db_stats.db_name)

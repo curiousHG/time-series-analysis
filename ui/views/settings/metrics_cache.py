@@ -9,14 +9,9 @@ from ui.state.loaders import load_metrics_cached
 
 
 def render() -> None:
-    st.divider()
-    st.subheader("Risk-metrics cache")
+    st.markdown("#### Risk Metrics Cache")
     st.caption(
-        "Per-scheme metrics (CAGR, Vol, Sharpe, Sortino, Calmar, VaR/CVaR, etc.) are pre-"
-        "computed and stored in `mf_scheme_metrics` so the Screener and Risk-vs-Return pages "
-        "render with a single SELECT instead of running quantstats on every Streamlit rerun. "
-        "Recompute happens automatically after every NAV sync — these buttons are for ad-hoc "
-        "manual triggers."
+        "Rebuild derived metrics for the Screener and Risk-vs-Return views. NAV sync already updates stale rows."
     )
 
     mc1, mc2 = st.columns(2)
@@ -24,6 +19,7 @@ def render() -> None:
         if st.button(
             "Recompute stale only",
             help="Schemes whose latest NAV is newer than their cached metric.",
+            use_container_width=True,
         ):
             with st.spinner("Recomputing stale metrics…"):
                 n = recompute_stale_metrics()
@@ -37,6 +33,7 @@ def render() -> None:
         if st.button(
             "Recompute ALL",
             help="Full rebuild across every scheme with NAV history. Slow — use after model changes only.",
+            use_container_width=True,
         ):
             with st.spinner("Recomputing all metrics…"):
                 n = recompute_metrics()

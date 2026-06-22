@@ -10,4 +10,4 @@ alwaysApply: false
 - **Data:** prefer `@st.cache_data` loaders in **`ui/state/loaders.py`** (or follow existing cache patterns in the file). Loaders call **services** and **`data/repositories`** — not raw fetchers.
 - **Persistence:** user selections and similar state go through **`ui/persistence/`** (e.g. `selections.json`), not ad hoc new roots unless the user asks.
 - **Charts:** builders and theme live under **`ui/charts/`**; reuse the dark theme setup already imported via `ui/charts/theme`.
-- **Tabs:** keep sub-pages in `portfolio_tabs/`, `mf_tabs/`, `stock_tabs/` next to their parent view.
+- **Tabs:** keep page sections inside the current page folder (`ui/views/portfolio/`, `ui/views/mutual_fund/`, `ui/views/stock_analysis/`, etc.).

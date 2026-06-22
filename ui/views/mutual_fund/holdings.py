@@ -13,7 +13,7 @@ def render(
     selected_registry: pl.DataFrame,
 ):
     if not holdings_df.height:
-        st.info("No holdings data. Fetch it from the Data Manager page.")
+        st.info("No holdings data. Fetch it from Settings.")
         return
 
     slug_to_short = (

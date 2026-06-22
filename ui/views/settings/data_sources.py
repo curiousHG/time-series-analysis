@@ -101,10 +101,10 @@ _SCHEMA_TABLES = pd.DataFrame(
         {"Table": "mf_registry", "PK": "scheme_code",
          "Holds": "Tracked-funds list with per-source nav/holdings/metadata status. Keyed on scheme_code with FK to amfi_schemes.",
          "FK targets": "amfi_schemes.scheme_code"},
-        # ----- Holdings family (still slug-keyed, Phase 3 will FK) -----
+        # ----- Holdings family -----
         {"Table": "mf_holdings, mf_sector_allocation, mf_asset_allocation", "PK": "id (auto)",
-         "Holds": "Per-fund holdings + sector + asset weights from AdvisorKhoj. Currently keyed on scheme_slug; Phase 3 switches to scheme_code FK.",
-         "FK targets": "(planned) amfi_schemes.scheme_code"},
+         "Holds": "Per-fund holdings + sector + asset weights from AdvisorKhoj. Slugs are derived at the API boundary; persisted rows FK by scheme_code.",
+         "FK targets": "amfi_schemes.scheme_code"},
         # ----- Tradebook -----
         {"Table": "mf_tradebook", "PK": "trade_id (str)",
          "Holds": "Kite/Zerodha trade rows. Resolution to scheme_name happens live via mf_tradebook.isin = amfi_schemes.isin_growth.",
@@ -118,8 +118,6 @@ _SCHEMA_TABLES = pd.DataFrame(
 
 
 def render() -> None:
-    st.divider()
-    st.subheader("Data Sources")
     st.caption(
         "Where each kind of data comes from, what input is required to fetch it, and where it lands."
     )

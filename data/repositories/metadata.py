@@ -65,7 +65,7 @@ def save_metadata(meta: dict) -> None:
             scheme_code = min(min_code, 0) - 1
             session.exec(
                 pg_insert(AmfiScheme)
-                .values(scheme_code=scheme_code, scheme_name=scheme_name)
+                .values(scheme_code=scheme_code, scheme_name=scheme_name, db_added_at=datetime.utcnow())
                 .on_conflict_do_nothing(index_elements=["scheme_code"])
             )
             minted_synthetic = True

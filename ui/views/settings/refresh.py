@@ -48,8 +48,7 @@ def _color_status(val: str) -> str:
 
 
 def render() -> None:
-    st.divider()
-    st.subheader("Refresh tracked-fund data")
+    st.markdown("#### Tracked Fund Data")
 
     tracked = list_tracked()
     if tracked.height == 0:
@@ -64,22 +63,15 @@ def render() -> None:
         nav_report = compute_nav_freshness(scheme_names, slugs)
         holdings_report = compute_holdings_freshness(scheme_names, slugs)
 
-    st.caption(f"Current date: {nav_report.current_date}")
-
     with st.spinner("Loading NAV and holdings data…"):
         nav_df = load_nav_df(scheme_names)
         holdings_df = load_holdings(slugs)
 
-    _render_status_table(
-        title="**NAV Status**",
-        stale=f"Stale: **{nav_report.stale_count} / {nav_report.total}**",
-        rows=build_nav_status_rows(nav_report, nav_df, short_by_name),
-    )
-    _render_status_table(
-        title="**Holdings Status**",
-        stale=f"Stale: **{holdings_report.stale_count} / {holdings_report.total}**",
-        rows=build_holdings_status_rows(holdings_report, holdings_df, short_by_name),
-    )
+    h1, h2, h3, h4 = st.columns(4)
+    h1.metric("Tracked funds", f"{len(scheme_names):,}")
+    h2.metric("Stale NAV", f"{nav_report.stale_count:,}", help=f"Current date: {nav_report.current_date}")
+    h3.metric("Stale holdings", f"{holdings_report.stale_count:,}")
+    h4.metric("Unresolved sources", f"{list_unavailable_funds().height:,}")
 
     col1, col2, col3 = st.columns(3)
     update_nav = col1.button("Update All NAV", type="primary", use_container_width=True)
@@ -93,13 +85,25 @@ def render() -> None:
 
     _render_retry_unavailable(short_by_name)
 
+    with st.expander("Status details", expanded=False):
+        _render_status_table(
+            title="NAV",
+            stale=f"{nav_report.stale_count} of {nav_report.total} tracked funds are stale.",
+            rows=build_nav_status_rows(nav_report, nav_df, short_by_name),
+        )
+        _render_status_table(
+            title="Holdings",
+            stale=f"{holdings_report.stale_count} of {holdings_report.total} tracked funds are stale.",
+            rows=build_holdings_status_rows(holdings_report, holdings_df, short_by_name),
+        )
+
 
 # ---- Status tables -----------------------------------------------------------------------
 
 
 def _render_status_table(*, title: str, stale: str, rows: list[dict]) -> None:
-    st.markdown(title)
-    st.write(stale)
+    st.markdown(f"**{title}**")
+    st.caption(stale)
     st.dataframe(
         pd.DataFrame(rows).style.map(_color_status, subset=["Status"]),
         use_container_width=True,

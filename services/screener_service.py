@@ -8,6 +8,7 @@ in this module so it stays testable and reusable across pages.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date as _date
 from datetime import timedelta
 
@@ -81,7 +82,7 @@ def apply_filters(
     if name_query:
         # AND across whitespace-separated tokens, case-insensitive substring per token.
         for token in name_query.split():
-            out = out.filter(pl.col("scheme_name").str.contains(f"(?i){token}"))
+            out = out.filter(pl.col("scheme_name").str.contains(f"(?i){re.escape(token)}"))
     if amcs:
         out = out.filter(pl.col("fund_house").is_in(amcs))
     if cats:

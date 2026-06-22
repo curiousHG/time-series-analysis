@@ -18,17 +18,13 @@ import polars as pl
 
 from data.repositories.holdings import (
     delete_holdings_for_slugs,
+    fetch_holdings_frames,
     save_assets,
     save_holdings,
     save_sectors,
 )
-from data.repositories.nav import _fetch_single_nav, last_nav_date_by_name, save_nav_df
+from data.repositories.nav import fetch_single_nav, last_nav_date_by_name, save_nav_df
 from mutual_funds.display import make_slug
-from mutual_funds.holdings import (
-    normalize_asset_allocation,
-    normalize_holdings,
-    normalize_sector_allocation,
-)
 
 logger = logging.getLogger("services.sync")
 
@@ -102,7 +98,7 @@ def update_nav_incremental(
     done = 0
 
     with ThreadPoolExecutor(max_workers=NAV_FETCH_WORKERS) as pool:
-        future_to_name = {pool.submit(_fetch_single_nav, name): name for name in scheme_names}
+        future_to_name = {pool.submit(fetch_single_nav, name): name for name in scheme_names}
         for future in as_completed(future_to_name):
             name = future_to_name[future]
             done += 1
@@ -144,14 +140,7 @@ def update_nav_incremental(
 
 def _fetch_normalize_holdings(slug: str) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Pull a slug's portfolio JSON and normalise it into the three target frames."""
-    from data.fetchers.mutual_fund import fetch_portfolio_by_slug
-
-    resp = fetch_portfolio_by_slug(slug)
-    return (
-        normalize_holdings(resp, slug),
-        normalize_sector_allocation(resp, slug),
-        normalize_asset_allocation(resp, slug),
-    )
+    return fetch_holdings_frames(slug)
 
 
 def refresh_holdings_for_schemes(
@@ -161,15 +150,13 @@ def refresh_holdings_for_schemes(
 ) -> HoldingsRefreshResult:
     """Wipe-and-refetch holdings for the given schemes.
 
-    1. Resolves names → slugs and hands the slug list to the repo to delete existing rows.
-    2. Fetches every fund's portfolio JSON in parallel (16-worker pool).
-    3. Normalises and saves on the main thread (serialised DB writes).
+    Fetch every fund first. For each successful fetch, delete and replace only that
+    fund's rows; failed fetches leave the existing local snapshot intact.
     """
     if not scheme_names:
         return HoldingsRefreshResult()
 
     pairs = [(name, make_slug(name)) for name in scheme_names]
-    delete_holdings_for_slugs([slug for _, slug in pairs])
 
     total = len(pairs)
     result = HoldingsRefreshResult()
@@ -188,6 +175,7 @@ def refresh_holdings_for_schemes(
 
             try:
                 h, s, a = future.result()
+                delete_holdings_for_slugs([_slug])
                 save_holdings(h)
                 save_sectors(s)
                 save_assets(a)

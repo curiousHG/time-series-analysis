@@ -1,5 +1,6 @@
 """Mutual Fund Analysis — single-fund deep dive."""
 
+import re
 from datetime import datetime
 
 import numpy as np
@@ -130,7 +131,7 @@ with st.sidebar:
 filtered = enriched
 if name_query:
     for token in name_query.split():
-        filtered = filtered.filter(pl.col("scheme_name").str.contains(f"(?i){token}"))
+        filtered = filtered.filter(pl.col("scheme_name").str.contains(f"(?i){re.escape(token)}"))
 if amc_filter:
     filtered = filtered.filter(pl.col("fund_house").is_in(amc_filter))
 if cat_filter:

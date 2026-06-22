@@ -27,6 +27,7 @@ from core.models import (
     MfSectorAllocation,
 )
 from data.repositories.holdings import (
+    fetch_holdings_frames,
     load_holdings,
     save_assets,
     save_holdings,
@@ -34,13 +35,8 @@ from data.repositories.holdings import (
 )
 from data.repositories.metadata import fetch_and_save as fetch_metadata_and_save
 from data.repositories.metadata import load_metadata
-from data.repositories.nav import _fetch_single_nav, save_nav_df
+from data.repositories.nav import fetch_single_nav, save_nav_df
 from mutual_funds.display import make_slug
-from mutual_funds.holdings import (
-    normalize_asset_allocation,
-    normalize_holdings,
-    normalize_sector_allocation,
-)
 
 logger = logging.getLogger("services.registry_service")
 
@@ -111,7 +107,7 @@ def _resolve_or_mint_code(scheme_name: str) -> int:
         next_neg = min(min_code, 0) - 1
         session.exec(
             pg_insert(AmfiScheme)
-            .values(scheme_code=next_neg, scheme_name=scheme_name)
+            .values(scheme_code=next_neg, scheme_name=scheme_name, db_added_at=datetime.utcnow())
             .on_conflict_do_nothing(index_elements=["scheme_code"])
         )
         session.commit()
@@ -165,7 +161,7 @@ def _upsert_registry(scheme_name: str, scheme_code: int | None = None) -> int:
 
 def _fetch_nav(scheme_name: str) -> str:
     try:
-        df = _fetch_single_nav(scheme_name)
+        df = fetch_single_nav(scheme_name)
         if df.height == 0:
             return "unavailable"
         save_nav_df(df)
@@ -178,12 +174,7 @@ def _fetch_nav(scheme_name: str) -> str:
 def _fetch_holdings(scheme_name: str) -> str:
     slug = make_slug(scheme_name)
     try:
-        from data.fetchers.mutual_fund import fetch_portfolio_by_slug
-
-        resp = fetch_portfolio_by_slug(slug)
-        h = normalize_holdings(resp, slug)
-        s = normalize_sector_allocation(resp, slug)
-        a = normalize_asset_allocation(resp, slug)
+        h, s, a = fetch_holdings_frames(slug)
         if h.height == 0 and s.height == 0 and a.height == 0:
             return "unavailable"
         save_holdings(h)

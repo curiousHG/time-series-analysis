@@ -130,6 +130,7 @@ class MfScheme(SQLModel, table=True):
     nav_date: datetime.date | None = None
     fund_house_id: int | None = Field(default=None, foreign_key="mf_amc.id", index=True)
     category_id: int | None = Field(default=None, foreign_key="mf_category.id", index=True)
+    db_added_at: datetime.datetime | None = Field(default=None, index=True)
 
 
 # Backwards-compat alias for callers still using the old name. New code should import

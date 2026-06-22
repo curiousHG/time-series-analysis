@@ -23,13 +23,16 @@ uv run pytest
 # Database setup
 createdb trading
 
-# Schema migrations (idempotent) — run manually after pulling model changes.
-# NOT run on Streamlit boot: some steps (ALTER COLUMN TYPE, UPDATE backfills, GIN index
-# builds) take >2 minutes. Per-step timings land in logs/perf.log.
+# Schema migrations — run manually after pulling model changes.
+uv run alembic upgrade head
+
+# Legacy hand-written migrations retained for older drift fixes.
+# NOT run on Streamlit boot: some steps (ALTER COLUMN TYPE, UPDATE backfills, GIN index builds)
+# can be slow. Per-step timings land in logs/perf.log.
 uv run python scripts/migrate.py
 
 # Sync AMFI master data (14K+ mutual fund schemes with ISIN codes)
-# Also available via "Sync AMFI Master" button in Data Manager UI
+# Also available via "Sync AMFI Master" button in Settings
 uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi_master()"
 ```
 
@@ -39,10 +42,11 @@ uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi
 
 ### Pages
 
-1. **Portfolio** — fund allocation, P&L, growth vs Nifty/FD, drawdown, risk metrics (quantstats), fund returns
-2. **Mutual Fund Analysis** — overlap heatmap, sector exposure, return distributions, holdings treemaps, correlation
+1. **Portfolio** — fund allocation, P&L, growth vs Nifty/FD, drawdown, risk metrics (quantstats), risk/return, fund returns
+2. **Mutual Fund Analysis** — single-fund NAV, rolling returns, risk, holdings, calendar returns, metadata
 3. **Stock Analysis** — TradingView candlestick charts, 37 TA-Lib indicators (overlays + panels), strategy backtesting
-4. **Data Manager** — AMFI sync, tradebook CSV upload, NAV/holdings data updates
+4. **MF Screener** — AMFI universe filters, risk/return metrics, bulk fetch for tracked funds
+5. **Settings** — AMFI sync, tradebook CSV upload, NAV/holdings refresh, metrics cache, DB stats
 
 ### Layer Structure
 
@@ -50,18 +54,15 @@ uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi
 main.py → ui/app.py (multi-page router, init_schema, setup_logging)
               ↓
          ui/views/
-           portfolio.py                # Portfolio page entry point
-           mutual_fund.py              # MF analysis page with tabs
-           stock_analysis.py           # Stock analysis page (chart + backtest)
-           data_manager.py             # Data management page
-         ui/views/portfolio_tabs/      # Portfolio sub-tabs
-           helpers.py                  # Re-exports from services/portfolio_service
-           allocation.py, growth.py, drawdown.py, risk_metrics.py, fund_returns.py
-         ui/views/mf_tabs/            # MF analysis sub-tabs
-           portfolio.py, overlap.py, returns.py, holdings.py, correlation.py
-         ui/views/stock_tabs/          # Stock analysis sub-tabs
-           chart.py                    # TradingView candlestick + indicators
-           strategy_backtest.py        # Strategy runner UI (delegates to services)
+           portfolio/page.py           # Portfolio page entry point
+           portfolio/                  # Portfolio sections: allocation, growth, drawdown, risk, returns
+           mutual_fund/page.py         # Single-fund deep dive
+           mutual_fund/                # MF helper tabs retained for shared views
+           mf_screener/page.py         # AMFI universe screener
+           stock_analysis/page.py      # Stock page entry point
+           stock_analysis/             # Stock chart + strategy backtest
+           settings/page.py            # Data/source/settings page entry point
+           settings/                   # AMFI, tradebook, refresh, metrics cache, DB stats
          ui/components/                # Reusable sidebar widgets
          ui/charts/                    # Plotly chart builders + dark theme
          ui/state/loaders.py           # @st.cache_data wrapped data loaders
@@ -70,6 +71,10 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
          services/                     # Business logic layer (no Streamlit imports)
            backtest_service.py         # run_backtest(), compute_metrics()
            portfolio_service.py        # get_mapped_data(), build_portfolio_value_series()
+           registry_service.py         # tracked-fund registry + source statuses
+           sync_service.py             # safe data refresh orchestration
+           screener_service.py         # MF screener DataFrame assembly + filters
+           mf_metrics.py               # NAV-derived risk/return metrics
               ↓
          core/
            database.py                 # SQLModel engine + Session factory
@@ -97,8 +102,9 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
          data/repositories/            # DB CRUD (one file per aggregate)
            nav.py                      # NAV load/save/upsert/fetch
            holdings.py                 # Holdings/sectors/assets CRUD
-           registry.py                 # MfRegistry + SchemeCodeMap
-           fund_mapping.py             # FundMapping CRUD + auto-map
+           metadata.py                 # AdvisorKhoj metadata CRUD
+           scheme_metrics.py           # cached MF metrics CRUD
+           screener.py                 # DB view for screener assembly
            amfi.py                     # AMFI master sync + ISIN lookup
            stock.py                    # Stock OHLCV CRUD + smart caching
            tradebook.py                # Tradebook import with dedup
@@ -118,17 +124,15 @@ All data is stored in PostgreSQL via SQLModel ORM. Models in `core/models/`:
 
 | Table | Purpose | Key |
 |-------|---------|-----|
-| `mf_nav` | Daily NAV per scheme | (date, scheme_name) |
-| `mf_holdings` | Fund portfolio holdings | scheme_slug |
-| `mf_sector_allocation` | Sector weights | scheme_slug |
-| `mf_asset_allocation` | Asset class weights | scheme_slug |
-| `mf_registry` | Known scheme names + slugs | scheme_name |
+| `mf_nav` | Daily NAV per scheme | (scheme_code, date) |
+| `mf_holdings` | Fund portfolio holdings | id, scheme_code FK |
+| `mf_sector_allocation` | Sector weights | id, scheme_code FK |
+| `mf_asset_allocation` | Asset class weights | id, scheme_code FK |
+| `mf_registry` | Tracked funds + source statuses | scheme_code |
 | `amfi_schemes` | AMFI master (14K schemes with ISIN) | scheme_code |
-| `scheme_code_map` | scheme_name → MFAPI code cache | scheme_name |
 | `stock_ohlcv` | Daily OHLCV data | (date, symbol) |
 | `stock_registry` | Stock metadata | symbol |
 | `mf_tradebook` | Kite/Zerodha trades (deduped by trade_id) | trade_id |
-| `fund_mapping` | trade_symbol → scheme_name | trade_symbol |
 | `bots` | Bot instances (name, strategy, state) | id |
 | `trades` | Bot trades (entry/exit, P&L) | id |
 | `orders` | Bot orders (side, price, status) | id |
