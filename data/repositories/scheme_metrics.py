@@ -22,6 +22,7 @@ from sqlmodel import col, delete, func, select
 from core.database import get_session
 from core.models import AmfiScheme, MfNav, MfSchemeMetrics
 from core.timing import timeit
+from data.repositories.scheme_codes import resolve_codes_with_synthetic
 
 logger = logging.getLogger("data.repositories.scheme_metrics")
 
@@ -54,33 +55,6 @@ _METRIC_FIELDS: tuple[str, ...] = (
     # Provenance fields
     "inception_date", "last_nav", "last_nav_date", "history_days",
 )  # fmt: skip
-
-
-def _resolve_codes_with_synthetic(scheme_names: list[str]) -> dict[str, int]:
-    """name -> scheme_code via amfi_schemes; mints synthetic negatives for missing names."""
-    if not scheme_names:
-        return {}
-    with get_session() as session:
-        rows = session.exec(
-            select(AmfiScheme.scheme_name, AmfiScheme.scheme_code).where(
-                col(AmfiScheme.scheme_name).in_(scheme_names)
-            )
-        ).all()
-        out = {r[0]: r[1] for r in rows}
-        missing = [n for n in scheme_names if n not in out]
-        if missing:
-            min_code = session.exec(select(func.min(AmfiScheme.scheme_code))).one() or 0
-            next_neg = min(min_code, 0) - 1
-            for name in missing:
-                session.exec(
-                    pg_insert(AmfiScheme)
-                    .values(scheme_code=next_neg, scheme_name=name, db_added_at=dt.datetime.utcnow())
-                    .on_conflict_do_nothing(index_elements=["scheme_code"])
-                )
-                out[name] = next_neg
-                next_neg -= 1
-            session.commit()
-    return out
 
 
 @timeit("scheme_metrics.load")
@@ -117,7 +91,7 @@ def upsert_metrics(rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
 
-    name_to_code = _resolve_codes_with_synthetic([r["scheme_name"] for r in rows if r.get("scheme_name")])
+    name_to_code = resolve_codes_with_synthetic([r["scheme_name"] for r in rows if r.get("scheme_name")])
     now = dt.datetime.now(dt.UTC).replace(tzinfo=None)
     payload = []
     for r in rows:

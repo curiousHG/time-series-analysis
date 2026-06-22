@@ -15,7 +15,7 @@ Process-level caches
 """
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 import polars as pl
 from sqlalchemy import select as sa_select
@@ -132,7 +132,7 @@ def sync_amfi_master() -> int:
     before insert.
     """
     schemes = fetch_amfi_master()
-    synced_at = datetime.utcnow()
+    synced_at = datetime.now(UTC).replace(tzinfo=None)
 
     with get_session() as session:
         _refresh_dim_caches(session)
@@ -331,27 +331,18 @@ def load_recent_additions(limit: int = 25) -> pl.DataFrame:
             .order_by(col(AmfiScheme.db_added_at).desc(), col(AmfiScheme.scheme_code).desc())
             .limit(limit)
         ).all()
+    schema = {
+        "schemeCode": pl.Int64,
+        "schemeName": pl.Utf8,
+        "fundHouse": pl.Utf8,
+        "category": pl.Utf8,
+        "isinGrowth": pl.Utf8,
+        "dbAddedAt": pl.Datetime,
+    }
     if not rows:
-        return pl.DataFrame(
-            schema={
-                "schemeCode": pl.Int64,
-                "schemeName": pl.Utf8,
-                "fundHouse": pl.Utf8,
-                "category": pl.Utf8,
-                "isinGrowth": pl.Utf8,
-                "dbAddedAt": pl.Datetime,
-            }
-        )
-    return pl.DataFrame(
-        {
-            "schemeCode": [r[0] for r in rows],
-            "schemeName": [r[1] for r in rows],
-            "fundHouse": [r[2] for r in rows],
-            "category": [r[3] for r in rows],
-            "isinGrowth": [r[4] for r in rows],
-            "dbAddedAt": [r[5] for r in rows],
-        }
-    )
+        return pl.DataFrame(schema=schema)
+    cols = list(schema)
+    return pl.DataFrame({c: [r[i] for r in rows] for i, c in enumerate(cols)}, schema=schema)
 
 
 def load_amfi_df() -> pl.DataFrame:

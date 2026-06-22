@@ -1,6 +1,5 @@
 """Mutual Fund Analysis — single-fund deep dive."""
 
-import re
 from datetime import datetime
 
 import numpy as np
@@ -21,6 +20,7 @@ from mutual_funds.holdings_stats import quick_stats
 from services.benchmarks import resolve_benchmark_symbol
 from services.mf_metrics import compute_tracking_error
 from services.registry_service import backfill_missing, list_tracked
+from services.screener_service import apply_name_filter
 from ui.components.mutual_fund_holdings import render_holdings_table
 
 RISK_FREE = 0.065
@@ -128,10 +128,7 @@ with st.sidebar:
     only_with_metadata = st.checkbox("Only with metadata", value=False, key="mf_analysis_only_meta")
     only_with_holdings = st.checkbox("Only with holdings", value=False, key="mf_analysis_only_holdings")
 
-filtered = enriched
-if name_query:
-    for token in name_query.split():
-        filtered = filtered.filter(pl.col("scheme_name").str.contains(f"(?i){re.escape(token)}"))
+filtered = apply_name_filter(enriched, name_query)
 if amc_filter:
     filtered = filtered.filter(pl.col("fund_house").is_in(amc_filter))
 if cat_filter:

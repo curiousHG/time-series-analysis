@@ -16,13 +16,7 @@ from typing import Literal
 
 import polars as pl
 
-from data.repositories.holdings import (
-    delete_holdings_for_slugs,
-    fetch_holdings_frames,
-    save_assets,
-    save_holdings,
-    save_sectors,
-)
+from data.repositories.holdings import fetch_holdings_frames, replace_holdings_atomic
 from data.repositories.nav import fetch_single_nav, last_nav_date_by_name, save_nav_df
 from mutual_funds.display import make_slug
 
@@ -175,10 +169,7 @@ def refresh_holdings_for_schemes(
 
             try:
                 h, s, a = future.result()
-                delete_holdings_for_slugs([_slug])
-                save_holdings(h)
-                save_sectors(s)
-                save_assets(a)
+                replace_holdings_atomic(_slug, h, s, a)
                 result.success_count += 1
                 result.total_holdings += h.height
                 outcome = "updated"

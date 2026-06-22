@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 
 import polars as pl
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -25,24 +24,13 @@ from data.fetchers.mutual_fund import (
     resolve_mfapi_code,
 )
 from data.repositories.amfi import lookup_scheme_code_by_exact_name
+from data.repositories.scheme_codes import resolve_codes_with_synthetic
 
 logger = logging.getLogger("data.repositories.nav")
 
 
 # ---- name <-> code resolution helpers (replaces the dropped scheme_code_map cache) ----
-
-
-def _resolve_codes(scheme_names: list[str]) -> dict[str, int]:
-    """Return name -> scheme_code via amfi_schemes for the given names."""
-    if not scheme_names:
-        return {}
-    with get_session() as session:
-        rows = session.exec(
-            select(AmfiScheme.scheme_name, AmfiScheme.scheme_code).where(
-                col(AmfiScheme.scheme_name).in_(scheme_names)
-            )
-        ).all()
-    return {r[0]: r[1] for r in rows}
+# Name -> code resolution + synthetic minting lives in data.repositories.scheme_codes.
 
 
 def _resolve_names(scheme_codes: list[int]) -> dict[int, str]:
@@ -85,58 +73,33 @@ def nav_json_to_df(nav_json: list[list], scheme_name: str) -> pl.DataFrame:
     )
 
 
+def _upsert_nav_rows(session, df: pl.DataFrame, name_to_code: dict[str, int]) -> None:
+    """Upsert df's (date, nav, schemeName) rows into mf_nav within the caller's session."""
+    for row in df.iter_rows(named=True):
+        code = name_to_code[row["schemeName"]]
+        stmt = (
+            pg_insert(MfNav)
+            .values(scheme_code=code, date=row["date"], nav=row["nav"])
+            .on_conflict_do_update(
+                index_elements=["scheme_code", "date"],
+                set_={"nav": row["nav"]},
+            )
+        )
+        session.exec(stmt)
+
+
 def save_nav_df(df: pl.DataFrame) -> None:
     """Upsert NAV rows into the database. df has columns: date, nav, schemeName.
 
-    Resolves schemeName -> scheme_code via amfi_schemes. Schemes with no AMFI match are
-    inserted as synthetic-negative rows so the FK never violates.
+    Resolves schemeName -> scheme_code via amfi_schemes; schemes with no AMFI match are
+    minted as synthetic-negative rows (see data.repositories.scheme_codes) so the FK
+    never violates.
     """
     if df.height == 0:
         return
-
-    distinct_names = df["schemeName"].unique().to_list()
-    name_to_code = _resolve_codes(distinct_names)
-
-    # Auto-assign synthetic negative codes for any name not in amfi_schemes (e.g. brand-new
-    # tracked fund whose AMFI master row hasn't synced yet).
-    missing_names = [n for n in distinct_names if n not in name_to_code]
-    if missing_names:
-        with get_session() as session:
-            min_code = (
-                session.exec(select(func.min(AmfiScheme.scheme_code))).one() or 0
-            )
-            next_neg = min(min_code, 0) - 1
-            for name in missing_names:
-                session.exec(
-                    pg_insert(AmfiScheme)
-                    .values(scheme_code=next_neg, scheme_name=name, db_added_at=datetime.utcnow())
-                    .on_conflict_do_nothing(index_elements=["scheme_code"])
-                )
-                name_to_code[name] = next_neg
-                next_neg -= 1
-            session.commit()
-        # New scheme rows invalidate the slug → scheme_code map.
-        from data.repositories.holdings import clear_slug_cache
-
-        clear_slug_cache()
-        logger.warning(
-            "Assigned synthetic negative codes to %d new scheme(s) on NAV save: %s",
-            len(missing_names),
-            missing_names[:3],
-        )
-
+    name_to_code = resolve_codes_with_synthetic(df["schemeName"].unique().to_list())
     with get_session() as session:
-        for row in df.iter_rows(named=True):
-            code = name_to_code[row["schemeName"]]
-            stmt = (
-                pg_insert(MfNav)
-                .values(scheme_code=code, date=row["date"], nav=row["nav"])
-                .on_conflict_do_update(
-                    index_elements=["scheme_code", "date"],
-                    set_={"nav": row["nav"]},
-                )
-            )
-            session.exec(stmt)
+        _upsert_nav_rows(session, df, name_to_code)
         session.commit()
     logger.info("Saved %d NAV rows to database", df.height)
 
@@ -240,21 +203,22 @@ def refresh_nav_data(scheme_names: list[str]) -> pl.DataFrame:
     """
     new_frames = fetch_nav_parallel(scheme_names)
     fetched_schemes = [name for df in new_frames if df.height for name in df["schemeName"].unique().to_list()]
+    if not fetched_schemes:
+        return load_nav_df(scheme_names)
 
-    name_to_code = _resolve_codes(fetched_schemes)
-    codes = list(name_to_code.values())
-    if codes:
-        with get_session() as session:
+    # Delete + re-insert the fetched schemes in one transaction so a save failure never
+    # leaves a fund with its old NAV history wiped and no replacement.
+    name_to_code = resolve_codes_with_synthetic(fetched_schemes)
+    codes = [name_to_code[n] for n in fetched_schemes if n in name_to_code]
+    with get_session() as session:
+        if codes:
             session.exec(delete(MfNav).where(col(MfNav.scheme_code).in_(codes)))
-            session.commit()
+        for df in new_frames:
+            if df.height:
+                _upsert_nav_rows(session, df, name_to_code)
+        session.commit()
 
-    saved_schemes: list[str] = []
-    for df in new_frames:
-        save_nav_df(df)
-        if df.height:
-            saved_schemes.extend(df["schemeName"].unique().to_list())
-
-    _recompute_metrics_for(saved_schemes)
+    _recompute_metrics_for(fetched_schemes)
     return load_nav_df(scheme_names)
 
 

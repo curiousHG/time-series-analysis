@@ -104,21 +104,62 @@ def _polars_row_to_holding(row: dict, scheme_code: int) -> MfHolding:
     return MfHolding(scheme_code=scheme_code, **fields)  # type: ignore[arg-type]
 
 
-def save_holdings(df: pl.DataFrame) -> None:
+def _add_holding_rows(session, df: pl.DataFrame) -> None:
+    """Stage MfHolding rows on `session` (no commit). Rows with unknown slugs are skipped."""
     if df.height == 0:
         return
-    rows: list[MfHolding] = []
     for row in df.iter_rows(named=True):
         slug = row.get("schemeSlug")
         code = _resolve_slug(slug) if slug else None
         if code is None:
             logger.warning("save_holdings: no scheme_code for slug %r — skipping", slug)
             continue
-        rows.append(_polars_row_to_holding(row, code))
-    if not rows:
+        session.add(_polars_row_to_holding(row, code))
+
+
+def _add_sector_rows(session, df: pl.DataFrame) -> None:
+    """Stage MfSectorAllocation rows on `session` (no commit)."""
+    if df.height == 0:
+        return
+    for row in df.iter_rows(named=True):
+        slug = row.get("schemeSlug")
+        code = _resolve_slug(slug) if slug else None
+        if code is None:
+            continue
+        session.add(
+            MfSectorAllocation(
+                scheme_code=code,
+                portfolio_date=row.get("portfolioDate"),
+                sector=row.get("sector"),
+                weight=row.get("weight"),
+            )
+        )
+
+
+def _add_asset_rows(session, df: pl.DataFrame) -> None:
+    """Stage MfAssetAllocation rows on `session` (no commit)."""
+    if df.height == 0:
+        return
+    for row in df.iter_rows(named=True):
+        slug = row.get("schemeSlug")
+        code = _resolve_slug(slug) if slug else None
+        if code is None:
+            continue
+        session.add(
+            MfAssetAllocation(
+                scheme_code=code,
+                portfolio_date=row.get("portfolioDate"),
+                asset_class=row.get("assetClass"),
+                weight=row.get("weight"),
+            )
+        )
+
+
+def save_holdings(df: pl.DataFrame) -> None:
+    if df.height == 0:
         return
     with get_session() as session:
-        session.add_all(rows)
+        _add_holding_rows(session, df)
         session.commit()
 
 
@@ -126,19 +167,7 @@ def save_sectors(df: pl.DataFrame) -> None:
     if df.height == 0:
         return
     with get_session() as session:
-        for row in df.iter_rows(named=True):
-            slug = row.get("schemeSlug")
-            code = _resolve_slug(slug) if slug else None
-            if code is None:
-                continue
-            session.add(
-                MfSectorAllocation(
-                    scheme_code=code,
-                    portfolio_date=row.get("portfolioDate"),
-                    sector=row.get("sector"),
-                    weight=row.get("weight"),
-                )
-            )
+        _add_sector_rows(session, df)
         session.commit()
 
 
@@ -146,19 +175,7 @@ def save_assets(df: pl.DataFrame) -> None:
     if df.height == 0:
         return
     with get_session() as session:
-        for row in df.iter_rows(named=True):
-            slug = row.get("schemeSlug")
-            code = _resolve_slug(slug) if slug else None
-            if code is None:
-                continue
-            session.add(
-                MfAssetAllocation(
-                    scheme_code=code,
-                    portfolio_date=row.get("portfolioDate"),
-                    asset_class=row.get("assetClass"),
-                    weight=row.get("weight"),
-                )
-            )
+        _add_asset_rows(session, df)
         session.commit()
 
 
@@ -287,7 +304,6 @@ def load_assets(slugs: list[str] | None = None) -> pl.DataFrame:
 def delete_holdings_for_slugs(slugs: list[str]) -> int:
     """Delete every holdings/sector/asset row for the given slugs. Returns the number
     of slugs whose rows were targeted (0 if no slug resolved to a known scheme_code).
-    Used by the sync service before a full refetch.
     """
     if not slugs:
         return 0
@@ -300,6 +316,32 @@ def delete_holdings_for_slugs(slugs: list[str]) -> int:
         session.exec(delete(MfAssetAllocation).where(col(MfAssetAllocation.scheme_code).in_(codes)))
         session.commit()
     return len(codes)
+
+
+def replace_holdings_atomic(
+    slug: str,
+    holdings: pl.DataFrame,
+    sectors: pl.DataFrame,
+    assets: pl.DataFrame,
+) -> None:
+    """Delete + re-insert one fund's holdings/sector/asset rows in a single transaction.
+
+    Wrapping the wipe-and-refill in one commit means a fund is never left with holdings
+    but no sectors/assets if a later insert fails — the whole replacement rolls back.
+    """
+    codes = _resolve_slugs([slug])
+    if not codes:
+        logger.warning("replace_holdings_atomic: no scheme_code for slug %r — skipping", slug)
+        return
+    code = codes[0]
+    with get_session() as session:
+        session.exec(delete(MfHolding).where(col(MfHolding.scheme_code) == code))
+        session.exec(delete(MfSectorAllocation).where(col(MfSectorAllocation.scheme_code) == code))
+        session.exec(delete(MfAssetAllocation).where(col(MfAssetAllocation.scheme_code) == code))
+        _add_holding_rows(session, holdings)
+        _add_sector_rows(session, sectors)
+        _add_asset_rows(session, assets)
+        session.commit()
 
 
 # ---- ensure / refresh --------------------------------------------------------------------
@@ -357,12 +399,7 @@ def refresh_holdings_data(slugs: list[str]) -> tuple[pl.DataFrame, pl.DataFrame,
             except Exception as e:
                 logger.error("Failed to refresh holdings for %s: %s", slug, e)
 
-    successful_slugs = [slug for slug, _, _, _ in fetched]
-    if successful_slugs:
-        delete_holdings_for_slugs(successful_slugs)
-        for _, h, s, a in fetched:
-            save_holdings(h)
-            save_sectors(s)
-            save_assets(a)
+    for slug, h, s, a in fetched:
+        replace_holdings_atomic(slug, h, s, a)
 
     return load_holdings(slugs), load_sectors(slugs), load_assets(slugs)

@@ -10,11 +10,11 @@ import logging
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import UTC, datetime
 
 import polars as pl
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import col, delete, func, select
+from sqlmodel import col, delete, select
 
 from core.database import get_session
 from core.models import (
@@ -36,6 +36,7 @@ from data.repositories.holdings import (
 from data.repositories.metadata import fetch_and_save as fetch_metadata_and_save
 from data.repositories.metadata import load_metadata
 from data.repositories.nav import fetch_single_nav, save_nav_df
+from data.repositories.scheme_codes import resolve_or_mint_code
 from mutual_funds.display import make_slug
 
 logger = logging.getLogger("services.registry_service")
@@ -97,28 +98,6 @@ def _resolve_scheme_code(scheme_name: str) -> int | None:
     return int(row) if row is not None else None
 
 
-def _resolve_or_mint_code(scheme_name: str) -> int:
-    """Resolve scheme_name -> scheme_code; mint a synthetic negative if not found."""
-    code = _resolve_scheme_code(scheme_name)
-    if code is not None:
-        return code
-    with get_session() as session:
-        min_code = session.exec(select(func.min(AmfiScheme.scheme_code))).one() or 0
-        next_neg = min(min_code, 0) - 1
-        session.exec(
-            pg_insert(AmfiScheme)
-            .values(scheme_code=next_neg, scheme_name=scheme_name, db_added_at=datetime.utcnow())
-            .on_conflict_do_nothing(index_elements=["scheme_code"])
-        )
-        session.commit()
-    # New scheme row invalidates the slug → scheme_code map.
-    from data.repositories.holdings import clear_slug_cache
-
-    clear_slug_cache()
-    logger.warning("Minted synthetic code %d for previously-unknown scheme %s", next_neg, scheme_name)
-    return next_neg
-
-
 def _set_status(scheme_name: str, **statuses: str) -> None:
     if not statuses:
         return
@@ -131,14 +110,14 @@ def _set_status(scheme_name: str, **statuses: str) -> None:
             return
         for k, v in statuses.items():
             setattr(row, k, v)
-        row.last_attempted_at = datetime.utcnow()
+        row.last_attempted_at = datetime.now(UTC).replace(tzinfo=None)
         session.add(row)
         session.commit()
 
 
 def _upsert_registry(scheme_name: str, scheme_code: int | None = None) -> int:
     """Insert (or update) an mf_registry row keyed on scheme_code. Returns the resolved code."""
-    code = scheme_code if scheme_code is not None else _resolve_or_mint_code(scheme_name)
+    code = scheme_code if scheme_code is not None else resolve_or_mint_code(scheme_name)
     with get_session() as session:
         stmt = (
             pg_insert(MfRegistry)
@@ -147,7 +126,7 @@ def _upsert_registry(scheme_name: str, scheme_code: int | None = None) -> int:
                 nav_status="pending",
                 holdings_status="pending",
                 metadata_status="pending",
-                added_at=datetime.utcnow(),
+                added_at=datetime.now(UTC).replace(tzinfo=None),
             )
             .on_conflict_do_nothing(index_elements=["scheme_code"])
         )

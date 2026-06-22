@@ -2,7 +2,7 @@
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import UTC, datetime
 
 import polars as pl
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -12,6 +12,7 @@ from core.database import get_session
 from core.models import AmfiScheme, MfAmc, MfCategory, MfMetadata
 from data.fetchers.mutual_fund import fetch_fund_metadata
 from data.repositories.amfi import upsert_amc, upsert_category
+from data.repositories.scheme_codes import mint_synthetic_codes
 
 logger = logging.getLogger("data.repositories.metadata")
 
@@ -44,12 +45,13 @@ def _attach_amfi_fields(meta: dict) -> dict:
 def save_metadata(meta: dict) -> None:
     meta = dict(meta)
     meta = _attach_amfi_fields(meta)
-    meta["fetched_at"] = datetime.utcnow()
+    meta["fetched_at"] = datetime.now(UTC).replace(tzinfo=None)
     scheme_name = meta.pop("scheme_name")
     with get_session() as session:
         # Phase 2: mf_metadata is keyed on scheme_code, not scheme_name. Resolve via
         # amfi_schemes; if the scheme isn't there yet, mint a synthetic-negative row so
-        # the FK doesn't violate.
+        # the FK doesn't violate. The mint shares this session so it commits atomically
+        # with the metadata insert below.
         scheme_code = session.exec(
             select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)
         ).first()
@@ -57,18 +59,9 @@ def save_metadata(meta: dict) -> None:
         # Row depending on the SQLAlchemy code path — unwrap defensively.
         if isinstance(scheme_code, tuple):
             scheme_code = scheme_code[0]
-        minted_synthetic = False
-        if scheme_code is None:
-            min_code = session.exec(select(func.min(AmfiScheme.scheme_code))).one() or 0
-            if isinstance(min_code, tuple):
-                min_code = min_code[0] or 0
-            scheme_code = min(min_code, 0) - 1
-            session.exec(
-                pg_insert(AmfiScheme)
-                .values(scheme_code=scheme_code, scheme_name=scheme_name, db_added_at=datetime.utcnow())
-                .on_conflict_do_nothing(index_elements=["scheme_code"])
-            )
-            minted_synthetic = True
+        minted_synthetic = scheme_code is None
+        if minted_synthetic:
+            scheme_code = mint_synthetic_codes(session, [scheme_name])[scheme_name]
             logger.warning("Assigned synthetic code %d for new metadata scheme %s", scheme_code, scheme_name)
         meta["scheme_code"] = scheme_code
         # Resolve dim FKs: get-or-create rows in mf_amc / mf_category, then drop the text

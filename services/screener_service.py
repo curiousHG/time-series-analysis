@@ -55,6 +55,20 @@ def build_screener_df() -> pl.DataFrame:
 # ---- Filter application ----------------------------------------------------------------
 
 
+def apply_name_filter(df: pl.DataFrame, name_query: str, *, column: str = "scheme_name") -> pl.DataFrame:
+    """Filter rows whose `column` matches every whitespace-separated token in `name_query`.
+
+    AND across tokens, case-insensitive substring per token. Tokens are regex-escaped so
+    user input like parentheses is treated literally. Empty query returns `df` unchanged.
+    """
+    if not name_query:
+        return df
+    out = df
+    for token in name_query.split():
+        out = out.filter(pl.col(column).str.contains(f"(?i){re.escape(token)}"))
+    return out
+
+
 def apply_filters(
     df: pl.DataFrame,
     *,
@@ -78,11 +92,7 @@ def apply_filters(
     those filters require the metric columns to be populated and would otherwise drop
     every row.
     """
-    out = df
-    if name_query:
-        # AND across whitespace-separated tokens, case-insensitive substring per token.
-        for token in name_query.split():
-            out = out.filter(pl.col("scheme_name").str.contains(f"(?i){re.escape(token)}"))
+    out = apply_name_filter(df, name_query)
     if amcs:
         out = out.filter(pl.col("fund_house").is_in(amcs))
     if cats:

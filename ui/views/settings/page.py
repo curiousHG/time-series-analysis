@@ -79,9 +79,15 @@ def _render_overview() -> None:
     pending_sources = 0
     unavailable_sources = 0
     if tracked_count:
-        for col in ("navStatus", "holdingsStatus", "metadataStatus"):
-            pending_sources += tracked.filter(pl.col(col) == "pending").height
-            unavailable_sources += tracked.filter(pl.col(col) == "unavailable").height
+        # Count pending/unavailable across the three status columns in a single pass
+        # rather than re-scanning the DataFrame six times.
+        status_cols = ("navStatus", "holdingsStatus", "metadataStatus")
+        counts = tracked.select(
+            *[(pl.col(c) == "pending").sum().alias(f"p_{c}") for c in status_cols],
+            *[(pl.col(c) == "unavailable").sum().alias(f"u_{c}") for c in status_cols],
+        ).row(0)
+        pending_sources = sum(counts[: len(status_cols)])
+        unavailable_sources = sum(counts[len(status_cols) :])
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Tradebook", f"{total_trades:,}", help=f"{symbols:,} unique trade symbols")
