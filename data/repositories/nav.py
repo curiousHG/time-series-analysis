@@ -184,10 +184,6 @@ def fetch_single_nav(scheme_name: str) -> pl.DataFrame:
     return nav_json_to_df(data["nav_data"], scheme_name)
 
 
-# Backwards-compatible alias for older callers.
-_fetch_single_nav = fetch_single_nav
-
-
 @timeit("nav.fetch_nav_parallel")
 def fetch_nav_parallel(scheme_names: list[str]) -> list[pl.DataFrame]:
     """Fetch NAV data for multiple schemes in parallel."""

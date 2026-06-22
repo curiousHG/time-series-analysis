@@ -110,7 +110,7 @@ class MfCategory(SQLModel, table=True):
     name: str = Field(unique=True, index=True)
 
 
-class MfScheme(SQLModel, table=True):
+class AmfiScheme(SQLModel, table=True):
     """Canonical scheme dim table (renamed from amfi_schemes).
 
     Single source of truth for scheme identity — every MF table FKs here on `scheme_code`.
@@ -131,11 +131,6 @@ class MfScheme(SQLModel, table=True):
     fund_house_id: int | None = Field(default=None, foreign_key="mf_amc.id", index=True)
     category_id: int | None = Field(default=None, foreign_key="mf_category.id", index=True)
     db_added_at: datetime.datetime | None = Field(default=None, index=True)
-
-
-# Backwards-compat alias for callers still using the old name. New code should import
-# `MfScheme` directly.
-AmfiScheme = MfScheme
 
 
 class MfMetadata(SQLModel, table=True):

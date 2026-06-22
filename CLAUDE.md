@@ -38,7 +38,7 @@ uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi
 
 ## Architecture
 
-**Trading agent platform** for Indian markets (NSE) — Streamlit UI with strategy backtesting, portfolio analytics, and a bot framework for automated trading.
+**Trading analysis platform** for Indian markets (NSE) — Streamlit UI with strategy backtesting, portfolio analytics, and mutual-fund/stock research.
 
 ### Pages
 
@@ -81,10 +81,6 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
            models/                     # SQLModel ORM models (split by domain)
              mutual_fund.py            # MfNav, MfHolding, MfRegistry, etc.
              stock.py                  # StockOhlcv, StockRegistry
-             trading.py                # Bot, Trade, Order (bot framework)
-           config.py                   # Pydantic Settings (AppConfig)
-           enums.py                    # BotState, RunMode, OrderSide, OrderStatus, etc.
-           exceptions.py               # TradingError, DataFetchError, ExchangeError
            logging_config.py           # Rotating file log setup (logs/)
          indicators/                   # 37 TA-Lib indicators (split package)
            registry.py                 # @register decorator, INDICATOR_REGISTRY, compute_indicators
@@ -108,14 +104,6 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
            amfi.py                     # AMFI master sync + ISIN lookup
            stock.py                    # Stock OHLCV CRUD + smart caching
            tradebook.py                # Tradebook import with dedup
-              ↓
-         exchange/                     # Exchange abstraction (for bot framework)
-           base.py                     # ExchangeBase ABC
-           paper.py                    # PaperExchange (simulated fills)
-         bot/                          # Trading bot engine
-           worker.py                   # Worker (state machine: STOPPED/RUNNING/PAUSED)
-           bot.py                      # TradingBot (strategy + exchange + data)
-           data_provider.py            # Unified data interface (backtest & live)
 ```
 
 ### Database (PostgreSQL)
@@ -133,9 +121,6 @@ All data is stored in PostgreSQL via SQLModel ORM. Models in `core/models/`:
 | `stock_ohlcv` | Daily OHLCV data | (date, symbol) |
 | `stock_registry` | Stock metadata | symbol |
 | `mf_tradebook` | Kite/Zerodha trades (deduped by trade_id) | trade_id |
-| `bots` | Bot instances (name, strategy, state) | id |
-| `trades` | Bot trades (entry/exit, P&L) | id |
-| `orders` | Bot orders (side, price, status) | id |
 
 Connection: `DATABASE_URL` env var (default: `postgresql://harshit@localhost:5432/trading`).
 
@@ -157,7 +142,6 @@ Connection: `DATABASE_URL` env var (default: `postgresql://harshit@localhost:543
 - **Repository pattern** — `data/repositories/` for DB CRUD, `data/fetchers/` for HTTP
 - **Strategy registry** — `@register_strategy` decorator, `STRATEGY_REGISTRY` dict
 - **Indicator registry** — `@register` decorator in `indicators/`, UI reads from `INDICATOR_REGISTRY`
-- **Bot framework** — Worker state machine, exchange abstraction, data provider (inspired by freqtrade)
 - **Ruff** for both linting and formatting (config in `pyproject.toml`)
 - **File-based selections** (`data/user/selections.json`) for UI state persistence
 - **Rotating logs** — `logs/app.log`, `logs/data.log`, `logs/ui.log` (5MB, 3 backups)
@@ -203,7 +187,6 @@ Project is installed in editable mode (`uv pip install -e .`). All packages have
 | `jugaad-data` | NSE Indian stock data |
 | `httpx` | HTTP client (API calls) |
 | `beautifulsoup4` | HTML scraping (AdvisorKhoj) |
-| `pydantic-settings` | App configuration |
 
 ## graphify
 

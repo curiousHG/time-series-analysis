@@ -24,7 +24,6 @@ dependencies = [
     "streamlit-lightweight-charts>=0.7",
     "watchdog>=6.0.0",
     "streamlit-aggrid>=1.2.1.post2",
-    "pydantic-settings>=2.0",
 ]
 
 [dependency-groups]
@@ -34,14 +33,14 @@ dev = [
     "pytest>=9.0.2",
     "ruff>=0.14.10",
     "pre-commit>=4.0",   # runs ruff + hygiene hooks on every commit
-    "vulture>=2.14",     # finds dead code (unused funcs/classes/vars) — see core/config.py, bot/, exchange/
+    "vulture>=2.14",     # finds dead code (unused funcs/classes/vars)
     "pyrefly>=0.16",     # type checker (config already in [tool.pyrefly])
 ]
 
 [tool.setuptools.packages.find]
 include = [
     "core*", "data*", "mutual_funds*", "strategies*", "ui*", "scripts*",
-    "indicators*", "services*", "exchange*", "bot*",
+    "indicators*", "services*",
 ]
 
 [tool.ruff]
@@ -86,7 +85,7 @@ ban-relative-imports = "all"  # always use absolute imports (core.x, services.y)
 [tool.ruff.lint.isort]
 known-first-party = [
     "core", "data", "mutual_funds", "strategies", "ui",
-    "indicators", "services", "exchange", "bot",
+    "indicators", "services",
 ]
 
 [tool.ruff.format]
