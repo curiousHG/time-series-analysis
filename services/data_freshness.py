@@ -10,6 +10,7 @@ from sqlmodel import func, select
 
 from core.database import get_session
 from core.models import AmfiScheme, MfHolding, MfNav
+from data.repositories.holdings import _slug_to_code_map_cached
 from mutual_funds.display import make_slug
 
 NAV_STALE_BUSINESS_DAYS = 1
@@ -144,8 +145,6 @@ def compute_holdings_freshness(scheme_names: list[str], scheme_slugs: list[str])
     if scheme_slugs:
         # Phase 3: holdings is keyed on scheme_code; resolve slug → code, query, then
         # remap back to slug for the report.
-        from data.repositories.holdings import _slug_to_code_map_cached
-
         slug_to_code = _slug_to_code_map_cached()
         code_to_slug = {slug_to_code[s]: s for s in scheme_slugs if s in slug_to_code}
         codes = list(code_to_slug.keys())

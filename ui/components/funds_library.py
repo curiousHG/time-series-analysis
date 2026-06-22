@@ -1,5 +1,6 @@
 """Funds Library — metadata table with bulk fetch and per-fund refresh."""
 
+import pandas as pd
 import polars as pl
 import streamlit as st
 
@@ -59,8 +60,6 @@ def render(selected_registry: pl.DataFrame):
                         "Benchmark": "—",
                     }
                 )
-
-        import pandas as pd
 
         df = pd.DataFrame(rows)
         st.dataframe(

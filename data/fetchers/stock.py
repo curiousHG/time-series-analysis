@@ -40,7 +40,7 @@ def fetch_symbol_data_jugaad(symbol: str, start, end) -> pd.DataFrame | None:
     Symbol should be WITHOUT .NS suffix (e.g., 'RELIANCE' not 'RELIANCE.NS').
     """
     try:
-        from jugaad_data.nse import stock_df
+        from jugaad_data.nse import stock_df  # noqa: PLC0415 — heavy optional dep; only on the NSE fallback path
 
         nse_symbol = symbol.replace(".NS", "").replace(".BO", "")
         df = stock_df(symbol=nse_symbol, from_date=start, to_date=end, series="EQ")

@@ -36,6 +36,7 @@ from sqlalchemy import text  # noqa: E402
 
 from core.database import engine  # noqa: E402
 from core.logging_config import setup_logging  # noqa: E402
+from data.repositories.holdings import clear_slug_cache  # noqa: E402
 from mutual_funds.display import detect_option, detect_plan  # noqa: E402
 
 # Tables that carry scheme_code FKs into amfi_schemes. mf_nav's composite PK (scheme_code,
@@ -355,8 +356,6 @@ def main() -> int:
         if args.apply:
             # We rewrote/deleted scheme rows; invalidate the holdings slug cache so any
             # long-running process (Streamlit) reloading after dedupe sees the new map.
-            from data.repositories.holdings import clear_slug_cache
-
             clear_slug_cache()
             log.info(
                 "Done. Merged %d synthetic codes — moved %d rows, dropped %d duplicates. "

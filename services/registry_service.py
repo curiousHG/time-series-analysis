@@ -37,7 +37,7 @@ from data.repositories.metadata import fetch_and_save as fetch_metadata_and_save
 from data.repositories.metadata import load_metadata
 from data.repositories.nav import fetch_single_nav, save_nav_df
 from data.repositories.scheme_codes import resolve_or_mint_code
-from mutual_funds.display import make_slug
+from mutual_funds.display import make_slug, short_scheme_name
 
 logger = logging.getLogger("services.registry_service")
 
@@ -325,8 +325,6 @@ def remove_fund(scheme_name: str) -> None:
 
 def load_registry() -> pl.DataFrame:
     """Old-shape (schemeName, schemeSlug, shortName) view — retained until UI migrates."""
-    from mutual_funds.display import short_scheme_name
-
     df = list_tracked()
     if df.height == 0:
         return pl.DataFrame(schema={"schemeName": pl.Utf8, "schemeSlug": pl.Utf8, "shortName": pl.Utf8})

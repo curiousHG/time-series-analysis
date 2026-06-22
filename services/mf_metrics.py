@@ -15,8 +15,11 @@ import quantstats as qs
 from sqlmodel import select
 
 from core.database import get_session
-from core.models import MfNav
+from core.models import AmfiScheme, MfHolding, MfNav
 from core.timing import timed, timeit
+from data.repositories.scheme_metrics import clear_metrics, find_stale_schemes, load_metrics, upsert_metrics
+from data.repositories.stock import ensure_stock_data, refresh_stock_to_today
+from mutual_funds.display import make_slug  # noqa: F401 — back-compat re-export for callers
 
 logger = logging.getLogger("services.mf_metrics")
 
@@ -34,8 +37,6 @@ def nav_series(scheme_name: str) -> pd.Series:
 
     Phase 2: MfNav is keyed on scheme_code; we JOIN to AmfiScheme to filter by name.
     """
-    from core.models import AmfiScheme
-
     with get_session() as session:
         rows = session.exec(
             select(MfNav.date, MfNav.nav)
@@ -118,9 +119,6 @@ def _holdings_composition(scheme_name: str) -> dict[str, float]:
     multiple times across portfolio_dates, we don't want to double-count earlier snapshots.
     Returns floats in [0, 1]; NaN where the data isn't available.
     """
-    from core.models import AmfiScheme, MfHolding
-    from mutual_funds.display import make_slug  # noqa: F401  (kept for back-compat callers)
-
     nan = dict.fromkeys(("pct_equity", "pct_debt", "pct_cash", "pct_top3", "pct_top5", "pct_top10"), math.nan)  # fmt: skip
     # Phase 3: mf_holdings is keyed on scheme_code; resolve from scheme_name via AmfiScheme.
     with get_session() as session:
@@ -426,8 +424,6 @@ def _load_nifty_for_recompute() -> pd.Series:
     under 5 days, which would silently leave the benchmark stale on a 2- or 3-day gap and
     push alpha/beta/tracking-error onto out-of-date data.
     """
-    from data.repositories.stock import ensure_stock_data, refresh_stock_to_today
-
     try:
         today, db_max = refresh_stock_to_today("^NSEI")
         if db_max is None:
@@ -465,12 +461,8 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
     None (corrupt NAV, insufficient history, etc.) get any stale cache row deleted so the
     cache stays consistent with the current compute logic.
     """
-    from data.repositories.scheme_metrics import clear_metrics, upsert_metrics
-
     if scheme_names is None:
         # Phase 2: pull names via JOIN to amfi_schemes (MfNav no longer carries scheme_name).
-        from core.models import AmfiScheme
-
         with get_session() as session:
             scheme_names = list(
                 session.exec(
@@ -518,8 +510,6 @@ def recompute_stale_metrics(*, max_workers: int = 4) -> int:
 
     Drives the daily cron and the post-NAV-sync hook — cheap when nothing changed.
     """
-    from data.repositories.scheme_metrics import find_stale_schemes
-
     stale = find_stale_schemes()
     if not stale:
         return 0
@@ -530,6 +520,4 @@ def recompute_stale_metrics(*, max_workers: int = 4) -> int:
 @timeit("mf_metrics.load_cached")
 def load_cached_metrics(scheme_names: list[str] | None = None) -> pl.DataFrame:
     """Read pre-computed metrics from mf_scheme_metrics — single SELECT, no quantstats."""
-    from data.repositories.scheme_metrics import load_metrics
-
     return load_metrics(scheme_names)

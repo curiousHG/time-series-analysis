@@ -12,11 +12,14 @@ from data.repositories.holdings import (
 from data.repositories.holdings import (
     refresh_holdings_data as _refresh_holdings,
 )
+from data.repositories.metadata import load_metadata
 from data.repositories.nav import ensure_nav_data
 from data.repositories.nav import refresh_nav_data as _refresh_nav
 from data.repositories.stock import ensure_stock_data, search_stock_symbols
 from data.repositories.tradebook import load_tradebook_from_db
+from mutual_funds.display import short_scheme_name
 from mutual_funds.tradebook import normalize_transactions
+from services.screener_service import build_screener_df
 
 # Instrumentation note: @st.cache_data is the outermost decorator on every loader so cache
 # hits return without entering @timeit. Anything that lands in logs/perf.log here is a real
@@ -104,16 +107,12 @@ def cached_search(query: str) -> pl.DataFrame:
 @st.cache_data(ttl=900, show_spinner=False)
 @timeit("loaders.load_metadata_cached")
 def load_metadata_cached(scheme_names: tuple[str, ...]) -> pl.DataFrame:
-    from data.repositories.metadata import load_metadata
-
     return load_metadata(list(scheme_names))
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
 @timeit("loaders.get_short_names")
 def get_short_names(scheme_names: tuple[str, ...]) -> dict[str, str]:
-    from mutual_funds.display import short_scheme_name
-
     return {n: short_scheme_name(n) for n in scheme_names}
 
 
@@ -125,8 +124,6 @@ def load_screener_df_cached() -> pl.DataFrame:
     Pure data assembly lives in the service module; this wrapper just layers Streamlit's
     in-memory cache + the perf-log decoration.
     """
-    from services.screener_service import build_screener_df
-
     return build_screener_df()
 
 
@@ -139,7 +136,7 @@ def load_metrics_cached() -> pl.DataFrame:
     and can be triggered manually via Settings → Recompute metrics, or
     `uv run python scripts/compute_metrics.py`.
     """
-    from services.mf_metrics import load_cached_metrics
+    from services.mf_metrics import load_cached_metrics  # noqa: PLC0415 — defers quantstats off the app-boot path
 
     return load_cached_metrics()
 

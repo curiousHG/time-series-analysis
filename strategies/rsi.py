@@ -19,7 +19,7 @@ class RSIStrategy(Strategy):
         self.overbought = overbought
 
     def indicators(self, price):
-        import vectorbt as vbt
+        import vectorbt as vbt  # noqa: PLC0415 — heavy dep; deferred to the backtest call
 
         rsi = vbt.RSI.run(price, window=self.window)
         return {"RSI": rsi.rsi}

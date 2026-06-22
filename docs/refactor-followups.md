@@ -55,19 +55,27 @@ can just run `uv run alembic upgrade head` (every step is idempotent — no stam
 Not done (intentionally): dropping legacy `bots`/`trades`/`orders` tables — skipped to
 honour the "no data deleted" constraint. Revisit as a separate opt-in revision if wanted.
 
-### 2. Ruff leftovers (91 findings — not safely auto-fixable)
+### 2. Ruff leftovers (~55 findings — not safely auto-fixable)
+
+**`PLC0415` (function-local imports) — ✅ DONE (38 → 0).** Safe imports (stdlib,
+sqlalchemy, `core.*`, and repo→repo where no cycle) were hoisted to module top; the
+genuinely-deliberate ones are documented with `# noqa: PLC0415` + a reason: heavy/lazy
+deps (`vectorbt`, `plotly`/`numpy` at chart-render, `quantstats` via `mf_metrics`,
+`jugaad_data`) and the true repo→service cycles (`nav→mf_metrics`, `database→models`).
+Verified: all 99 modules import with no cycles; `ui.app` loads; 30 tests pass.
+
+Remaining (all non-breaking, left intentionally):
 
 | Rule | Count | Note |
 |------|-------|------|
-| `C408` | 39 | `dict()`/`list()` → literals. Mostly Plotly `dict(...)` kwargs in `ui/views/`. Safe but `--unsafe-fixes`; review before applying. |
-| `PLC0415` | 38 | Function-local imports — most encode **service↔repository circular deps**. Fix structurally (move shared low-level helpers down into `data/repositories`), not by force-inlining. |
+| `C408` | 39 | `dict()`/`list()` → literals. Mostly Plotly `dict(...)` kwargs in `ui/views/`. Safe but `--unsafe-fixes`; readability call — left as-is. |
 | `RET504` | 5 | unnecessary-assign-before-return. |
 | `TC002` / `TC003` | 6 | move type-only imports into `TYPE_CHECKING`. |
 | `PERF401` | 2 | manual list-comprehension. |
 | `C401` | 1 | unnecessary generator→set. |
+| `RUF002` / `RUF003` | 2 | ambiguous unicode (en-dash) in a docstring/comment. |
 
-`ruff check . --exclude notebooks/ --statistics` for the live breakdown. The remaining
-`PLC0415` is the meaningful one — it's a signal of import cycles worth untangling.
+`ruff check . --exclude notebooks/ --statistics` for the live breakdown.
 
 ### 3. Test gaps — ✅ DONE
 

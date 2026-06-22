@@ -12,6 +12,7 @@ from core.database import get_session
 from core.models import AmfiScheme, MfAmc, MfCategory, MfMetadata
 from data.fetchers.mutual_fund import fetch_fund_metadata
 from data.repositories.amfi import upsert_amc, upsert_category
+from data.repositories.holdings import clear_slug_cache
 from data.repositories.scheme_codes import mint_synthetic_codes
 
 logger = logging.getLogger("data.repositories.metadata")
@@ -78,8 +79,6 @@ def save_metadata(meta: dict) -> None:
         session.exec(stmt)
         session.commit()
     if minted_synthetic:
-        from data.repositories.holdings import clear_slug_cache
-
         clear_slug_cache()
     logger.info("Saved metadata for %s (AUM=%s)", scheme_name, meta.get("aum_crores"))
 

@@ -33,8 +33,6 @@ def import_tradebook_bytes(file_bytes: bytes) -> tuple[int, int]:
 
 def _resolve_isin_to_scheme_code(session, isins: list[str]) -> dict[str, int]:
     """Bulk-resolve ISINs against amfi_schemes (growth or reinvestment match)."""
-    from core.models import AmfiScheme
-
     if not isins:
         return {}
     rows = session.exec(

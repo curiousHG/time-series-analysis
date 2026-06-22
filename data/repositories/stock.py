@@ -1,5 +1,5 @@
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import polars as pl
 from sqlalchemy import func
@@ -150,10 +150,7 @@ def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
     recompute). Returns (today_date, db_max_after) — `db_max_after` is None if nothing
     was fetched. No-op if already current.
     """
-    from datetime import date as _date
-    from datetime import timedelta
-
-    today = _date.today()
+    today = date.today()
     existing = _get_date_range(symbol)
     if existing is None:
         # Cold cache: pull a 10Y backfill so all rolling-CAGR windows have data.

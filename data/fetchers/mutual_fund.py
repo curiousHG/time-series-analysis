@@ -2,6 +2,7 @@ import contextlib
 import datetime
 import logging
 import re
+from datetime import datetime as dt
 from urllib.parse import quote
 
 import httpx
@@ -166,8 +167,6 @@ def fetch_fund_metadata(scheme_name: str) -> dict:
               min_topup, turnover_ratio, exit_load, fund_house, source_url}
     Fields not found are returned as None.
     """
-    from datetime import datetime as dt
-
     html = fetch_fund_overview_html(scheme_name)
     soup = BeautifulSoup(html, "html.parser")
     url = BASE_OVERVIEW_URL.format(scheme_name=quote(scheme_name))
@@ -313,8 +312,6 @@ def fetch_amfi_master() -> list[dict]:
     Format: SchemeCode;ISIN Payout/Growth;ISIN Reinvestment;SchemeName;NAV;Date
     Lines without semicolons are category/fund house headers.
     """
-    from datetime import datetime as dt
-
     logger.info("Fetching AMFI master data from %s", AMFI_NAV_ALL_URL)
     resp = httpx.get(AMFI_NAV_ALL_URL, timeout=60, follow_redirects=True)
     resp.raise_for_status()

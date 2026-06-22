@@ -19,7 +19,7 @@ class MACDStrategy(Strategy):
         self.signal_period = signal_period
 
     def indicators(self, price):
-        import vectorbt as vbt
+        import vectorbt as vbt  # noqa: PLC0415 — heavy dep; deferred to the backtest call
 
         macd = vbt.MACD.run(
             price,

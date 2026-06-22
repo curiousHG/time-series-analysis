@@ -27,7 +27,7 @@ class BollingerStrategy(Strategy):
         self.rsi_guard = rsi_guard
 
     def indicators(self, price):
-        import vectorbt as vbt
+        import vectorbt as vbt  # noqa: PLC0415 — heavy dep; deferred to the backtest call
 
         bb = vbt.BBANDS.run(price, window=self.bb_period, alpha=self.bb_std)
         rsi = vbt.RSI.run(price, window=14)

@@ -5,6 +5,8 @@ import os
 
 from sqlmodel import Session, SQLModel, create_engine
 
+from core.timing import timed
+
 logger = logging.getLogger("data.store.database")
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://harshit@localhost:5432/trading")
@@ -26,10 +28,8 @@ def init_schema() -> None:
     kept out of boot because they include heavy operations (ALTER COLUMN TYPE, GIN index
     builds) that can take minutes.
     """
-    from core.timing import timed
-
     with timed("init_schema.import_models"):
-        import core.models  # noqa: F401 — registers models with SQLModel metadata
+        import core.models  # noqa: F401,PLC0415 — core.models imports core.database; deferred to avoid a cycle
 
     with timed("init_schema.create_all"):
         SQLModel.metadata.create_all(engine)

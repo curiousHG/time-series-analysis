@@ -124,8 +124,8 @@ def _resolve_return_axis(chart_pdf, return_choice: str) -> tuple[str, str]:
 
 def _draw_scatter(chart_pdf, risk_label: str, return_label: str, color_mode: str, show_frontier: bool) -> None:
     """Render the Plotly scatter with optional efficient-frontier overlay."""
-    import numpy as np
-    import plotly.express as px
+    import numpy as np  # noqa: PLC0415 — heavy viz deps; deferred to chart-render time
+    import plotly.express as px  # noqa: PLC0415 — heavy viz deps; deferred to chart-render time
 
     # Bubble size from AUM (₹ Cr). Floor + log so micro-funds stay visible and mega-funds
     # don't dominate. NaN AUM → uniform fallback size.
@@ -207,7 +207,7 @@ def _add_efficient_frontier(fig, chart_pdf) -> None:
     """Pareto-efficient overlay: walk left-to-right, keep running max-Y, connect strict
     improvements. That's the upper-left convex frontier in (risk, return) space.
     """
-    import plotly.graph_objects as go
+    import plotly.graph_objects as go  # noqa: PLC0415 — heavy viz dep; deferred to chart-render time
 
     sorted_pts = chart_pdf.sort_values("__risk__").reset_index(drop=True)
     front_x: list[float] = []

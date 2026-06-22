@@ -19,12 +19,14 @@ from datetime import UTC, datetime
 
 import polars as pl
 from sqlalchemy import select as sa_select
+from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, func, select
 
 from core.database import get_session
 from core.models import AmfiScheme, MfAmc, MfCategory
 from data.fetchers.mutual_fund import fetch_amfi_master
+from data.repositories.holdings import clear_slug_cache
 
 logger = logging.getLogger("data.store.amfi")
 
@@ -159,8 +161,6 @@ def sync_amfi_master() -> int:
         session.commit()
 
     # New schemes invalidate the slug→code map cached in holdings.py.
-    from data.repositories.holdings import clear_slug_cache
-
     clear_slug_cache()
     logger.info("Synced %d AMFI schemes to database", len(schemes))
     return len(schemes)
@@ -190,8 +190,6 @@ def search_amfi(query: str, limit: int = 50) -> pl.DataFrame:
     isn't available. Returns columns: schemeName, schemeCode, fundHouse, category,
     isinGrowth, score (similarity 0-1).
     """
-    from sqlalchemy import text as sql_text
-
     if not query or len(query.strip()) < 2:
         return pl.DataFrame(
             schema={

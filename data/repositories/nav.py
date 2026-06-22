@@ -166,7 +166,7 @@ def _recompute_metrics_for(scheme_names: list[str]) -> None:
     if not scheme_names:
         return
     try:
-        from services.mf_metrics import recompute_metrics
+        from services.mf_metrics import recompute_metrics  # noqa: PLC0415 — repo→service; top-level import would cycle
 
         recompute_metrics(scheme_names)
     except Exception:

@@ -84,8 +84,7 @@ def _widen_stock_volume_to_bigint() -> None:
     full-table rewrite. Widening preserves all existing values."""
     conn = op.get_bind()
     current = conn.exec_driver_sql(
-        "SELECT data_type FROM information_schema.columns "
-        "WHERE table_name = 'stock_ohlcv' AND column_name = 'volume'"
+        "SELECT data_type FROM information_schema.columns WHERE table_name = 'stock_ohlcv' AND column_name = 'volume'"
     ).first()
     if current is None or current[0] == "bigint":
         return
