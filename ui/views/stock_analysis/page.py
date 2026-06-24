@@ -14,17 +14,13 @@ from ui.views.stock_analysis import strategy_backtest as backtest_tab
 
 stock_picker()
 
-with st.sidebar:
-    st.markdown("### Date Range")
-    start_date, end_date = st.date_input(
-        "Select date range",
-        value=(pd.to_datetime("2022-01-01"), pd.to_datetime("2023-01-03")),
-        min_value=pd.to_datetime("2000-01-01"),
-        max_value=pd.Timestamp.today(),
-        key="date_range",
-    )
-
-df = load_stock_open_close(st.session_state.selected_stocks, start_date, end_date)
+# Load the full available history; the chart opens focused on the last year and the
+# Daily/Weekly/Monthly buttons control candle aggregation (see chart tab).
+df = load_stock_open_close(
+    st.session_state.selected_stocks,
+    pd.to_datetime("2000-01-01"),
+    pd.Timestamp.today(),
+)
 symbols = df.select("Symbol").unique().to_series().to_list()
 symbol = st.selectbox("Select stock", symbols)
 
@@ -39,6 +35,14 @@ if symbol:
     tab_chart, tab_backtest = st.tabs(["Chart", "Strategy Backtest"])
 
     with tab_chart:
+        interval = st.segmented_control(
+            "Candle interval",
+            options=["Daily", "Weekly", "Monthly"],
+            default="Daily",
+            key="candle_interval",
+        )
+        chart_df = chart_tab.resample_ohlc(sdf, interval or "Daily")
+
         with st.sidebar:
             st.markdown("### Indicators")
             overlay_names = [n for n, e in INDICATOR_REGISTRY.items() if e["overlay"]]
@@ -57,8 +61,8 @@ if symbol:
             )
 
         selected_indicators = selected_overlays + selected_panels
-        overlays, panels = compute_indicators(sdf, selected_indicators)
-        chart_tab.render(sdf, overlays, panels, selected_panels, symbol)
+        overlays, panels = compute_indicators(chart_df, selected_indicators)
+        chart_tab.render(chart_df, overlays, panels, selected_panels, symbol)
 
     with tab_backtest:
         backtest_tab.render(sdf, symbol)
