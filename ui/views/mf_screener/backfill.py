@@ -1,10 +1,5 @@
-"""Add-to-tracked + fetch-data controls for the MF Screener.
-
-Renders inline next to the Tracked metric in the page header (see `page.py`). Picks the
-top-N rows of the current sidebar-filtered view, upserts them into `mf_registry`, then
-fetches NAV + metadata. Clears caches on success so the table re-renders with the fresh
-state.
-"""
+"""Add-to-tracked + fetch-data controls for the MF Screener. Picks the top-N filtered
+rows, upserts to mf_registry, fetches NAV + metadata, then clears caches on success."""
 
 from __future__ import annotations
 
@@ -17,9 +12,8 @@ from ui.state.loaders import load_metrics_cached, load_screener_df_cached
 
 
 def render_inline_backfill(filtered: pl.DataFrame, n_col, btn_col) -> None:
-    """Render the Top-N input + Fetch button into the two provided columns and run the
-    backfill on click. Disabled when no rows match the current filter.
-    """
+    """Render the Top-N input + Fetch button and run the backfill on click. Disabled when
+    no rows match the current filter."""
     has_rows = filtered.height > 0
     max_n = min(500, filtered.height) if has_rows else 1
     default_n = min(50, filtered.height) if has_rows else 1

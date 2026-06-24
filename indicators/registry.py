@@ -20,11 +20,7 @@ def register(name: str, description: str, overlay: bool = False):
 
 
 def compute_indicators(df: pd.DataFrame, selected: list[str]) -> tuple[dict[str, pd.Series], dict[str, pd.Series]]:
-    """
-    Compute selected indicators. Returns (overlays, panels).
-    overlays: series to plot on the price chart
-    panels: series to plot in separate subplots
-    """
+    """Compute selected indicators into (overlays, panels) — price-chart vs subplot series."""
     overlays: dict[str, pd.Series] = {}
     panels: dict[str, pd.Series] = {}
 

@@ -1,10 +1,5 @@
-"""AgGrid table rendering for the MF Screener.
-
-Takes the sidebar-filtered polars DataFrame, projects to display columns (using the
-catalog's rename map + canonical order), wires AgGrid's per-column header filters,
-multi-row selection, and copy-to-clipboard, and returns the AgGrid response so the
-page orchestrator can handle the row-selection echo separately.
-"""
+"""AgGrid table rendering for the MF Screener: project to display columns, wire header
+filters / multi-row selection / copy, and return the AgGrid response for the page."""
 
 from __future__ import annotations
 
@@ -139,9 +134,8 @@ def render_table(
     visible_metrics: list[str],
     aggrid_theme: Any,
 ) -> tuple[pd.DataFrame, dict]:
-    """Build + render the AgGrid table. Returns the display DataFrame (so other sections
-    can reuse it without rebuilding) and the AgGrid response (for selection echo).
-    """
+    """Build + render the AgGrid table. Returns the display DataFrame (reusable without
+    rebuilding) and the AgGrid response (for selection echo)."""
     display_pdf = _build_display_pdf(filtered, visible_metrics)
     grid_options = _build_grid_options(display_pdf)
     grid_response = AgGrid(
@@ -184,10 +178,8 @@ def render_selection_echo(grid_response: dict) -> None:
 def _clicked_scheme(grid_response: dict) -> str | None:
     """Return the fund name when the user just clicked a Scheme cell, else None.
 
-    AgGrid surfaces the triggering interaction in `event_data`: `streamlitRerunEventTriggerName`
-    names the event, `colDef.field` the clicked column, and `data` carries the full row. We
-    only act on a click of the pinned Scheme column so clicks elsewhere (the checkbox column,
-    or a numeric cell being text-selected for copy) are left alone.
+    Only acts on a Scheme-column click so clicks elsewhere (checkbox column, or a numeric
+    cell being text-selected for copy) are left alone.
     """
     event = grid_response.get("event_data") or {}
     if event.get("streamlitRerunEventTriggerName") != "cellClicked":
@@ -199,12 +191,8 @@ def _clicked_scheme(grid_response: dict) -> str | None:
 
 
 def render_open_action(grid_response: dict) -> None:
-    """Open a fund in MF Analysis when its Scheme cell is clicked.
-
-    Registers the fund (so it appears in the Analysis page's tracked dropdown) and pulls
-    NAV + metadata, then pre-selects it and switches pages. Holdings are deferred — the
-    Analysis page fetches them on load since `holdings_status` stays `pending`.
-    """
+    """Open a fund in MF Analysis when its Scheme cell is clicked: register it, pull NAV +
+    metadata, pre-select, switch pages. Holdings deferred to the Analysis page on load."""
     scheme_name = _clicked_scheme(grid_response)
     if scheme_name is None:
         return

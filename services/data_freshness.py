@@ -167,9 +167,7 @@ def compute_holdings_freshness(scheme_names: list[str], scheme_slugs: list[str])
 
 
 # ---- Settings-page status table builders --------------------------------------------------
-#
-# These shape the (Fund, Records, First/Last Date, Days Old, Status) table the Refresh
-# section renders. Pure data — no Streamlit imports — so the UI stays rendering-only.
+# Shape the Refresh section's status table. Pure data — no Streamlit — so the UI stays rendering-only.
 
 
 def build_nav_status_rows(

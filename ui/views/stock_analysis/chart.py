@@ -12,7 +12,7 @@ from indicators import INDICATOR_REGISTRY
 
 
 def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: list[str], symbol: str):
-    # ---- Price chart with lightweight-charts ----
+    # ---- Price chart ----
     candles = json.loads(
         sdf[["time", "Open", "High", "Low", "Close"]]
         .rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close"})
@@ -62,7 +62,7 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
         },
     ]
 
-    # Add overlay indicators to price chart
+    # Overlay indicators on the price chart
     for idx, (name, values) in enumerate(overlays.items()):
         line_data = json.loads(pd.DataFrame({"time": sdf["time"], "value": values}).dropna().to_json(orient="records"))
         series.append(
@@ -97,10 +97,9 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
 
     # ---- Panel indicators (Plotly subplots below) ----
     if panels:
-        # Group panels by indicator name prefix
+        # Group multi-series indicators (e.g. MACD/Signal/Histogram) under their parent.
         panel_groups: dict[str, dict[str, pd.Series]] = {}
         for name, values in panels.items():
-            # Group MACD/Signal/Histogram together
             for ind_name in selected_panels:
                 if name in INDICATOR_REGISTRY.get(ind_name, {}).get("fn", lambda _: {})(sdf):
                     panel_groups.setdefault(ind_name, {})[name] = values
@@ -152,7 +151,7 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
                         col=1,
                     )
 
-            # Add reference lines for RSI
+            # RSI overbought/oversold reference lines
             if ind_name == "RSI":
                 for level in [30, 70]:
                     fig.add_hline(
@@ -175,7 +174,6 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
             legend=dict(orientation="h", y=-0.05),
         )
 
-        # Apply grid to all axes
         for i in range(1, n_panels + 1):
             fig.update_xaxes(gridcolor="#1e293b", row=i, col=1)
             fig.update_yaxes(gridcolor="#1e293b", row=i, col=1)

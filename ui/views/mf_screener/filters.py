@@ -1,14 +1,5 @@
-"""Sidebar + inline filter widgets for the MF Screener.
-
-Layout split:
-  Sidebar  — heavy / persistent filters: search, AMC, Category, Plan, Option, AUM / TER
-             thresholds, optional risk sliders.
-  Inline   — column-visibility multiselect (lives above the table since adjusting column
-             density is a more frequent action than touching the sidebar filters).
-
-Pure presentation: returns a `FilterState` that the page orchestrator forwards to
-`services.screener_service.apply_filters`.
-"""
+"""Sidebar + inline filter widgets for the MF Screener. Sidebar holds the heavy filters,
+inline holds the column-visibility multiselect. Returns a `FilterState` for the page."""
 
 from __future__ import annotations
 
@@ -25,15 +16,10 @@ from ui.persistence.selections import load_selection, save_selection
 
 
 def _hydrate_filters() -> None:
-    """Seed any missing screener_* keys from disk before their widgets are created.
-
-    Runs on every render but is idempotent: a key already present in session_state — a
-    default seeded earlier, or a live in-session edit — is left untouched, so edits are
-    never clobbered. The reason this can't be a one-time guard: when the user navigates
-    to another page (e.g. opening a fund in MF Analysis), Streamlit garbage-collects the
-    screener_* widget keys because those widgets aren't rendered there. On return we must
-    re-seed them, which we do from selections.json — kept current by `_persist_filters`
-    on every change — so the filter state survives navigating away and back.
+    """Seed missing screener_* keys from disk before their widgets are created. Idempotent
+    so live edits are never clobbered. Can't be a one-time guard: Streamlit GCs the
+    screener_* keys on page nav (widgets aren't rendered elsewhere), so we re-seed from
+    selections.json — kept current by `_persist_filters` — to survive navigating away/back.
 
     Streamlit forbids passing both a widget `default=`/`value=` and a pre-seeded
     session_state key, so the widgets below omit those args for every key we seed here.

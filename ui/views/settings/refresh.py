@@ -1,9 +1,5 @@
-"""Settings → Refresh tracked-fund data section.
-
-Pure rendering. All orchestration lives in `services.sync_service` (parallel fetch +
-save), `services.data_freshness` (status-table data shaping), and
-`services.registry_service` (registry queries + retry).
-"""
+"""Settings → Refresh tracked-fund data section. Pure rendering; orchestration lives in
+services.sync_service / data_freshness / registry_service."""
 
 from __future__ import annotations
 
@@ -110,8 +106,7 @@ def _outcome_glyph(outcome: str) -> str:
 
 
 def _make_progress_renderer(progress, counter_slot, log_slot, short_by_name: dict[str, str], counter_fmt):
-    """Build a callback that updates the Streamlit progress bar + counters + log slot.
-    `counter_fmt(counters)` shapes the markdown line; `counters` carries running totals."""
+    """Callback that drives the progress bar + counters + log slot; counter_fmt shapes the line."""
     recent: list[str] = []
     counters = {"updated": 0, "skipped": 0, "failed": 0, "new_rows": 0, "holdings_rows": 0}
 
@@ -120,14 +115,12 @@ def _make_progress_renderer(progress, counter_slot, log_slot, short_by_name: dic
         progress.progress(event.done / event.total, text=f"[{event.done}/{event.total}] {short}")
         counters[event.outcome] += 1
         if event.outcome == "updated":
-            # Detail starts with a number for both NAV ("<n> new rows …") and holdings
-            # ("<n> holdings · …"). Parse the leading int and accumulate.
+            # detail leads with a count for both NAV and holdings; parse and accumulate.
             try:
                 n = int(event.detail.split(" ", 1)[0])
             except (ValueError, IndexError):
                 n = 0
-            # NAV pages display this as new_rows; holdings as holdings_rows. Both keys are
-            # always populated; the formatter picks whichever it cares about.
+            # Both keys always populated; each formatter picks the one it cares about.
             counters["new_rows"] += n
             counters["holdings_rows"] += n
         recent.append(f"{_outcome_glyph(event.outcome)} {short} — {event.detail}")

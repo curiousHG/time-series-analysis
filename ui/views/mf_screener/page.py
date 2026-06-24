@@ -1,10 +1,5 @@
-"""MF Screener — Streamlit page entry.
-
-Orchestrates the four UI sections (sidebar filters, AgGrid table, risk-vs-return chart,
-inline add-to-tracked controls) on top of the pure data layer in `services.screener_service`.
-The page itself stays small — every render concern is delegated to a sibling module so
-the responsibilities are obvious and the page is easy to scan.
-"""
+"""MF Screener page entry. Orchestrates the four UI sections (sidebar filters, AgGrid
+table, risk-vs-return chart, inline add-to-tracked) over services.screener_service."""
 
 from __future__ import annotations
 
@@ -22,10 +17,8 @@ from ui.views.mf_screener.table import render_open_action, render_selection_echo
 
 
 def _render_universe_summary(amfi_count: int, filtered: pl.DataFrame) -> None:
-    """Top-of-page header: AMFI universe + Tracked metrics, with the add-to-tracked
-    controls (Top-N input + Fetch button with hover-help) inline to the right of the
-    Tracked metric. Per-source availability breakdown follows underneath.
-    """
+    """Header: AMFI universe + Tracked metrics, inline add-to-tracked controls, and the
+    per-source availability breakdown underneath."""
     tracked_df = list_tracked()
     tracked_count = tracked_df.height
 

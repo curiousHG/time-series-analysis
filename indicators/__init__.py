@@ -1,8 +1,5 @@
-"""Technical indicators powered by TA-Lib.
-
-Each indicator is registered via @register and returns a dict of named Series.
-The stock page UI reads INDICATOR_REGISTRY to build the selector.
-"""
+"""TA-Lib indicators. Each is registered via @register; the stock page UI reads
+INDICATOR_REGISTRY to build the selector."""
 
 # Import overlay and panel modules to trigger registration
 import indicators.overlays

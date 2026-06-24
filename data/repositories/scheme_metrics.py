@@ -1,12 +1,7 @@
 """Repository for mf_scheme_metrics — cached per-scheme risk/return metrics.
 
-The actual computation lives in services.mf_metrics; this module is purely DB CRUD +
-staleness detection. Following the project's data-fetching policy: callers ask the
-repository for metrics, the repository decides what's cached vs needs recompute, and
-recomputation is delegated to the service layer.
-
-Phase 2: keyed on scheme_code internally; public APIs still pass scheme_name for caller
-convenience (resolved via the AmfiScheme join).
+Pure DB CRUD + staleness detection; the actual computation lives in services.mf_metrics.
+Keyed on scheme_code internally; public APIs pass scheme_name (resolved via AmfiScheme join).
 """
 
 from __future__ import annotations
@@ -29,9 +24,7 @@ logger = logging.getLogger("data.repositories.scheme_metrics")
 
 
 def load_metrics(scheme_names: list[str] | None = None) -> pl.DataFrame:
-    """Return cached metrics for the given schemes (or all). Output schema unchanged —
-    `scheme_name` projected via the JOIN to `amfi_schemes`.
-    """
+    """Return cached metrics for the given schemes (or all); `scheme_name` via JOIN to amfi_schemes."""
     with get_session() as session:
         stmt = select(AmfiScheme.scheme_name.label("scheme_name"), MfSchemeMetrics).join(
             AmfiScheme, MfSchemeMetrics.scheme_code == AmfiScheme.scheme_code
@@ -55,8 +48,8 @@ def load_metrics(scheme_names: list[str] | None = None) -> pl.DataFrame:
 
 @timeit("scheme_metrics.upsert_many")
 def upsert_metrics(rows: list[dict[str, Any]]) -> int:
-    """Bulk-upsert metric rows. Each row must carry `scheme_name`; we resolve to
-    scheme_code via amfi_schemes (synthetic negatives for missing names).
+    """Bulk-upsert metric rows. Each must carry `scheme_name`, resolved to scheme_code via
+    amfi_schemes (synthetic negatives for missing names).
     """
     if not rows:
         return 0

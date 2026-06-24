@@ -1,17 +1,11 @@
 """AMFI master data store — sync, ISIN lookup, name search.
 
-Process-level caches
-====================
-- `_amc_cache`, `_category_cache`: module-level dicts mapping dim-name → id. Cleared
-  + repopulated by `_refresh_dim_caches` at the start of every `sync_amfi_master`.
-  Stay current between syncs because every write goes through `upsert_amc` /
-  `upsert_category`, which write through to the cache.
-- `clear_slug_cache` (defined in `data/repositories/holdings.py`): every code path that
-  inserts a row into `amfi_schemes` must call it after commit, otherwise the LRU map
-  in `holdings._slug_to_code_map_cached` misses the new scheme until process restart.
-  Mutators today: `sync_amfi_master` (this file), `save_nav_df` / `save_metadata`
-  (synthetic-mint branches), `services.registry_service._resolve_or_mint_code`, and
-  `scripts/dedupe_synthetic_codes.py`.
+Process-level caches:
+- `_amc_cache`, `_category_cache`: dim-name → id, write-through via `upsert_amc` /
+  `upsert_category`; refreshed at the start of every `sync_amfi_master`.
+- Any code path inserting into `amfi_schemes` must call `clear_slug_cache`
+  (holdings.py) after commit, or the LRU slug→code map misses the new scheme until
+  process restart.
 """
 
 import logging
@@ -31,9 +25,8 @@ from data.repositories.holdings import clear_slug_cache
 logger = logging.getLogger("data.store.amfi")
 
 
-# In-process lookup cache for the dim tables. AMCs and categories are tiny enums (50-100
-# distinct values total). Reload-on-miss + write-through avoids hammering the dim tables
-# with 14K+ INSERTs during a full AMFI sync.
+# In-process dim-table cache. AMCs/categories are tiny enums; write-through avoids
+# 14K+ dim INSERTs during a full AMFI sync.
 _amc_cache: dict[str, int] = {}
 _category_cache: dict[str, int] = {}
 
@@ -51,8 +44,8 @@ def _refresh_dim_caches(session) -> None:
 def _unwrap_id(row) -> int | None:
     """Coerce a `.first()` result (scalar or 1-tuple Row) to a plain int.
 
-    SQLAlchemy ≥ 2.0 returns `Row` objects from `.returning(col)` even for single columns;
-    `Row` is not a `tuple` subclass, so the older `isinstance(row, tuple)` check misses it.
+    SQLAlchemy ≥ 2.0 returns non-tuple `Row` objects from `.returning(col)`, so a plain
+    `isinstance(row, tuple)` check misses them.
     """
     if row is None:
         return None
@@ -110,9 +103,8 @@ def _prepare_sync_row(
 ) -> dict:
     """Shape one AMFI sync row for insert/update.
 
-    `db_added_at` means "inserted into our local DB", so include it only when the
-    scheme_code is not already present. On conflict updates explicitly preserve
-    the existing value.
+    `db_added_at` ("inserted into our local DB") is set only for new codes; conflict
+    updates preserve the existing value.
     """
     row = dict(scheme)
     code = int(row["scheme_code"])
@@ -128,10 +120,8 @@ def _prepare_sync_row(
 def sync_amfi_master() -> int:
     """Fetch AMFI NAVAll.txt and upsert all schemes into DB. Returns count.
 
-    Resolves `fund_house` / `category` text against the dim tables (mf_amc, mf_category)
-    via `upsert_amc` / `upsert_category`; the text columns themselves were dropped from
-    `amfi_schemes` in the Phase 1 normalisation, so we strip them from the row dict
-    before insert.
+    `fund_house` / `category` text is resolved to dim-table ids (mf_amc, mf_category) and
+    stripped from the row — the text columns were dropped in Phase 1 normalisation.
     """
     schemes = fetch_amfi_master()
     synced_at = datetime.now(UTC).replace(tzinfo=None)
@@ -184,11 +174,9 @@ def lookup_by_name(query: str) -> list[AmfiScheme]:
 
 
 def search_amfi(query: str, limit: int = 50) -> pl.DataFrame:
-    """Fuzzy-search AMFI schemes by name.
+    """Fuzzy-search AMFI schemes by name via pg_trgm similarity, ILIKE fallback.
 
-    Uses pg_trgm similarity ranking (typo-tolerant). Falls back to ILIKE if pg_trgm
-    isn't available. Returns columns: schemeName, schemeCode, fundHouse, category,
-    isinGrowth, score (similarity 0-1).
+    Columns: schemeName, schemeCode, fundHouse, category, isinGrowth, score (0-1).
     """
     if not query or len(query.strip()) < 2:
         return pl.DataFrame(
@@ -268,12 +256,9 @@ def lookup_scheme_code_by_exact_name(name: str) -> str | None:
 
 
 def get_scheme_details_by_name(scheme_name: str) -> dict | None:
-    """Return AMFI master + dim text for one scheme, JOINed through the dim tables.
+    """One scheme's AMFI master + dim text as a flat dict (or None if name not found).
 
-    Returns a flat dict `{scheme_code, scheme_name, isin_growth, isin_reinvestment,
-    nav, nav_date, fund_house, category}` or `None` if the name isn't found.
-    Used by the MF Analysis header panel — the UI consumes the dict directly so it
-    doesn't have to import SQLModel / ORM classes.
+    Returns a plain dict so the MF Analysis header UI needn't import ORM classes.
     """
     with get_session() as session:
         row = session.execute(
@@ -344,11 +329,10 @@ def load_recent_additions(limit: int = 25) -> pl.DataFrame:
 
 
 def load_amfi_df() -> pl.DataFrame:
-    """Load all AMFI schemes as a polars DataFrame for screener UI.
+    """Load all AMFI schemes as a polars DataFrame for the screener UI.
 
-    Reads `fund_house` and `category` text via JOIN through `mf_amc` / `mf_category`
-    (Phase 1 normalisation) — the on-disk text columns will be dropped after backfill,
-    so going through the dims is the forward-compatible path.
+    `fund_house` / `category` come via JOIN through the dim tables (forward-compatible
+    once the legacy text columns are dropped).
     """
     with get_session() as session:
         rows = session.execute(

@@ -46,11 +46,8 @@ def load_holdings_data(scheme_slugs: list[str]):
 
 @st.cache_data(ttl=3600, show_spinner="Loading benchmark…")
 def load_benchmark_returns(symbol: str, start: datetime, end: datetime) -> pd.Series:
-    """Daily percent-change series for a benchmark `symbol`.
-
-    Raises on fetch/parse failure — the caller is expected to surface the error.
-    Returns an empty Series only when the underlying fetcher legitimately yields no rows.
-    """
+    """Daily percent-change series for `symbol`. Raises on fetch/parse failure;
+    empty Series only when the fetcher legitimately yields no rows."""
     df = ensure_stock_data(symbol, start, end)
     if df.is_empty():
         return pd.Series(dtype="float64", name=symbol)
@@ -112,23 +109,14 @@ def get_short_names(scheme_names: tuple[str, ...]) -> dict[str, str]:
 @st.cache_data(ttl=300, show_spinner=False)
 @timeit("loaders.load_screener_df")
 def load_screener_df_cached() -> pl.DataFrame:
-    """Streamlit-cached wrapper around `services.screener_service.build_screener_df`.
-
-    Pure data assembly lives in the service module; this wrapper just layers Streamlit's
-    in-memory cache + the perf-log decoration.
-    """
+    """Cached wrapper around build_screener_df; assembly lives in the service module."""
     return build_screener_df()
 
 
 @st.cache_data(ttl=3600, show_spinner="Loading risk metrics…")
 @timeit("loaders.load_metrics_cached")
 def load_metrics_cached() -> pl.DataFrame:
-    """Read pre-computed metrics from mf_scheme_metrics.
-
-    Recompute happens automatically after every NAV save (see data/repositories/nav.py)
-    and can be triggered manually via Settings → Recompute metrics, or
-    `uv run python scripts/compute_metrics.py`.
-    """
+    """Read pre-computed metrics from mf_scheme_metrics (recomputed on every NAV save)."""
     from services.mf_metrics import load_cached_metrics  # noqa: PLC0415 — defers quantstats off the app-boot path
 
     return load_cached_metrics()

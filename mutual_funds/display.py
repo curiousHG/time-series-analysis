@@ -44,8 +44,7 @@ def make_slug(name: str) -> str:
 
 
 def detect_plan(name: str) -> Plan | None:
-    """Return 'Direct', 'Regular', or None (for funds without that distinction — older schemes,
-    ETFs, etc.)."""
+    """Return 'Direct', 'Regular', or None (older schemes, ETFs lack the distinction)."""
     if not name:
         return None
     if DIRECT_RE.search(name):
@@ -56,18 +55,14 @@ def detect_plan(name: str) -> Plan | None:
 
 
 def detect_option(name: str) -> FundOption:
-    """Return one of 'Growth', 'IDCW', 'Bonus', 'ETF', 'Other'.
+    """Return 'Growth'/'IDCW'/'Bonus'/'ETF'/'Other'. Never None — every fund gets a category.
 
-    Never None — every fund gets a category so the filter UI has full coverage.
-
-    Priority:
-      1. IDCW first (some names contain both IDCW and Growth Option; IDCW wins as the
-         meaningful payout flavour).
-      2. Growth (covers "Growth Option/Plan" anywhere, "- Growth -" mid-string,
-         end-anchored "growth", and the legacy "Cumulative" term).
-      3. Bonus (legacy bonus-units payout option).
-      4. ETF (these don't have Growth/IDCW since they trade on exchange).
-      5. Other (everything else — debt funds with non-standard naming, FoFs, etc.).
+    Priority (order matters):
+      1. IDCW first — names with both IDCW and Growth: IDCW is the meaningful payout flavour.
+      2. Growth — "Growth Option/Plan" anywhere, "- Growth -" mid-string, end-anchored
+         "growth", and the legacy "Cumulative" term.
+      3. Bonus (legacy bonus-units payout). 4. ETF (no Growth/IDCW, trades on exchange).
+      5. Other (debt funds with non-standard naming, FoFs, etc.).
     """
     if not name:
         return "Other"

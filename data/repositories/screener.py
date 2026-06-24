@@ -1,14 +1,9 @@
 """Unified screener data loader.
 
-Single SELECT joining the AMFI universe with metadata, cached metrics, registry
-status, and the AMC / category dim tables. Replaces the four-helper polars-JOIN
-pipeline that previously lived in `services/screener_service.py`.
-
-Why this exists separately from the four piecewise loaders (`load_amfi_df`,
-`load_metadata_all`, `load_cached_metrics`, `list_tracked`): those are reused by
-other pages with their own tighter requirements. This one is screener-shaped — it
-returns one row per AMFI scheme with every column the screener UI needs, in the
-exact column names that `services.screener_service.apply_filters` expects.
+Single SELECT joining the AMFI universe with metadata, cached metrics, registry status,
+and the AMC / category dims. Screener-shaped (one row per scheme, exact column names
+`services.screener_service.apply_filters` expects) — distinct from the piecewise loaders
+that other pages reuse with tighter requirements.
 """
 
 from __future__ import annotations
@@ -26,15 +21,9 @@ from data.constants import METRIC_COLS
 
 @timeit("screener.load_screener_view")
 def load_screener_view() -> pl.DataFrame:
-    """Run the screener's master JOIN as a single SELECT.
-
-    Output: one row per AMFI scheme, LEFT-JOINed with metadata / metrics / registry /
-    dim tables. Columns:
-      * AMFI: scheme_code, scheme_name, isin_growth, nav, nav_date
-      * Dims: fund_house (from mf_amc), category (metadata's preferred over AMFI's)
-      * Metadata: aum_crores, expense_ratio, benchmark, asset_class
-      * Registry: nav_status, holdings_status, metadata_status
-      * Metrics: every `mf_scheme_metrics` column (cagr_*, sharpe_*, pct_*, ...)
+    """Run the screener's master JOIN as a single SELECT — one row per AMFI scheme,
+    LEFT-JOINed with metadata / metrics / registry / dim tables. (category: metadata's
+    preferred over AMFI's; metrics: every mf_scheme_metrics column.)
     """
     # `mf_category` joined twice — once via amfi.category_id, once via metadata.category_id.
     amfi_cat = aliased(MfCategory)

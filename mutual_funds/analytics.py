@@ -5,10 +5,8 @@ import polars as pl
 def overlap_matrix(holdings_df: pl.DataFrame, fund_slugs: list[str]) -> pd.DataFrame:
     """NxN heatmap of pairwise holdings overlap (% of weight in common).
 
-    Assumes `holdings_df` is the latest-snapshot, deduped view from
-    `data.repositories.holdings.load_holdings`. Each cell is capped at 100 — arbitrage
-    funds can report gross long+short exposures summing to >100, which would otherwise
-    blow up the heatmap colour scale.
+    Expects the latest-snapshot deduped view from `load_holdings`. Cells capped at 100 —
+    arbitrage funds report gross long+short >100, which would blow up the colour scale.
     """
     n = len(fund_slugs)
 
@@ -45,12 +43,8 @@ def sector_exposure(sector_df: pl.DataFrame, fund_slugs: list[str]) -> pl.DataFr
 
 
 def sector_exposure_average(sector_df: pl.DataFrame, fund_slugs: list[str]) -> pl.DataFrame:
-    """Average sector weight across the selected funds.
-
-    Each fund's per-sector weights already sum to ~100, so averaging across
-    funds is a normalized portfolio-level read of sector exposure (assuming
-    equal-weighted across the selected funds).
-    """
+    """Average sector weight across funds. Each fund sums to ~100, so this is an
+    equal-weighted, normalized portfolio-level read of sector exposure."""
     n = max(len(fund_slugs), 1)
     return (
         sector_df.filter(pl.col("schemeSlug").is_in(fund_slugs))

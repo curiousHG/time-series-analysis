@@ -1,9 +1,4 @@
-"""Pure data assembly + filtering for the MF Screener.
-
-No Streamlit imports here — UI caching is layered on top of these functions in
-`ui/state/loaders.py`. Anything that does math or builds the screener DataFrame lives
-in this module so it stays testable and reusable across pages.
-"""
+"""Pure data assembly + filtering for the MF Screener; no Streamlit (UI caches in ui/state/loaders.py)."""
 
 from __future__ import annotations
 
@@ -37,11 +32,8 @@ def status_cell(status: str | None) -> str:
 
 
 def build_screener_df() -> pl.DataFrame:
-    """Build the full screener DataFrame.
-
-    Single SELECT in `load_screener_view` does the AMFI x metadata x metrics x registry
-    JOIN at the DB. We only add the derived `plan` / `option` columns here (cheap string
-    parses over scheme_name).
+    """Full screener DataFrame. `load_screener_view` does the AMFI x metadata x metrics x registry
+    JOIN at the DB; we only add derived `plan`/`option` columns (cheap string parses).
     """
     df = load_screener_view()
     if df.is_empty():
@@ -56,10 +48,9 @@ def build_screener_df() -> pl.DataFrame:
 
 
 def apply_name_filter(df: pl.DataFrame, name_query: str, *, column: str = "scheme_name") -> pl.DataFrame:
-    """Filter rows whose `column` matches every whitespace-separated token in `name_query`.
+    """Filter rows matching every whitespace-separated token (AND, case-insensitive substring).
 
-    AND across tokens, case-insensitive substring per token. Tokens are regex-escaped so
-    user input like parentheses is treated literally. Empty query returns `df` unchanged.
+    Tokens are regex-escaped so input like parentheses is literal. Empty query returns `df` unchanged.
     """
     if not name_query:
         return df
@@ -86,11 +77,10 @@ def apply_filters(
     sharpe_min: float | None = None,
     dd_min: float | None = None,
 ) -> pl.DataFrame:
-    """Sidebar filter pipeline. All inputs are optional (empty list / 0 = no constraint).
+    """Sidebar filter pipeline; all inputs optional (empty list / 0 = no constraint).
 
-    `cagr_min` / `sharpe_min` / `dd_min` are only honoured when `has_nav=True` is set —
-    those filters require the metric columns to be populated and would otherwise drop
-    every row.
+    `cagr_min`/`sharpe_min`/`dd_min` honoured only when `has_nav=True` — they need the metric
+    columns populated and would otherwise drop every row.
     """
     out = apply_name_filter(df, name_query)
     if amcs:
@@ -125,9 +115,9 @@ def apply_filters(
 
 
 def nifty_1y_cagr() -> float | None:
-    """Nifty 50 1Y annualised geometric return from `stock_ohlcv`. Returns None on missing data.
+    """Nifty 50 1Y annualised geometric return from `stock_ohlcv`; None on missing data.
 
-    Pure read — `ensure_stock_data` is DB-first, so this is one SELECT in the steady state.
+    `ensure_stock_data` is DB-first, so this is one SELECT in the steady state.
     """
     try:
         end = _date.today()

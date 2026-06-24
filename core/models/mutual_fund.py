@@ -8,9 +8,7 @@ from core.constants import TABLE_ARGS
 
 
 class MfNav(SQLModel, table=True):
-    """Daily NAV per scheme. Phase 2: composite PK is now (scheme_code, date) — was
-    (scheme_name, date). scheme_name dropped; resolve via the AmfiScheme join when needed.
-    """
+    """Daily NAV per scheme, keyed (scheme_code, date). Resolve scheme_name via AmfiScheme join."""
 
     __tablename__ = "mf_nav"
     __table_args__ = TABLE_ARGS
@@ -21,9 +19,9 @@ class MfNav(SQLModel, table=True):
 
 
 class MfHolding(SQLModel, table=True):
-    """Per-fund portfolio holdings (each instrument + weight + ISIN). Phase 3: keyed on
-    scheme_code FK to amfi_schemes (was scheme_slug TEXT). scheme_name + scheme_slug +
-    scheme_common dropped — derive slug at fetch time via mutual_funds.display.make_slug.
+    """Per-fund holdings (instrument + weight + ISIN), keyed on scheme_code FK.
+
+    No stored slug — derive at fetch time via mutual_funds.display.make_slug.
     """
 
     __tablename__ = "mf_holdings"
@@ -70,9 +68,7 @@ class MfAssetAllocation(SQLModel, table=True):
 
 
 class MfRegistry(SQLModel, table=True):
-    """Tracked-fund registry. Phase 2: PK is now scheme_code. Resolve scheme_name via the
-    AmfiScheme join when needed. Codeless funds get synthetic negative codes during sync.
-    """
+    """Tracked-fund registry, keyed scheme_code. Codeless funds get synthetic negative codes on sync."""
 
     __tablename__ = "mf_registry"
     __table_args__ = TABLE_ARGS
@@ -86,10 +82,7 @@ class MfRegistry(SQLModel, table=True):
 
 
 class MfAmc(SQLModel, table=True):
-    """Asset Management Companies — dim table feeding mf_scheme.fund_house_id and
-    mf_metadata.fund_house_id. ~50 distinct rows in production today; was being repeated
-    14K+ times across amfi_schemes before normalisation.
-    """
+    """AMC dim table (~50 rows) feeding fund_house_id FKs; normalised out of amfi_schemes."""
 
     __tablename__ = "mf_amc"
     __table_args__ = TABLE_ARGS
@@ -99,9 +92,7 @@ class MfAmc(SQLModel, table=True):
 
 
 class MfCategory(SQLModel, table=True):
-    """Scheme categories — dim table feeding mf_scheme.category_id and
-    mf_metadata.category_id. ~50 distinct rows; same dedup story as MfAmc.
-    """
+    """Scheme-category dim table (~50 rows) feeding category_id FKs; same dedup story as MfAmc."""
 
     __tablename__ = "mf_category"
     __table_args__ = TABLE_ARGS
@@ -111,12 +102,10 @@ class MfCategory(SQLModel, table=True):
 
 
 class AmfiScheme(SQLModel, table=True):
-    """Canonical scheme dim table (renamed from amfi_schemes).
+    """Canonical scheme dim table — every MF table FKs here on `scheme_code`.
 
-    Single source of truth for scheme identity — every MF table FKs here on `scheme_code`.
-    For ~50 codeless registry funds (segregated portfolios, side-pockets) we assign synthetic
-    negative scheme_codes during Phase 2's backfill; AMFI never issues negative codes so the
-    namespaces don't collide.
+    Codeless funds (segregated portfolios, side-pockets) get synthetic negative scheme_codes;
+    AMFI never issues negative codes so namespaces don't collide.
     """
 
     __tablename__ = "amfi_schemes"  # rename to mf_scheme happens via migration ALTER
@@ -134,7 +123,7 @@ class AmfiScheme(SQLModel, table=True):
 
 
 class MfMetadata(SQLModel, table=True):
-    """AdvisorKhoj-sourced metadata. Phase 2: PK is now scheme_code (was scheme_name)."""
+    """AdvisorKhoj-sourced metadata, keyed scheme_code."""
 
     __tablename__ = "mf_metadata"
     __table_args__ = TABLE_ARGS
@@ -163,10 +152,8 @@ class MfMetadata(SQLModel, table=True):
 class MfSchemeMetrics(SQLModel, table=True):
     """Cached output of services.mf_metrics.compute_metrics_for_scheme.
 
-    Persisting metrics removes the per-page-render quantstats burst — the MF Screener
-    and Risk-vs-Return view become single-SELECT reads. `computed_at_nav_date` is the
-    last NAV date observed when the row was computed; if it lags MfNav.max(date) for
-    the same scheme, the row is stale and gets recomputed by scripts/compute_metrics.py.
+    Persisting avoids the per-render quantstats burst (screener/risk views become single SELECTs).
+    Row is stale when `computed_at_nav_date` lags MfNav.max(date); scripts/compute_metrics.py recomputes.
     """
 
     __tablename__ = "mf_scheme_metrics"
@@ -266,8 +253,8 @@ class MfSchemeMetrics(SQLModel, table=True):
 
 
 class MfTradebook(SQLModel, table=True):
-    """Kite/Zerodha trade rows. Phase 3: `scheme_code` is denormalised on import via
-    ISIN→amfi_schemes resolution. ISIN stays as the source-of-truth from the broker.
+    """Kite/Zerodha trade rows. `scheme_code` denormalised on import via ISIN→amfi_schemes;
+    ISIN stays the broker's source-of-truth.
     """
 
     __tablename__ = "mf_tradebook"

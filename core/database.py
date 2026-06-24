@@ -17,14 +17,11 @@ def get_session() -> Session:
 
 
 def init_schema() -> None:
-    """Create any missing tables on startup (first-run table creation only).
+    """Create missing tables on startup. `create_all` only CREATEs missing tables, never ALTERs.
 
-    `create_all` owns first-time table creation: it is idempotent, fast (~60ms), and only
-    ever CREATEs *missing* tables — it never ALTERs existing ones. Schema **deltas**
-    (added columns, type widenings, extensions/indexes) are Alembic's job: run
-    `uv run alembic upgrade head` after pulling model changes (see CLAUDE.md). Deltas are
-    kept out of boot because they include heavy operations (ALTER COLUMN TYPE, GIN index
-    builds) that can take minutes.
+    Schema deltas (columns, type widenings, indexes) are Alembic's job — run
+    `uv run alembic upgrade head` after model changes (see CLAUDE.md). Kept out of boot
+    because deltas include slow ops (ALTER COLUMN TYPE, GIN index builds).
     """
     with timed("init_schema.import_models"):
         import core.models  # noqa: F401,PLC0415 — core.models imports core.database; deferred to avoid a cycle

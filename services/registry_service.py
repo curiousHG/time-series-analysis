@@ -1,8 +1,7 @@
 """Registry service — single source of truth for tracked funds.
 
-Phase 2: `mf_registry` is keyed on `scheme_code`. Public APIs still take/return scheme_name
-for caller convenience — every CRUD path resolves through `amfi_schemes`. Tracked funds
-without an AMFI code are auto-assigned synthetic negatives so the FK never violates.
+`mf_registry` is keyed on `scheme_code`; public APIs take/return scheme_name and resolve
+through `amfi_schemes`. Funds without an AMFI code get synthetic negative codes so the FK holds.
 """
 
 import contextlib
@@ -217,11 +216,9 @@ def backfill_missing(
 ) -> dict[str, list[str]]:
     """Fetch missing data for tracked funds with rate limiting.
 
-    Concurrency tuned from empirical probes:
-      • MFAPI (NAV)         — sweet spot at 16 workers; we cap at 8 since work mixes with metadata.
-      • AdvisorKhoj overview — server starts queueing at 8+ workers (p50 latency doubles).
-      • AdvisorKhoj holdings — handles 16, but holdings is excluded from the default sources.
-    8 workers + a 50ms submit delay is the safe blend for the screener "Fetch top N" button.
+    Concurrency tuned from empirical probes: MFAPI peaks at 16 but capped at 8 (mixed with
+    metadata); AdvisorKhoj overview queues at 8+ workers. 8 workers + 50ms submit delay is the
+    safe blend for the screener "Fetch top N" button.
     """
     if scheme_names is not None:
         for name in scheme_names:

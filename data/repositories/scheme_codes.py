@@ -1,14 +1,8 @@
 """Scheme name → scheme_code resolution + synthetic-code minting.
 
-Single source of truth for turning `scheme_name` into `amfi_schemes.scheme_code`,
-including the synthetic-negative minting used when a tracked fund has no AMFI master
-row yet (segregated portfolios, brand-new funds whose AMFI row hasn't synced). AMFI
-never issues negative codes, so the synthetic and real namespaces never collide.
-
-This replaces four near-identical resolvers that had drifted apart:
-`nav._resolve_codes`, `scheme_metrics._resolve_codes_with_synthetic`,
-`registry_service._resolve_or_mint_code`, plus the inline mint block in
-`metadata.save_metadata`.
+Single source of truth for `scheme_name` → `amfi_schemes.scheme_code`. Funds with no AMFI
+master row yet (segregated portfolios, brand-new funds) get a synthetic-negative code;
+AMFI never issues negatives, so synthetic and real namespaces never collide.
 """
 
 from __future__ import annotations
@@ -47,10 +41,10 @@ def resolve_codes(scheme_names: list[str]) -> dict[str, int]:
 
 
 def mint_synthetic_codes(session: Session, names: list[str]) -> dict[str, int]:
-    """Insert synthetic-negative amfi_schemes rows for `names` within the caller's session.
+    """Insert synthetic-negative amfi_schemes rows for `names` on the caller's session.
 
-    Does NOT commit and does NOT clear the slug cache — the caller owns the transaction
-    so the mint can share it with the caller's other writes. Returns {name: minted_code}.
+    Does NOT commit or clear the slug cache — the caller owns the transaction so the mint
+    shares it with their other writes. Returns {name: minted_code}.
     """
     if not names:
         return {}
@@ -69,10 +63,9 @@ def mint_synthetic_codes(session: Session, names: list[str]) -> dict[str, int]:
 
 
 def resolve_codes_with_synthetic(scheme_names: list[str]) -> dict[str, int]:
-    """{name: scheme_code}; mints synthetic negatives for any name not in amfi_schemes.
+    """{name: scheme_code}; mints synthetic negatives for names not in amfi_schemes.
 
-    Commits the mint and clears the slug → scheme_code cache so newly minted schemes are
-    visible to holdings save/load immediately.
+    Commits and clears the slug cache so newly minted schemes are immediately visible.
     """
     if not scheme_names:
         return {}

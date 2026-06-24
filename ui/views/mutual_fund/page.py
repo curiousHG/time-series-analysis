@@ -27,8 +27,7 @@ from ui.constants import RF_DAILY
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _load_tracked_enriched(names: tuple[str, ...]) -> pl.DataFrame:
-    """Tracked funds joined with AMFI fund_house/category and computed plan/option columns —
-    used to power the MF Analysis sidebar filters."""
+    """Tracked funds + AMFI fund_house/category + computed plan/option, for the sidebar filters."""
     if not names:
         return pl.DataFrame(
             schema={

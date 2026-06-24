@@ -1,17 +1,7 @@
-"""Lightweight timing helpers — context manager + decorator that log durations to logs/perf.log.
+"""Timing helpers (context manager + decorator) logging durations to logs/perf.log.
 
-Usage:
-    from core.timing import timed, timeit
-
-    with timed("init_schema"):
-        init_schema()
-
-    @timeit("load_amfi_df")
-    def load_amfi_df(...):
-        ...
-
-A `slow_threshold_ms` (default 100) demotes very fast calls to DEBUG so the file isn't drowned
-in microsecond-level noise — anything above the threshold logs at INFO and is easy to grep.
+Calls under `slow_threshold_ms` (default 100) log at DEBUG to avoid noise; slower ones log
+at INFO so they're easy to grep.
 """
 
 from __future__ import annotations
@@ -32,10 +22,7 @@ T = TypeVar("T")
 
 @contextmanager
 def timed(label: str, *, slow_threshold_ms: float = DEFAULT_SLOW_MS):
-    """Time a block of code and emit one log line on exit.
-
-    Logs at INFO when duration >= slow_threshold_ms, DEBUG otherwise. Always logs on error.
-    """
+    """Time a block; logs INFO if >= slow_threshold_ms else DEBUG. Always logs on error."""
     t0 = time.perf_counter()
     try:
         yield

@@ -1,8 +1,6 @@
-"""Portfolio page — Streamlit entry.
+"""Portfolio page — composes eight sub-tabs over the user's tradebook.
 
-Composes the eight portfolio sub-tabs (allocation, growth, drawdown, risk metrics, risk
-vs return, fund returns, overlap, holdings) on top of the user's tradebook. Holdings and
-overlap views are shared with the MF Analysis page and live in `ui.views.mutual_fund.*`.
+Holdings and overlap views are shared with MF Analysis (`ui.views.mutual_fund.*`).
 """
 
 from __future__ import annotations

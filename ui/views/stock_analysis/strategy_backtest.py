@@ -194,7 +194,7 @@ def _render_metrics(metrics: dict):
 
 
 def _render_charts(portfolio, price, returns, entries, exits, symbol):
-    # 1. Equity curve — strategy vs buy-and-hold
+    # Equity curve — strategy vs buy-and-hold
     equity = portfolio.value()
     bh = price / price.iloc[0] * equity.iloc[0]
 
@@ -225,7 +225,7 @@ def _render_charts(portfolio, price, returns, entries, exits, symbol):
     )
     st.plotly_chart(fig_eq, use_container_width=True, key="bt-equity-curve")
 
-    # 2. Two columns: Drawdown + Distribution
+    # Drawdown + returns distribution
     col1, col2 = st.columns(2)
 
     with col1:
@@ -275,7 +275,7 @@ def _render_charts(portfolio, price, returns, entries, exits, symbol):
         )
         st.plotly_chart(fig_hist, use_container_width=True, key="bt-returns-hist")
 
-    # 3. Trade signals on price
+    # Trade signals on price
     fig_trades = go.Figure()
     fig_trades.add_trace(
         go.Scatter(
@@ -319,7 +319,7 @@ def _render_charts(portfolio, price, returns, entries, exits, symbol):
     )
     st.plotly_chart(fig_trades, use_container_width=True, key="bt-trade-signals")
 
-    # 4. Monthly returns heatmap
+    # Monthly returns heatmap
     st.subheader("Monthly Returns (%)")
     monthly = qs.stats.monthly_returns(returns)
     if monthly is not None and not monthly.empty:

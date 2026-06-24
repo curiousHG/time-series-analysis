@@ -1,10 +1,5 @@
-"""Risk-vs-Return scatter chart for the MF Screener.
-
-Plots the sidebar-filtered universe in (risk, return) space with an optional Markowitz
-upper-left convex frontier overlay. Axes, derivations, and the benchmark caveat are all
-driven by mutual_funds.metric_catalog so adding a new axis means one dict entry — no UI
-plumbing.
-"""
+"""Risk-vs-Return scatter for the MF Screener, with an optional Markowitz frontier overlay.
+Axes/derivations are driven by mutual_funds.metric_catalog so a new axis is one dict entry."""
 
 from __future__ import annotations
 

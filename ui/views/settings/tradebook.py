@@ -39,8 +39,8 @@ def render() -> None:
         else:
             st.error("CSV was empty or could not be parsed.")
 
-    # ISIN → scheme resolution preview. `scheme_code` and `schemeName` are populated at
-    # import time via amfi_schemes (matches both isin_growth and isin_reinvestment).
+    # ISIN → scheme preview; scheme_code/schemeName resolved at import via amfi_schemes
+    # (matches both isin_growth and isin_reinvestment).
     if stats["total_trades"] > 0:
         tb = load_tradebook_from_db()
         if not tb.is_empty():

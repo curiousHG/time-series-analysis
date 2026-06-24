@@ -1,8 +1,4 @@
-"""Derivable statistics from the holdings / sector / asset-allocation tables.
-
-Pure functions — they take dataframes (or nothing) and return scalars/dicts. UI layer
-caches the inputs; this module just does the math.
-"""
+"""Derivable stats from holdings / sector / asset-allocation tables. Pure math; UI caches inputs."""
 
 from __future__ import annotations
 
@@ -112,10 +108,7 @@ def holdings_for_slug(slug: str) -> pl.DataFrame:
 
 
 def market_cap_breakdown(holdings: pl.DataFrame) -> dict[str, float]:
-    """% of equity holdings by market cap bucket (Largecap/Midcap/Smallcap/Other).
-
-    Operates on the equity slice if `asset_class` is meaningful; otherwise on whatever is provided.
-    """
+    """% of equity holdings by market cap bucket. Uses the equity slice if `asset_class` is meaningful."""
     if holdings.is_empty():
         return {}
     eq = holdings

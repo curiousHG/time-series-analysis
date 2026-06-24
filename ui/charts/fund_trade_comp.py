@@ -8,7 +8,7 @@ def fund_trade_comp(fund_df: pd.DataFrame, scheme_nav_df: pd.DataFrame, schemeNa
         go.Scatter(
             x=fund_df["trade_date"],
             y=fund_df["price"],
-            # use a downward red triangle for markers offset from the line to indicate actual trade prices
+            # markers (not line) so actual trade prices stand out against the NAV line
             mode="markers",
             marker=dict(symbol="triangle-down", color="Red", size=15),
             name="Actual Price",

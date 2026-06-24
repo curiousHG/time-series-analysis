@@ -12,12 +12,8 @@ from mutual_funds.table_schema import (
 
 
 def _clean_isin(value: str | None) -> str:
-    """Return a valid ISIN string, or `""` if the value isn't a real ISIN.
-
-    AdvisorKhoj abuses the field for arbitrage funds (`Short`, `Long`, etc.) — those go
-    in `assetSubClass` instead, so we drop them here rather than letting fake ISINs leak
-    into our `mf_holdings.isin` column.
-    """
+    """Valid ISIN, else `""`. AdvisorKhoj abuses the field for arbitrage funds (`Short`/`Long`,
+    handled via assetSubClass), so drop fakes rather than leak them into `mf_holdings.isin`."""
     if not value:
         return ""
     v = str(value).strip().upper()

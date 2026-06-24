@@ -1,9 +1,8 @@
-"""Sync service — orchestrates parallel fetches of NAV / holdings for tracked funds.
+"""Sync service — parallel NAV/holdings fetches for tracked funds.
 
-UI calls into this layer; this layer pulls from `data.fetchers` (HTTP) and hands the
-results off to `data.repositories` (DB writes). Per-fund completion events are emitted
-back via an optional progress callback so the caller can drive a progress bar / log
-without having to know anything about thread pools.
+Pulls from `data.fetchers` (HTTP) into `data.repositories` (DB). Emits per-fund completion
+events via an optional progress callback so callers can drive a progress bar without knowing
+about thread pools.
 """
 
 from __future__ import annotations
@@ -72,10 +71,10 @@ def update_nav_incremental(
     *,
     progress_cb: ProgressCb | None = None,
 ) -> NavUpdateResult:
-    """Fetch latest NAV for each name; save only rows newer than what's already in DB.
+    """Fetch latest NAV per name; save only rows newer than what's in DB.
 
-    Fetches run on a 16-worker pool (network-bound). DB saves run on the main thread to
-    keep Postgres writes serialised. The callback fires once per fund as it completes.
+    Fetches run on a worker pool (network-bound); DB saves stay on the main thread to keep
+    Postgres writes serialised. Callback fires once per fund.
     """
     if not scheme_names:
         return NavUpdateResult()
@@ -136,10 +135,8 @@ def refresh_holdings_for_schemes(
     *,
     progress_cb: ProgressCb | None = None,
 ) -> HoldingsRefreshResult:
-    """Wipe-and-refetch holdings for the given schemes.
-
-    Fetch every fund first. For each successful fetch, delete and replace only that
-    fund's rows; failed fetches leave the existing local snapshot intact.
+    """Wipe-and-refetch holdings per scheme. Each success replaces only its own rows;
+    failed fetches leave the existing local snapshot intact.
     """
     if not scheme_names:
         return HoldingsRefreshResult()

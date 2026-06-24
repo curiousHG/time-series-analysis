@@ -1,11 +1,7 @@
-"""Portfolio sub-tab — risk vs. return scatter for each active fund.
+"""Portfolio sub-tab — risk vs. return scatter per active fund.
 
-Two modes:
-  • CAGR vs Volatility (default) — total-return view, asset-class agnostic.
-  • Alpha vs Beta — CAPM lens against a user-selected benchmark; surfaces manager skill.
-
-A gold "Portfolio" diamond marks the aggregate position. Bubble colour encodes allocation %
-(uniform size) so small holdings stay equally readable.
+Two modes: CAGR vs Volatility (total-return) and Alpha vs Beta (CAPM vs a benchmark).
+A gold "Portfolio" diamond marks the aggregate; bubble colour encodes allocation %.
 """
 
 from __future__ import annotations
@@ -40,7 +36,6 @@ def _fund_returns(scheme: str) -> pd.Series:
 
 
 def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
-    """Plot each fund the user holds on a chosen risk/return plane."""
     st.subheader("Risk vs Return — your active funds")
 
     mode = st.segmented_control(
@@ -92,8 +87,7 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
     )
     value_by_name = dict(zip(value_df["schemeName"].to_list(), value_df["value"].to_list(), strict=False))
 
-    # Date window for benchmark fetch — drawn from the portfolio's NAV span so we capture
-    # at least the same range as the funds. Falls back to a 2-year window if NAV is empty.
+    # Benchmark fetch window: portfolio NAV span (covers the funds), else a 2-year fallback.
     nav_dates = portfolio_nav.select("date").to_series()
     if nav_dates.len() > 0:
         start_dt = pd.to_datetime(nav_dates.min()).to_pydatetime()
@@ -102,8 +96,7 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
         end_dt = datetime.now()
         start_dt = end_dt - timedelta(days=730)
 
-    # Pre-load benchmark returns once for alpha/beta mode. Errors surface as toasts
-    # rather than being swallowed silently.
+    # Pre-load benchmark returns once for alpha/beta mode; errors surface as toasts.
     bench_returns: pd.Series = pd.Series(dtype="float64")
     if mode == MODE_ALPHA_BETA:
         try:
@@ -126,8 +119,7 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
             )
             mode = MODE_CAGR_VOL
 
-    # Single SELECT against mf_scheme_metrics for every active fund — replaces the per-fund
-    # quantstats compute that used to fire on every Streamlit rerun.
+    # Single SELECT against mf_scheme_metrics — avoids per-fund quantstats compute on every rerun.
     cached_metrics = load_cached_metrics(active_names)
     metrics_by_name: dict[str, dict] = {}
     if cached_metrics.height:
@@ -222,10 +214,10 @@ def _portfolio_metrics(
     mode: str,
     bench_returns: pd.Series,
 ) -> dict | None:
-    """Compute the metric pair for the portfolio aggregate point. Returns None if unavailable.
+    """Metric pair for the portfolio aggregate point (None if unavailable).
 
-    Uses the time-weighted (cash-flow-adjusted) return series — for a SIP-based portfolio,
-    pct_change() of total value treats every contribution as a return and inflates CAGR.
+    Uses the time-weighted (cash-flow-adjusted) series: pct_change of total value would
+    treat each SIP contribution as a return and inflate CAGR.
     """
     pf_returns = build_portfolio_returns_series(mapped, portfolio_nav)
     if pf_returns.empty:

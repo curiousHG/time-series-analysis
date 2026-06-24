@@ -1,9 +1,8 @@
 """Holdings, sector, and asset allocation repository.
 
-Phase 3: tables are now keyed on `scheme_code` (FK → amfi_schemes). Public APIs still take
-`slugs: list[str]` for caller convenience — we resolve slug → scheme_code internally via a
-cached `make_slug(amfi_scheme_name)` lookup. Output frames keep `schemeSlug` / `schemeName`
-columns derived from the JOIN so downstream callers don't need to change.
+Tables are keyed on `scheme_code` (FK → amfi_schemes), but public APIs still take
+`slugs: list[str]` — resolved to scheme_code via a cached `make_slug(scheme_name)` map.
+Output frames re-derive `schemeSlug` / `schemeName` so downstream callers don't change.
 """
 
 from __future__ import annotations
@@ -40,18 +39,14 @@ logger = logging.getLogger("data.repositories.holdings")
 
 @lru_cache(maxsize=1)
 def _slug_to_code_map_cached() -> dict[str, int]:
-    """Build `{slug → scheme_code}` from amfi_schemes. Process-level cache (LRU size 1).
+    """Build `{slug → scheme_code}` from amfi_schemes. Process-level LRU cache (size 1).
 
-    Phase 3 dropped the persisted `scheme_slug` column, so this is the only way to
-    reverse-resolve slug → code. Every code path that mutates `amfi_schemes` MUST
-    call `clear_slug_cache()` after commit, otherwise newly inserted schemes are
-    invisible to holdings save/load until process restart. Mutators today:
-
-      • `data/repositories/amfi.py:sync_amfi_master` — bulk AMFI upsert.
-      • `data/repositories/nav.py:save_nav_df` — synthetic-mint branch.
-      • `data/repositories/metadata.py:save_metadata` — synthetic-mint branch.
-      • `services/registry_service.py:_resolve_or_mint_code` — synthetic-mint.
-      • `scripts/dedupe_synthetic_codes.py` — merges synthetic rows.
+    The persisted `scheme_slug` column was dropped, so this is the only slug → code
+    path. Every code path that mutates `amfi_schemes` MUST call `clear_slug_cache()`
+    after commit, else newly inserted schemes stay invisible to holdings save/load
+    until process restart (mutators: sync_amfi_master, save_nav_df / save_metadata
+    synthetic-mint branches, registry_service._resolve_or_mint_code,
+    scripts/dedupe_synthetic_codes.py).
     """
     with get_session() as session:
         rows = session.exec(select(AmfiScheme.scheme_code, AmfiScheme.scheme_name)).all()
@@ -163,13 +158,9 @@ def save_assets(df: pl.DataFrame) -> None:
 
 # ---- Load paths --------------------------------------------------------------------------
 #
-# Public API still takes `slugs` for caller compat. Internally we resolve slugs → codes,
-# read by code, and re-derive `schemeSlug` / `schemeName` from amfi_schemes for the output.
-#
-# Every loader returns the LATEST `portfolio_date` per scheme, deduplicated by the natural
-# key. `mf_holdings` / `mf_sector_allocation` / `mf_asset_allocation` historically picked
-# up duplicate rows from refresh cycles that didn't `DELETE` first, plus old snapshots
-# from earlier `portfolio_date`s. Callers always want the active portfolio.
+# Every loader returns only the LATEST `portfolio_date` per scheme, deduped by the natural
+# key — old snapshots and duplicate rows from refresh cycles that didn't DELETE first would
+# otherwise leak in, but callers always want the active portfolio.
 
 
 def _latest_per_scheme(df: pl.DataFrame, dedup_keys: list[str]) -> pl.DataFrame:
@@ -282,8 +273,8 @@ def load_assets(slugs: list[str] | None = None) -> pl.DataFrame:
 
 
 def delete_holdings_for_slugs(slugs: list[str]) -> int:
-    """Delete every holdings/sector/asset row for the given slugs. Returns the number
-    of slugs whose rows were targeted (0 if no slug resolved to a known scheme_code).
+    """Delete every holdings/sector/asset row for the given slugs. Returns count of
+    resolved scheme_codes (0 if none resolved).
     """
     if not slugs:
         return 0
@@ -304,10 +295,8 @@ def replace_holdings_atomic(
     sectors: pl.DataFrame,
     assets: pl.DataFrame,
 ) -> None:
-    """Delete + re-insert one fund's holdings/sector/asset rows in a single transaction.
-
-    Wrapping the wipe-and-refill in one commit means a fund is never left with holdings
-    but no sectors/assets if a later insert fails — the whole replacement rolls back.
+    """Delete + re-insert one fund's holdings/sector/asset rows in a single transaction,
+    so a failed insert never leaves a fund with holdings but no sectors/assets.
     """
     codes = _resolve_slugs([slug])
     if not codes:

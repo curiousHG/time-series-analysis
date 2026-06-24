@@ -82,16 +82,11 @@ def build_portfolio_returns_series(
     mapped: pl.DataFrame,
     nav_df: pl.DataFrame,
 ) -> pd.Series:
-    """Daily time-weighted return series for the portfolio (cash-flow-adjusted).
+    """Daily time-weighted return series (cash-flow-adjusted): r_t = (V_t - f_t) / V_{t-1} - 1.
 
-    Required for SIP-heavy portfolios — pct_change() of total value treats every SIP
-    contribution as if it were a return, inflating CAGR. We also can't rely on
-    build_portfolio_value_series here: that helper drops trade-day rows when the trade
-    falls on a non-NAV day, which loses those units until the next NAV-day trade.
-
-    This rebuilds units and flows from scratch, rolling every trade forward to the
-    first NAV date >= trade_date, so V_t and f_t stay consistent.
-    Daily TWR:  r_t = (V_t - f_t) / V_{t-1} - 1
+    Needed for SIP-heavy portfolios — pct_change() of total value treats each SIP as a return,
+    inflating CAGR. Rebuilds units/flows from scratch (build_portfolio_value_series drops
+    non-NAV-day trades), rolling every trade to the first NAV date >= trade_date.
     """
     if nav_df.is_empty() or mapped.is_empty():
         return pd.Series(dtype="float64")

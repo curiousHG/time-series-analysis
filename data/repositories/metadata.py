@@ -19,10 +19,8 @@ logger = logging.getLogger("data.repositories.metadata")
 
 
 def _attach_amfi_fields(meta: dict) -> dict:
-    """Look up fund_house and category text from amfi_schemes via the dim tables.
-
-    Reads through `fund_house_id` / `category_id` since the legacy text columns on
-    `amfi_schemes` were dropped in the Phase 1 normalisation.
+    """Fill fund_house / category text from amfi_schemes via the dim tables (the legacy
+    text columns were dropped in Phase 1 normalisation).
     """
     with get_session() as session:
         row = session.exec(
@@ -50,13 +48,11 @@ def save_metadata(meta: dict) -> None:
     meta["fetched_at"] = datetime.now(UTC).replace(tzinfo=None)
     scheme_name = meta.pop("scheme_name")
     with get_session() as session:
-        # Phase 2: mf_metadata is keyed on scheme_code, not scheme_name. Resolve via
-        # amfi_schemes; if the scheme isn't there yet, mint a synthetic-negative row so
-        # the FK doesn't violate. The mint shares this session so it commits atomically
-        # with the metadata insert below.
+        # mf_metadata is keyed on scheme_code. Resolve via amfi_schemes; if absent, mint
+        # a synthetic-negative row so the FK doesn't violate — shares this session so it
+        # commits atomically with the metadata insert.
         scheme_code = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)).first()
-        # session.exec(select(SingleCol)).first() can return either a scalar or a 1-tuple
-        # Row depending on the SQLAlchemy code path — unwrap defensively.
+        # .first() may return a scalar or a 1-tuple Row depending on path — unwrap.
         if isinstance(scheme_code, tuple):
             scheme_code = scheme_code[0]
         minted_synthetic = scheme_code is None
@@ -64,8 +60,7 @@ def save_metadata(meta: dict) -> None:
             scheme_code = mint_synthetic_codes(session, [scheme_name])[scheme_name]
             logger.warning("Assigned synthetic code %d for new metadata scheme %s", scheme_code, scheme_name)
         meta["scheme_code"] = scheme_code
-        # Resolve dim FKs: get-or-create rows in mf_amc / mf_category, then drop the text
-        # versions before insert — those columns no longer exist on mf_metadata.
+        # Resolve dim FKs and drop the text versions — those columns no longer exist on mf_metadata.
         meta["fund_house_id"] = upsert_amc(session, meta.pop("fund_house", None))
         meta["category_id"] = upsert_category(session, meta.pop("category", None))
         stmt = (
@@ -84,9 +79,8 @@ def save_metadata(meta: dict) -> None:
 
 
 def load_metadata(scheme_names: list[str] | None = None) -> pl.DataFrame:
-    """Read metadata via JOIN through `amfi_schemes` for the scheme_name + dims for AMC /
-    category text. Phase 2: mf_metadata is keyed on scheme_code; the JOIN to amfi_schemes
-    surfaces scheme_name for callers who still pass names.
+    """Read metadata, JOINing amfi_schemes for scheme_name and the dims for AMC / category
+    text. mf_metadata is keyed on scheme_code; the JOIN surfaces scheme_name for callers.
     """
     with get_session() as session:
         stmt = (

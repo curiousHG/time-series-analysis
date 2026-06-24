@@ -108,11 +108,7 @@ def _get_date_range(symbol: str) -> tuple[date, date] | None:
 
 
 def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
-    """
-    Smart-caching stock data loader.
-    Checks DB for existing data, fetches only missing date ranges,
-    tries jugaad-data (NSE) first, yfinance as fallback.
-    """
+    """DB-first loader: fetch only the missing date gaps (jugaad-data/NSE first, yfinance fallback)."""
     start = _to_date(start_date)
     end = _to_date(end_date)
 
@@ -131,11 +127,9 @@ def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: dateti
 
 
 def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
-    """Force-fetch the forward gap from db_max to today, bypassing MIN_FETCH_DAYS.
-
-    Used by callers that need guaranteed-fresh data (e.g. the benchmark for the metrics
-    recompute). Returns (today_date, db_max_after) — `db_max_after` is None if nothing
-    was fetched. No-op if already current.
+    """Force-fetch the forward gap db_max→today, bypassing MIN_FETCH_DAYS, for callers
+    needing guaranteed-fresh data (e.g. the metrics-recompute benchmark). Returns
+    (today, db_max_after); db_max_after is None if nothing fetched. No-op if current.
     """
     today = date.today()
     existing = _get_date_range(symbol)

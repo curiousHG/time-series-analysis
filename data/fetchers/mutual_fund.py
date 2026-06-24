@@ -15,10 +15,7 @@ logger = logging.getLogger("data.fetchers.mutual_fund")
 
 
 def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
-    """
-    Fetch historical NAV for a mutual fund scheme from MFAPI.
-    Returns DataFrame with columns: date, nav, schemeName
-    """
+    """Fetch historical NAV from MFAPI → (date, nav, schemeName) DataFrame."""
     url = f"{MFAPI_BASE_URL}/{scheme_code}"
     logger.info("Fetching NAV from MFAPI: code=%s name=%s", scheme_code, scheme_name)
 
@@ -42,10 +39,7 @@ def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
 
 
 def search_mfapi(query: str) -> list[dict]:
-    """
-    Search MFAPI for schemes matching query.
-    Returns list of {schemeCode, schemeName}.
-    """
+    """Search MFAPI for schemes → list of {schemeCode, schemeName}."""
     if not query or len(query.strip()) < 2:
         return []
 
@@ -60,11 +54,7 @@ def _normalize_for_match(s: str) -> str:
 
 
 def resolve_mfapi_code(scheme_name: str) -> str | None:
-    """
-    Find the MFAPI scheme code that best matches the given scheme name.
-    Uses first few keywords from the name to search, then picks the closest match.
-    Returns scheme code as string, or None if no good match found.
-    """
+    """Find the MFAPI scheme code best matching scheme_name (str), or None."""
     # Use first 3-4 meaningful words for search
     words = [w for w in scheme_name.split() if len(w) > 1 and w.upper() not in ("-",)]
     search_query = " ".join(words[:4])
@@ -124,10 +114,7 @@ def fetch_portfolio_by_slug(slug: str):
 def fetch_nav_from_advisorkhoj(
     scheme_name: str,
 ) -> dict:
-    """
-    Full pipeline:
-    HTML → launch date → NAV JSON
-    """
+    """AdvisorKhoj NAV pipeline: HTML → launch date → NAV JSON."""
     html = fetch_fund_overview_html(scheme_name)
     launch_date = extract_launch_date(html)
 
@@ -153,13 +140,7 @@ def fetch_nav_from_advisorkhoj(
 
 
 def fetch_fund_metadata(scheme_name: str) -> dict:
-    """Scrape AdvisorKhoj fund overview page → metadata dict.
-
-    Returns: {scheme_name, aum_crores, aum_as_of, expense_ratio, expense_ratio_as_of,
-              benchmark, launch_date, category, asset_class, status, min_investment,
-              min_topup, turnover_ratio, exit_load, fund_house, source_url}
-    Fields not found are returned as None.
-    """
+    """Scrape AdvisorKhoj fund overview page → metadata dict (missing fields = None)."""
     html = fetch_fund_overview_html(scheme_name)
     soup = BeautifulSoup(html, "html.parser")
     url = BASE_OVERVIEW_URL.format(scheme_name=quote(scheme_name))
@@ -259,10 +240,7 @@ def fetch_fund_metadata(scheme_name: str) -> dict:
 
 
 def fetch_fund_overview_html(scheme_name: str) -> str:
-    """
-    scheme_name example:
-    'SBI ELSS Tax Saver FUND - REGULAR PLAN-GROWTH'
-    """
+    """Fetch raw overview HTML. scheme_name e.g. 'SBI ELSS Tax Saver FUND - REGULAR PLAN-GROWTH'."""
     url = BASE_OVERVIEW_URL.format(scheme_name=quote(scheme_name))
 
     resp = httpx.get(url, headers=HEADERS, timeout=20, follow_redirects=True)
@@ -271,9 +249,7 @@ def fetch_fund_overview_html(scheme_name: str) -> str:
 
 
 def extract_launch_date(html: str) -> str:
-    """
-    Returns date in DD-MM-YYYY format
-    """
+    """Returns launch date as DD-MM-YYYY."""
     soup = BeautifulSoup(html, "html.parser")
 
     for td in soup.select("table.sch_over_table td"):
@@ -288,9 +264,7 @@ def extract_launch_date(html: str) -> str:
 
 
 def build_nav_params(scheme_name: str, launch_date: str) -> dict:
-    """
-    AdvisorKhoj expects scheme_amfi_name double-encoded
-    """
+    """Build NAV params; AdvisorKhoj expects scheme_amfi_name double-encoded."""
     encoded = quote(quote(scheme_name.lower()))
 
     return {
@@ -300,9 +274,9 @@ def build_nav_params(scheme_name: str, launch_date: str) -> dict:
 
 
 def fetch_amfi_master() -> list[dict]:
-    """
-    Download AMFI NAVAll.txt and parse into a list of scheme dicts.
-    Format: SchemeCode;ISIN Payout/Growth;ISIN Reinvestment;SchemeName;NAV;Date
+    """Download AMFI NAVAll.txt → list of scheme dicts.
+
+    Line format: SchemeCode;ISIN Payout/Growth;ISIN Reinvestment;SchemeName;NAV;Date.
     Lines without semicolons are category/fund house headers.
     """
     logger.info("Fetching AMFI master data from %s", AMFI_NAV_ALL_URL)

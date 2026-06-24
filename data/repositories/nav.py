@@ -1,9 +1,8 @@
 """NAV data repository — load, save, fetch, and ensure NAV data.
 
-Phase 2 normalisation: NAV is keyed on `scheme_code` (int). Public functions still take
-`scheme_names: list[str]` for caller convenience — we resolve to codes internally via
-`amfi_schemes`. The output DataFrame keeps `schemeName` so downstream code that joins on
-the scheme name (Portfolio analytics, screener) doesn't have to change.
+NAV is keyed on `scheme_code` (int), but public functions still take
+`scheme_names: list[str]`, resolved to codes via `amfi_schemes`. Output keeps `schemeName`
+so name-joining callers (Portfolio analytics, screener) don't change.
 """
 
 from __future__ import annotations
@@ -29,7 +28,6 @@ from data.repositories.scheme_codes import resolve_codes_with_synthetic
 logger = logging.getLogger("data.repositories.nav")
 
 
-# ---- name <-> code resolution helpers (replaces the dropped scheme_code_map cache) ----
 # Name -> code resolution + synthetic minting lives in data.repositories.scheme_codes.
 
 
@@ -87,11 +85,10 @@ def _upsert_nav_rows(session, df: pl.DataFrame, name_to_code: dict[str, int]) ->
 
 
 def save_nav_df(df: pl.DataFrame) -> None:
-    """Upsert NAV rows into the database. df has columns: date, nav, schemeName.
+    """Upsert NAV rows (date, nav, schemeName) into the DB.
 
-    Resolves schemeName -> scheme_code via amfi_schemes; schemes with no AMFI match are
-    minted as synthetic-negative rows (see data.repositories.scheme_codes) so the FK
-    never violates.
+    schemeName -> scheme_code via amfi_schemes; names with no AMFI match get a
+    synthetic-negative code (see scheme_codes) so the FK never violates.
     """
     if df.height == 0:
         return
@@ -103,11 +100,8 @@ def save_nav_df(df: pl.DataFrame) -> None:
 
 
 def load_nav_df(scheme_names: list[str] | None = None) -> pl.DataFrame:
-    """Load NAV data; output schema unchanged (date, nav, schemeName).
-
-    JOINs `mf_nav -> amfi_schemes` to project scheme_name from the dim. Filtering by
-    scheme_names hits amfi_schemes via the JOIN; cheap because amfi_schemes is small
-    and indexed on scheme_name.
+    """Load NAV data as (date, nav, schemeName), JOINing mf_nav -> amfi_schemes to project
+    scheme_name. Filtering by scheme_names goes through the JOIN (cheap; small, indexed).
     """
     with get_session() as session:
         stmt = (
@@ -174,7 +168,7 @@ def _recompute_metrics_for(scheme_names: list[str]) -> None:
 
 @timeit("nav.ensure_nav_data")
 def ensure_nav_data(scheme_names: list[str]) -> pl.DataFrame:
-    """Ensures NAV data exists in DB for given scheme names."""
+    """DB-first: load existing NAV, fetch only missing schemes, recompute metrics, return all."""
     nav_df = load_nav_df(scheme_names)
     existing = nav_df.select("schemeName").unique().to_series().to_list() if nav_df.height else []
     missing = list(set(scheme_names) - set(existing))
@@ -193,18 +187,15 @@ def ensure_nav_data(scheme_names: list[str]) -> pl.DataFrame:
 
 
 def refresh_nav_data(scheme_names: list[str]) -> pl.DataFrame:
-    """Re-fetch NAV data for given schemes, replacing existing entries.
-
-    Only schemes that fetch successfully are deleted/replaced. A transient upstream
-    failure should not erase the last good local NAV history.
+    """Re-fetch and replace NAV for given schemes. Only schemes that fetch successfully are
+    deleted/replaced — a transient upstream failure must not erase good local NAV history.
     """
     new_frames = fetch_nav_parallel(scheme_names)
     fetched_schemes = [name for df in new_frames if df.height for name in df["schemeName"].unique().to_list()]
     if not fetched_schemes:
         return load_nav_df(scheme_names)
 
-    # Delete + re-insert the fetched schemes in one transaction so a save failure never
-    # leaves a fund with its old NAV history wiped and no replacement.
+    # Delete + re-insert in one transaction so a save failure never wipes NAV with no replacement.
     name_to_code = resolve_codes_with_synthetic(fetched_schemes)
     codes = [name_to_code[n] for n in fetched_schemes if n in name_to_code]
     with get_session() as session:
@@ -226,8 +217,7 @@ def count_distinct_nav_schemes() -> int:
 
 
 def last_nav_date_by_name(scheme_names: list[str]) -> dict:
-    """Map name → most-recent NAV date already in mf_nav (joined via amfi_schemes).
-    Used by the sync service to do incremental NAV updates."""
+    """Map name → most-recent NAV date in mf_nav. Drives the sync service's incremental updates."""
     if not scheme_names:
         return {}
     with get_session() as session:

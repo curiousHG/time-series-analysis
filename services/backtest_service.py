@@ -31,7 +31,7 @@ def run_backtest(
     sl_pct: float = 0.0,
     use_trail: bool = False,
 ) -> BacktestResult:
-    """Execute a strategy backtest and return results."""
+    """Run a strategy backtest via vectorbt; metrics computed only with >= 2 returns and >= 1 trade."""
     strategy = strategy_cls(**params)
     indicators = strategy.indicators(price)
     entries, exits = strategy.signals(price, indicators)

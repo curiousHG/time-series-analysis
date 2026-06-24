@@ -79,8 +79,7 @@ def _render_overview() -> None:
     pending_sources = 0
     unavailable_sources = 0
     if tracked_count:
-        # Count pending/unavailable across the three status columns in a single pass
-        # rather than re-scanning the DataFrame six times.
+        # Count pending/unavailable across all three status columns in one pass.
         status_cols = ("navStatus", "holdingsStatus", "metadataStatus")
         counts = tracked.select(
             *[(pl.col(c) == "pending").sum().alias(f"p_{c}") for c in status_cols],

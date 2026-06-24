@@ -42,9 +42,6 @@ def render_holdings_table(
     # --------------------
     # Sector allocation
     # --------------------
-
-    # %7B%22v%22%3A%201%2C%20%22data%22%3A%20%5B%5D%7D
-
     s = sector_df.filter(pl.col("schemeSlug") == scheme_slug).select("sector", "weight").sort("weight", descending=True)
 
     # --------------------

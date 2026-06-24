@@ -41,12 +41,11 @@ def _mark(handler: logging.Handler) -> logging.Handler:
 
 
 def setup_logging(level: int = logging.INFO):
-    """Configure logging with rotating file handlers. Idempotent across Streamlit hot reloads.
+    """Configure rotating file handlers. Idempotent across Streamlit hot reloads.
 
-    The guard checks the actual logger state (via a marker attribute on attached handlers)
-    instead of a module-level flag — Streamlit's file watcher re-imports modules and resets
-    module-level globals, so a `_initialized = True` flag would silently let handlers pile up
-    on every save (causing N-fold log line duplication).
+    Guards on actual logger state (a marker attr on handlers), not a module-level flag:
+    Streamlit re-imports modules and resets globals, so a flag would let handlers pile up
+    on every save (N-fold log duplication).
     """
     root = logging.getLogger()
     if _has_marked_handler(root):

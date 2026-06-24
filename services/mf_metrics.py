@@ -1,7 +1,4 @@
-"""Per-scheme risk/return metrics computed from NAV history.
-
-Pure functions; no Streamlit. UI layer caches results with @st.cache_data.
-"""
+"""Per-scheme risk/return metrics from NAV history. Pure functions; UI caches the results."""
 
 from __future__ import annotations
 
@@ -26,9 +23,9 @@ logger = logging.getLogger("services.mf_metrics")
 
 
 def nav_series(scheme_name: str) -> pd.Series:
-    """Return the daily NAV series for a scheme as a date-indexed pd.Series (empty if none).
+    """Daily NAV as a date-indexed pd.Series (empty if none).
 
-    Phase 2: MfNav is keyed on scheme_code; we JOIN to AmfiScheme to filter by name.
+    MfNav is keyed on scheme_code; JOIN to AmfiScheme to filter by name.
     """
     with get_session() as session:
         rows = session.exec(
@@ -61,12 +58,9 @@ def _windowed_cagr(nav: pd.Series, days: int) -> float | None:
 
 
 def _rolling_cagr_stats(nav: pd.Series, window_days: int) -> dict[str, float]:
-    """Min / median / mean / max of N-day rolling annualised CAGR over the fund's history.
+    """Min/median/mean/max of N-day rolling annualised CAGR over the fund's history.
 
-    For every NAV date with >= window_days of prior history, compute the annualised return
-    of holding from `t - window_days` to `t`. The four summary stats describe the
-    distribution of that experience — i.e. "if you'd held for N years ending on any day,
-    what return would you have got".
+    Describes the distribution of "if you'd held for N years ending on any day, what return".
     """
     nan = {"min": math.nan, "median": math.nan, "mean": math.nan, "max": math.nan}
     if len(nav) < window_days + 1:
@@ -106,11 +100,9 @@ def _absolute_return(nav: pd.Series, days_back: int) -> float:
 
 
 def _holdings_composition(scheme_name: str) -> dict[str, float]:
-    """Return composition + concentration weights for a scheme from mf_holdings.
+    """Composition + concentration weights from mf_holdings; floats in [0, 1], NaN if absent.
 
-    Reads the latest portfolio_date snapshot only — funds report the same set of holdings
-    multiple times across portfolio_dates, we don't want to double-count earlier snapshots.
-    Returns floats in [0, 1]; NaN where the data isn't available.
+    Latest portfolio_date snapshot only — funds re-report holdings across dates; don't double-count.
     """
     nan = dict.fromkeys(("pct_equity", "pct_debt", "pct_cash", "pct_top3", "pct_top5", "pct_top10"), math.nan)  # fmt: skip
     # Phase 3: mf_holdings is keyed on scheme_code; resolve from scheme_name via AmfiScheme.
@@ -169,16 +161,11 @@ def compute_metrics_for_scheme(
     scheme_name: str,
     benchmark_returns: pd.Series | None = None,
 ) -> dict | None:
-    """Return a metrics dict, or None if there isn't enough history (< ~1Y).
+    """Metrics dict (keys mirror data.constants.METRIC_FIELDS + `scheme_name`), or None if < ~1Y history.
 
-    Output keys mirror data.constants.METRIC_FIELDS plus `scheme_name`.
-    Pass `benchmark_returns` (e.g. Nifty 50 daily returns) to populate alpha/beta/r2/
-    tracking-error fields; without it those columns are NaN.
-
-    Skips funds with corrupt NAV: any |daily return| > 100% indicates upstream data
-    issues (Franklin/UTI wound-up debt funds, segregated-portfolio side-pockets where
-    MFAPI reports cumulative payouts rather than going-concern NAV) — these would
-    otherwise produce nonsensical millions-of-percent volatility numbers.
+    `benchmark_returns` (e.g. Nifty 50 daily returns) populates alpha/beta/r2/tracking-error; NaN without it.
+    Skips funds with corrupt NAV (|daily return| > 100% — wound-up debt funds, side-pockets where MFAPI
+    reports cumulative payouts) that would otherwise yield millions-of-percent volatility.
     """
     nav = nav_series(scheme_name)
     if len(nav) < TRADING_DAYS:
@@ -346,15 +333,10 @@ def compute_alpha_beta(
     *,
     min_overlap: int = 60,
 ) -> dict | None:
-    """Jensen alpha / beta of a return series against a benchmark return series.
+    """Jensen alpha/beta of fund vs benchmark daily returns (decimals, not %).
 
-    Mirrors the math in ui/views/mutual_fund.py:478-487:
-      beta  = cov(fund, bench) / var(bench)
-      alpha = mean(fund) - beta * mean(bench), annualised by TRADING_DAYS
-      r2    = corr(fund, bench) ** 2
-
-    Returns None when fewer than `min_overlap` aligned days exist or benchmark variance is zero.
-    Both inputs must be daily returns (decimals, not %).
+    beta = cov/var, alpha = (mean_f - beta*mean_b) annualised, r2 = corr**2.
+    None when < `min_overlap` aligned days or benchmark variance is zero.
     """
     if fund_returns is None or benchmark_returns is None or fund_returns.empty or benchmark_returns.empty:
         return None
@@ -370,10 +352,9 @@ def compute_alpha_beta(
 
 
 def compute_metrics_from_returns(returns: pd.Series) -> dict:
-    """1Y CAGR/Vol/Sharpe/MaxDD from any daily-returns Series. Used for the portfolio aggregate.
+    """1Y CAGR/Vol/Sharpe/MaxDD from a daily-returns Series (portfolio aggregate).
 
-    All values are NaN when the series is too short (<TRADING_DAYS). Errors from
-    quantstats propagate — the caller is expected to surface them.
+    All NaN when the series is shorter than TRADING_DAYS. quantstats errors propagate to the caller.
     """
     out = {"cagr_1y": math.nan, "vol_1y": math.nan, "sharpe_1y": math.nan, "max_dd_1y": math.nan}
     if returns is None or returns.empty:
@@ -392,10 +373,9 @@ def compute_metrics_from_returns(returns: pd.Series) -> dict:
 
 
 def compute_tracking_error(scheme_name: str, benchmark_returns: pd.Series, window: int = TRADING_DAYS) -> float | None:
-    """Annualised tracking error — std-dev of (fund minus benchmark) daily returns over `window`.
+    """Annualised tracking error — std-dev of (fund - benchmark) daily returns over `window`.
 
-    Pass `benchmark_returns` (a pre-loaded daily-return series); the caller resolves the benchmark.
-    Returns None if there aren't enough overlapping days (< 60).
+    None if fewer than 60 overlapping days.
     """
     if benchmark_returns is None or benchmark_returns.empty:
         return None
@@ -411,11 +391,10 @@ def compute_tracking_error(scheme_name: str, benchmark_returns: pd.Series, windo
 
 
 def _load_nifty_for_recompute() -> pd.Series:
-    """Pull Nifty 50 daily returns from stock_ohlcv once, used as the default benchmark.
+    """Nifty 50 daily returns from stock_ohlcv — the default benchmark.
 
-    Force-refreshes Nifty up to today before reading — `ensure_stock_data` skips fetches
-    under 5 days, which would silently leave the benchmark stale on a 2- or 3-day gap and
-    push alpha/beta/tracking-error onto out-of-date data.
+    Force-refreshes to today first: `ensure_stock_data` skips sub-5-day gaps, which would
+    silently leave the benchmark stale and push CAPM stats onto out-of-date data.
     """
     try:
         today, db_max = refresh_stock_to_today("^NSEI")
@@ -448,11 +427,9 @@ def _load_nifty_for_recompute() -> pd.Series:
 
 @timeit("mf_metrics.recompute_metrics")
 def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int = 4) -> int:
-    """Recompute and persist metrics for `scheme_names` (or every scheme with NAV).
+    """Recompute and persist metrics for `scheme_names` (or every scheme with NAV); returns rows upserted.
 
-    Returns the number of rows upserted. Schemes whose `compute_metrics_for_scheme` returns
-    None (corrupt NAV, insufficient history, etc.) get any stale cache row deleted so the
-    cache stays consistent with the current compute logic.
+    Schemes that compute to None (corrupt NAV, short history) get their stale cache row evicted.
     """
     if scheme_names is None:
         # Phase 2: pull names via JOIN to amfi_schemes (MfNav no longer carries scheme_name).

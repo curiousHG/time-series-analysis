@@ -13,8 +13,7 @@ from ui.constants import RISK_FREE
 def render(pv: pd.DataFrame, mapped: pl.DataFrame):
     pv = pv.sort_values("date").copy()
 
-    # Build time-weighted daily returns that remove the effect of cash flows.
-    # On SIP days, the raw pct_change includes new money — we subtract it.
+    # Time-weighted daily returns: raw pct_change on SIP days includes new money, so subtract it.
     cashflows = (
         mapped.with_columns(
             pl.when(pl.col("signed_qty") > 0)
@@ -31,8 +30,7 @@ def render(pv: pd.DataFrame, mapped: pl.DataFrame):
     merged = pv.merge(cashflows, on="date", how="left")
     merged["cashflow"] = merged["cashflow"].fillna(0)
 
-    # Time-weighted return: r_t = (V_t - V_{t-1} - CF_t) / V_{t-1}
-    # Where CF_t is net cash flow on day t (positive = deposit, negative = withdrawal)
+    # r_t = (V_t - V_{t-1} - CF_t) / V_{t-1}; CF_t net cash flow (+ deposit, - withdrawal)
     merged["prev_value"] = merged["portfolio_value"].shift(1)
     merged["twr"] = (merged["portfolio_value"] - merged["prev_value"] - merged["cashflow"]) / merged["prev_value"]
     merged = merged.dropna(subset=["twr"])

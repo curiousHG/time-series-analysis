@@ -13,20 +13,13 @@ logger = logging.getLogger("data.store.tradebook")
 
 
 def import_tradebook_csv(csv_path: str) -> tuple[int, int]:
-    """
-    Import a Kite/Zerodha tradebook CSV into the database.
-    Deduplicates on trade_id.
-    Returns (new_count, skipped_count).
-    """
+    """Import a Kite/Zerodha tradebook CSV, deduped on trade_id. Returns (new, skipped)."""
     df = pl.read_csv(csv_path, try_parse_dates=True)
     return _import_tradebook_df(df)
 
 
 def import_tradebook_bytes(file_bytes: bytes) -> tuple[int, int]:
-    """
-    Import tradebook from uploaded file bytes (Streamlit file_uploader).
-    Returns (new_count, skipped_count).
-    """
+    """Import tradebook from uploaded file bytes (Streamlit). Returns (new, skipped)."""
     df = pl.read_csv(file_bytes, try_parse_dates=True)
     return _import_tradebook_df(df)
 
@@ -50,9 +43,8 @@ def _resolve_isin_to_scheme_code(session, isins: list[str]) -> dict[str, int]:
 
 
 def _import_tradebook_df(df: pl.DataFrame) -> tuple[int, int]:
-    """Upsert a tradebook DataFrame. Returns (new_count, skipped_count).
-
-    Phase 3: also denormalises `scheme_code` on import via ISIN→amfi_schemes resolution.
+    """Upsert a tradebook DataFrame, denormalising `scheme_code` via ISIN→amfi_schemes.
+    Returns (new, skipped).
     """
     if df.is_empty():
         return 0, 0
@@ -99,9 +91,8 @@ def _import_tradebook_df(df: pl.DataFrame) -> tuple[int, int]:
 
 
 def load_tradebook_from_db() -> pl.DataFrame:
-    """Load all tradebook transactions, with `scheme_code` (denormalised at import time)
-    and `schemeName` JOINed in from `amfi_schemes`. Trades whose `scheme_code` is NULL
-    (couldn't be resolved at import) come back with `schemeName=None`.
+    """Load all trades with `scheme_code` and `schemeName` JOINed from amfi_schemes.
+    Trades with NULL scheme_code (unresolved at import) come back with schemeName=None.
     """
     with get_session() as session:
         rows = session.exec(
