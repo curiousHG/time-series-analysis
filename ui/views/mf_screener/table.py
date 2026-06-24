@@ -23,6 +23,7 @@ from mutual_funds.metric_catalog import (
     METRIC_RENAME,
     METRIC_TEXT_COLS,
 )
+from services.registry_service import backfill_missing
 from services.screener_service import status_cell
 
 
@@ -78,9 +79,24 @@ def _build_grid_options(pdf: pd.DataFrame):
         elif c in METRIC_TEXT_COLS:
             gob.configure_column(c, filter="agTextColumnFilter")
 
-    # Multi-row selection — header checkbox = select-all, per-row checkbox in Scheme column.
-    gob.configure_selection(selection_mode="multiple", use_checkbox=True, header_checkbox=True)
-    gob.configure_column("Scheme", pinned="left", minWidth=300, checkboxSelection=True, headerCheckboxSelection=True)
+    # Multi-row selection (for the copy-to-TSV echo). `use_checkbox=False` keeps the
+    # checkbox OFF the Scheme column — it gets its own dedicated column (injected after
+    # build) so a click on the fund name *only* opens the fund and the checkbox *only*
+    # toggles selection. One interactive affordance per column = no ambiguous targets.
+    # `suppressRowClickSelection` ensures a name click never doubles as a row select.
+    gob.configure_selection(
+        selection_mode="multiple",
+        use_checkbox=False,
+        suppressRowClickSelection=True,
+    )
+    # Style the Scheme cell as a link (blue + pointer cursor) to advertise that
+    # clicking it opens the fund in MF Analysis — see render_open_action.
+    gob.configure_column(
+        "Scheme",
+        pinned="left",
+        minWidth=300,
+        cellStyle={"color": "#5aa9ff", "cursor": "pointer", "fontWeight": 600},
+    )
 
     gob.configure_grid_options(
         domLayout="normal",
@@ -91,7 +107,31 @@ def _build_grid_options(pdf: pd.DataFrame):
         suppressCopyRowsToClipboard=False,
         copyHeadersToClipboard=True,  # include column names in the clipboard payload
     )
-    return gob.build()
+
+    grid_options = gob.build()
+    # Dedicated, field-less checkbox column for the copy-to-TSV selection, pinned hard left.
+    # Kept separate from Scheme so the two click behaviours can't collide (see above).
+    grid_options["columnDefs"].insert(
+        0,
+        {
+            "headerName": "",
+            "colId": "_select",
+            "checkboxSelection": True,
+            "headerCheckboxSelection": True,
+            "headerCheckboxSelectionFilteredOnly": True,
+            "pinned": "left",
+            "width": 44,
+            "minWidth": 44,
+            "maxWidth": 44,
+            "filter": False,
+            "floatingFilter": False,
+            "sortable": False,
+            "resizable": False,
+            "suppressMovable": True,
+            "lockPosition": True,
+        },
+    )
+    return grid_options
 
 
 def render_table(
@@ -110,16 +150,28 @@ def render_table(
         height=650,
         theme=aggrid_theme,
         allow_unsafe_jscode=False,
+        # `cellClicked` lets `render_open_action` open a fund straight from a single
+        # click on its Scheme cell. The other three keep the selection-echo / filter /
+        # sort sections in sync with the grid (they're the library defaults minus
+        # `cellValueChanged`, which is irrelevant on this read-only grid).
+        update_on=["cellClicked", "selectionChanged", "filterChanged", "sortChanged"],
     )
     return display_pdf, grid_response
 
 
-def render_selection_echo(grid_response: dict) -> None:
-    """Render an expander with the selected rows as TSV — paste-ready for Excel / Sheets."""
+def _selected_rows_df(grid_response: dict) -> pd.DataFrame | None:
+    """Normalise AgGrid's selected_rows (list-of-dicts or DataFrame) to a DataFrame."""
     selected = grid_response.get("selected_rows")
     if selected is None or len(selected) == 0:
+        return None
+    return pd.DataFrame(selected) if isinstance(selected, list) else selected
+
+
+def render_selection_echo(grid_response: dict) -> None:
+    """Render an expander with the selected rows as TSV — paste-ready for Excel / Sheets."""
+    sel_df = _selected_rows_df(grid_response)
+    if sel_df is None:
         return
-    sel_df = pd.DataFrame(selected) if isinstance(selected, list) else selected
     with st.expander(f"📋 {len(sel_df)} selected row(s) — copy", expanded=False):
         st.caption(
             "Tab-separated; paste straight into Excel / Sheets / Notion. The checkbox in "
@@ -127,3 +179,50 @@ def render_selection_echo(grid_response: dict) -> None:
             "individual rows)."
         )
         st.code(sel_df.to_csv(sep="\t", index=False), language="text")
+
+
+def _clicked_scheme(grid_response: dict) -> str | None:
+    """Return the fund name when the user just clicked a Scheme cell, else None.
+
+    AgGrid surfaces the triggering interaction in `event_data`: `streamlitRerunEventTriggerName`
+    names the event, `colDef.field` the clicked column, and `data` carries the full row. We
+    only act on a click of the pinned Scheme column so clicks elsewhere (the checkbox column,
+    or a numeric cell being text-selected for copy) are left alone.
+    """
+    event = grid_response.get("event_data") or {}
+    if event.get("streamlitRerunEventTriggerName") != "cellClicked":
+        return None
+    if (event.get("colDef") or {}).get("field") != "Scheme":
+        return None
+    scheme_name = (event.get("data") or {}).get("Scheme") or event.get("value")
+    return str(scheme_name) if scheme_name else None
+
+
+def render_open_action(grid_response: dict) -> None:
+    """Open a fund in MF Analysis when its Scheme cell is clicked.
+
+    Registers the fund (so it appears in the Analysis page's tracked dropdown) and pulls
+    NAV + metadata, then pre-selects it and switches pages. Holdings are deferred — the
+    Analysis page fetches them on load since `holdings_status` stays `pending`.
+    """
+    scheme_name = _clicked_scheme(grid_response)
+    if scheme_name is None:
+        return
+
+    with st.spinner(f"Fetching NAV + metadata for {scheme_name}…"):
+        backfill_missing(
+            scheme_names=[scheme_name],
+            sources=("nav", "metadata"),
+            max_per_run=2,
+            submit_delay=0.0,  # single fund, no inter-request rate limiting needed
+        )
+    # Clear the Analysis page's sidebar filters so the opened fund is guaranteed to
+    # be in the selectbox options (leftover filters from a prior visit could exclude
+    # it and make the selectbox raise on the pre-set value).
+    st.session_state["mf_analysis_fund"] = scheme_name
+    st.session_state["mf_analysis_search"] = ""
+    for k in ("mf_analysis_amc", "mf_analysis_cat", "mf_analysis_plan", "mf_analysis_option"):
+        st.session_state[k] = []
+    st.session_state["mf_analysis_only_meta"] = False
+    st.session_state["mf_analysis_only_holdings"] = False
+    st.switch_page("ui/views/mutual_fund/page.py")

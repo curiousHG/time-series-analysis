@@ -5,17 +5,17 @@ import pandas as pd
 from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.spatial.distance import squareform
 
-_LABEL_COL = "shortName"
+from mutual_funds.constants import LABEL_COL
 
 
 def daily_returns(nav_pd: pd.DataFrame) -> pd.DataFrame:
     """Wide returns DataFrame indexed by date, columns = short fund names."""
-    label_col = _LABEL_COL if _LABEL_COL in nav_pd.columns else "schemeName"
+    label_col = LABEL_COL if LABEL_COL in nav_pd.columns else "schemeName"
     return nav_pd.pivot(index="date", columns=label_col, values="nav").pct_change(fill_method=None)
 
 
 def monthly_returns(nav_pd: pd.DataFrame) -> pd.DataFrame:
-    label_col = _LABEL_COL if _LABEL_COL in nav_pd.columns else "schemeName"
+    label_col = LABEL_COL if LABEL_COL in nav_pd.columns else "schemeName"
     wide = nav_pd.pivot(index="date", columns=label_col, values="nav")
     if not isinstance(wide.index, pd.DatetimeIndex):
         wide.index = pd.to_datetime(wide.index)

@@ -221,7 +221,7 @@ DEFAULT_VISIBLE_METRICS: tuple[str, ...] = (
 )
 
 # DB column names for metric placeholders (when the cache is empty). Kept here so callers
-# don't repeat the list — must mirror data/repositories/scheme_metrics._METRIC_FIELDS.
+# don't repeat the list — must mirror data.constants.METRIC_FIELDS.
 # --- Risk-vs-Return chart axis catalog --------------------------------------------------
 # X options are downside-style risk measures; Y options are excess-of-benchmark / risk-free
 # return measures. Each X entry is (db_column, display label, take_abs?) — `take_abs` flips

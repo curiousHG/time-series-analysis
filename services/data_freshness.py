@@ -12,9 +12,7 @@ from core.database import get_session
 from core.models import AmfiScheme, MfHolding, MfNav
 from data.repositories.holdings import _slug_to_code_map_cached
 from mutual_funds.display import make_slug
-
-NAV_STALE_BUSINESS_DAYS = 1
-HOLDINGS_STALE_DAYS = 35
+from services.constants import HOLDINGS_STALE_DAYS, NAV_STALE_BUSINESS_DAYS
 
 Status = Literal["fresh", "stale", "missing"]
 

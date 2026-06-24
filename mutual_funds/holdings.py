@@ -1,17 +1,14 @@
-import re
 from datetime import datetime
 
 import polars as pl
 
+from mutual_funds.constants import ISIN_RE
 from mutual_funds.table_schema import (
     ASSET_SCHEMA,
     HOLDINGS_SCHEMA,
     SECTOR_SCHEMA,
     empty_df,
 )
-
-# ISO 6166 ISIN: 2-letter country, 9 alphanumerics, 1 numeric check digit.
-_ISIN_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}\d$")
 
 
 def _clean_isin(value: str | None) -> str:
@@ -24,7 +21,7 @@ def _clean_isin(value: str | None) -> str:
     if not value:
         return ""
     v = str(value).strip().upper()
-    return v if _ISIN_RE.match(v) else ""
+    return v if ISIN_RE.match(v) else ""
 
 
 def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:

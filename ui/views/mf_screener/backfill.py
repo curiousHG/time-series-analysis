@@ -12,16 +12,8 @@ import polars as pl
 import streamlit as st
 
 from services.registry_service import backfill_missing
+from ui.constants import BACKFILL_HELP_TEXT
 from ui.state.loaders import load_metrics_cached, load_screener_df_cached
-
-_HELP_TEXT = (
-    "Add-to-tracked + fetch NAV/metadata for the top-N rows of the filtered view "
-    "(in the order shown). Upserts into `mf_registry` with status `pending`, then "
-    "fetches NAV + metadata. Throttled to ~3 req/s (2 concurrent · 0.4 s submission "
-    "delay) to avoid upstream rate limits. Sources already `available` are skipped. "
-    "Holdings are not fetched here (slower scrape) — use Settings → "
-    "*Update All Holdings* once a fund is tracked."
-)
 
 
 def render_inline_backfill(filtered: pl.DataFrame, n_col, btn_col) -> None:
@@ -49,7 +41,7 @@ def render_inline_backfill(filtered: pl.DataFrame, n_col, btn_col) -> None:
             key="screener_backfill",
             use_container_width=True,
             disabled=not has_rows,
-            help=_HELP_TEXT,
+            help=BACKFILL_HELP_TEXT,
         )
 
     if not run_clicked:

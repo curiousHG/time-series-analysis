@@ -5,7 +5,8 @@ import plotly.graph_objects as go
 import quantstats as qs
 import streamlit as st
 
-from services.backtest_service import RISK_FREE, run_backtest
+from services.backtest_service import run_backtest
+from services.constants import BACKTEST_RISK_FREE
 from strategies import STRATEGY_REGISTRY
 
 
@@ -158,7 +159,7 @@ def _render_metrics(metrics: dict):
     c5.metric(
         "Sharpe Ratio",
         f"{metrics['sharpe']:.2f}",
-        help=f"Risk-adjusted return vs {RISK_FREE * 100:.1f}% risk-free rate.",
+        help=f"Risk-adjusted return vs {BACKTEST_RISK_FREE * 100:.1f}% risk-free rate.",
     )
     c6.metric("Sortino Ratio", f"{metrics['sortino']:.2f}", help="Like Sharpe but only penalizes downside volatility.")
     c7.metric("Calmar Ratio", f"{metrics['calmar']:.2f}", help="CAGR / Max Drawdown.")

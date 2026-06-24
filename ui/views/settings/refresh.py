@@ -30,21 +30,12 @@ from services.sync_service import (
     update_nav_incremental,
 )
 from ui.components.freshness_banner import clear_freshness_cache
+from ui.constants import STATUS_STYLES
 from ui.state.loaders import get_short_names, load_holdings_data, load_nav_data
-
-# Colour palette for the Status cell — mirrors the badges used elsewhere in the app.
-_STATUS_STYLES = {
-    "Fresh": "background-color: #86efac; color: #14532d",
-    "Stale": "background-color: #fde68a; color: #78350f",
-    "Missing": "background-color: #fca5a5; color: #7f1d1d",
-    "Available": "background-color: #86efac; color: #14532d",
-    "Pending": "background-color: #fde68a; color: #78350f",
-    "Unavailable": "background-color: #fca5a5; color: #7f1d1d",
-}
 
 
 def _color_status(val: str) -> str:
-    return _STATUS_STYLES.get(val, "")
+    return STATUS_STYLES.get(val, "")
 
 
 def render() -> None:

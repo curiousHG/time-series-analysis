@@ -17,6 +17,7 @@ from sqlmodel import col, delete, select
 
 from core.database import get_session
 from core.models import AmfiScheme, MfAssetAllocation, MfHolding, MfSectorAllocation
+from data.constants import HOLDINGS_FIELD_MAP
 from data.fetchers.mutual_fund import fetch_portfolio_by_slug
 from mutual_funds.display import make_slug
 from mutual_funds.holdings import (
@@ -32,25 +33,6 @@ from mutual_funds.table_schema import (
 )
 
 logger = logging.getLogger("data.repositories.holdings")
-
-
-# Polars column → ORM field mapping (post-Phase-3 — only fields that still exist on MfHolding).
-_HOLDINGS_FIELD_MAP = {
-    "portfolioDate": "portfolio_date",
-    "instrumentName": "instrument_name",
-    "isin": "isin",
-    "issuerName": "issuer_name",
-    "assetClass": "asset_class",
-    "assetSubClass": "asset_sub_class",
-    "assetType": "asset_type",
-    "weight": "weight",
-    "value": "value",
-    "quantity": "quantity",
-    "industry": "industry",
-    "marketCapBucket": "market_cap",
-    "creditRating": "credit_rating",
-    "creditRatingEq": "credit_rating_eq",
-}
 
 
 # ---- Slug ↔ scheme_code resolution -------------------------------------------------------
@@ -100,7 +82,7 @@ def _resolve_slugs(slugs: list[str]) -> list[int]:
 
 
 def _polars_row_to_holding(row: dict, scheme_code: int) -> MfHolding:
-    fields = {_HOLDINGS_FIELD_MAP[k]: row.get(k) for k in _HOLDINGS_FIELD_MAP}
+    fields = {HOLDINGS_FIELD_MAP[k]: row.get(k) for k in HOLDINGS_FIELD_MAP}
     return MfHolding(scheme_code=scheme_code, **fields)  # type: ignore[arg-type]
 
 

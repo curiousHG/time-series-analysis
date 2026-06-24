@@ -4,7 +4,7 @@ import datetime
 
 from sqlmodel import Field, SQLModel
 
-TABLE_ARGS = {"extend_existing": True}
+from core.constants import TABLE_ARGS
 
 
 class MfNav(SQLModel, table=True):

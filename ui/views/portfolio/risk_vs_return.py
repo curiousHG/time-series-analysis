@@ -28,15 +28,10 @@ from services.mf_metrics import (
     nav_series,
 )
 from services.portfolio_service import build_portfolio_returns_series
+from ui.constants import BUBBLE_SIZE, MODE_ALPHA_BETA, MODE_CAGR_VOL, PORTFOLIO_COLOUR
 from ui.state.loaders import load_benchmark_returns
 
 logger = logging.getLogger("ui.views.portfolio.risk_vs_return")
-
-MODE_CAGR_VOL = "CAGR vs Volatility"
-MODE_ALPHA_BETA = "Alpha vs Beta"
-
-BUBBLE_SIZE = 14
-PORTFOLIO_COLOUR = "#fbbf24"  # amber-400
 
 
 def _fund_returns(scheme: str) -> pd.Series:

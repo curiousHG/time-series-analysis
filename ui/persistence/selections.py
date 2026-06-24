@@ -1,9 +1,8 @@
 """File-based persistence for user selections (replaces flaky cookie layer)."""
 
 import json
-from pathlib import Path
 
-SELECTIONS_PATH = Path("data/user/selections.json")
+from ui.constants import SELECTIONS_PATH
 
 
 def _load_all() -> dict:

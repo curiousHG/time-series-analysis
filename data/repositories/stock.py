@@ -8,21 +8,10 @@ from sqlmodel import col, select
 
 from core.database import get_session
 from core.models import StockOhlcv, StockRegistry
+from data.constants import EMPTY_OHLCV, MIN_FETCH_DAYS
 from data.fetchers.stock import fetch_symbol_data, fetch_symbol_data_jugaad, query_stocks
 
 logger = logging.getLogger("data.store.stock")
-
-
-EMPTY_OHLCV = pl.DataFrame(
-    schema={
-        "Date": pl.Date,
-        "Open": pl.Float64,
-        "High": pl.Float64,
-        "Low": pl.Float64,
-        "Close": pl.Float64,
-        "Volume": pl.Int64,
-    }
-)
 
 
 def _to_date(d: datetime | date) -> date:
@@ -126,8 +115,6 @@ def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: dateti
     """
     start = _to_date(start_date)
     end = _to_date(end_date)
-
-    MIN_FETCH_DAYS = 5  # don't fetch ranges shorter than 5 days (avoids holiday gaps)
 
     existing = _get_date_range(symbol)
 

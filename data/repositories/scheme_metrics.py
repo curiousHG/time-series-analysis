@@ -22,39 +22,10 @@ from sqlmodel import col, delete, func, select
 from core.database import get_session
 from core.models import AmfiScheme, MfNav, MfSchemeMetrics
 from core.timing import timeit
+from data.constants import METRIC_FIELDS
 from data.repositories.scheme_codes import resolve_codes_with_synthetic
 
 logger = logging.getLogger("data.repositories.scheme_metrics")
-
-
-_METRIC_FIELDS: tuple[str, ...] = (
-    # CAGR
-    "cagr_1y", "cagr_3y", "cagr_5y", "cagr_10y",
-    # Risk-adjusted ratios
-    "vol_1y", "downside_vol_1y", "sharpe_1y", "sortino_1y", "calmar_1y", "gain_to_pain_1y",
-    # Drawdown / cumulative
-    "max_dd_1y", "cumulative_return_1y", "avg_daily_return_1y",
-    # Distribution stats
-    "win_rate_1y", "best_day_1y", "worst_day_1y", "var_95_1y", "cvar_95_1y", "skew_1y", "kurt_1y",
-    # Position-sizing diagnostics
-    "kelly_1y", "avg_win_1y", "avg_loss_1y", "payoff_ratio_1y",
-    # All-time
-    "max_dd_all", "pct_from_ath",
-    # Absolute returns
-    "abs_return_3m", "abs_return_6m", "abs_return_1y",
-    # Holdings composition
-    "pct_equity", "pct_debt", "pct_cash",
-    # Concentration
-    "pct_top3", "pct_top5", "pct_top10",
-    # CAPM vs Nifty 50
-    "alpha_1y", "beta_1y", "r2_1y", "tracking_error_1y",
-    # Rolling annualised-CAGR distribution (1/3/5 year windows)
-    "rolling_1y_min", "rolling_1y_median", "rolling_1y_mean", "rolling_1y_max",
-    "rolling_3y_min", "rolling_3y_median", "rolling_3y_mean", "rolling_3y_max",
-    "rolling_5y_min", "rolling_5y_median", "rolling_5y_mean", "rolling_5y_max",
-    # Provenance fields
-    "inception_date", "last_nav", "last_nav_date", "history_days",
-)  # fmt: skip
 
 
 @timeit("scheme_metrics.load")
@@ -76,7 +47,7 @@ def load_metrics(scheme_names: list[str] | None = None) -> pl.DataFrame:
     return pl.DataFrame(
         {
             "scheme_name": [r[0] for r in rows],
-            **{f: [getattr(r[1], f) for r in rows] for f in _METRIC_FIELDS},
+            **{f: [getattr(r[1], f) for r in rows] for f in METRIC_FIELDS},
             "computed_at": [r[1].computed_at for r in rows],
             "computed_at_nav_date": [r[1].computed_at_nav_date for r in rows],
         }
@@ -99,7 +70,7 @@ def upsert_metrics(rows: list[dict[str, Any]]) -> int:
         if not name or name not in name_to_code:
             continue
         d = {"scheme_code": name_to_code[name]}
-        for f in _METRIC_FIELDS:
+        for f in METRIC_FIELDS:
             d[f] = r.get(f)
         d["computed_at"] = r.get("computed_at") or now
         d["computed_at_nav_date"] = r.get("computed_at_nav_date") or r.get("last_nav_date")

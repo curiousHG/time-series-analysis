@@ -7,7 +7,7 @@ import pandas as pd
 import quantstats as qs
 import vectorbt as vbt
 
-RISK_FREE = 0.065  # Indian risk-free rate
+from services.constants import BACKTEST_RISK_FREE
 
 
 @dataclass
@@ -103,8 +103,8 @@ def compute_metrics(returns: pd.Series, trades: pd.DataFrame) -> dict:
         "cumulative_return": qs.stats.comp(returns) * 100,
         "max_drawdown": qs.stats.max_drawdown(returns) * 100,
         "annual_volatility": qs.stats.volatility(returns) * 100,
-        "sharpe": qs.stats.sharpe(returns, rf=RISK_FREE / 252),
-        "sortino": qs.stats.sortino(returns, rf=RISK_FREE / 252),
+        "sharpe": qs.stats.sharpe(returns, rf=BACKTEST_RISK_FREE / 252),
+        "sortino": qs.stats.sortino(returns, rf=BACKTEST_RISK_FREE / 252),
         "calmar": qs.stats.calmar(returns),
         "profit_factor": profit_factor,
         "win_rate": trade_wr,

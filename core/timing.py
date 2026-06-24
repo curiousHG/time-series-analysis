@@ -23,11 +23,11 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from typing import TypeVar
 
+from core.constants import DEFAULT_SLOW_MS
+
 logger = logging.getLogger("perf")
 
 T = TypeVar("T")
-
-DEFAULT_SLOW_MS = 100.0
 
 
 @contextmanager

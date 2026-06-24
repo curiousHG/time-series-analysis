@@ -22,9 +22,7 @@ from services.mf_metrics import compute_tracking_error
 from services.registry_service import backfill_missing, list_tracked
 from services.screener_service import apply_name_filter
 from ui.components.mutual_fund_holdings import render_holdings_table
-
-RISK_FREE = 0.065
-RF_DAILY = RISK_FREE / 252
+from ui.constants import RF_DAILY
 
 
 @st.cache_data(ttl=600, show_spinner=False)

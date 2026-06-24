@@ -19,14 +19,9 @@ import polars as pl
 from data.repositories.holdings import fetch_holdings_frames, replace_holdings_atomic
 from data.repositories.nav import fetch_single_nav, last_nav_date_by_name, save_nav_df
 from mutual_funds.display import make_slug
+from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS
 
 logger = logging.getLogger("services.sync")
-
-# Empirically tuned worker counts.
-#   MFAPI handles 16-way concurrency cleanly: ~55 schemes/s, p95 ~325ms, no errors.
-#   AdvisorKhoj holdings handles ~78 rps p95 ~190ms at 16 workers.
-NAV_FETCH_WORKERS = 16
-HOLDINGS_FETCH_WORKERS = 16
 
 
 # ---- progress / result types ------------------------------------------------------------

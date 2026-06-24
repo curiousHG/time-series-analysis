@@ -7,7 +7,7 @@ import polars as pl
 import quantstats as qs
 import streamlit as st
 
-RISK_FREE = 0.065  # Indian risk-free rate
+from ui.constants import RISK_FREE
 
 
 def render(pv: pd.DataFrame, mapped: pl.DataFrame):

@@ -18,7 +18,7 @@ from ui.state.loaders import load_screener_df_cached
 from ui.views.mf_screener.backfill import render_inline_backfill
 from ui.views.mf_screener.chart import render_risk_return_chart
 from ui.views.mf_screener.filters import render_sidebar
-from ui.views.mf_screener.table import render_selection_echo, render_table
+from ui.views.mf_screener.table import render_open_action, render_selection_echo, render_table
 
 
 def _render_universe_summary(amfi_count: int, filtered: pl.DataFrame) -> None:
@@ -81,10 +81,11 @@ _filtered = apply_filters(
 
 # Header + inline add-to-tracked (needs `_filtered` for the Top-N picker).
 _render_universe_summary(_amfi_count, _filtered)
-st.caption(f"{_filtered.height:,} of {_df.height:,} schemes match")
+st.caption(f"{_filtered.height:,} of {_df.height:,} schemes match · **click a fund name** to open it in MF Analysis")
 
-# Table → grid response → selection-echo expander.
+# Table → grid response → open-fund action + selection-echo expander.
 _, _grid_response = render_table(_filtered, _state.visible_metrics, _state.aggrid_theme)
+render_open_action(_grid_response)
 render_selection_echo(_grid_response)
 
 # Risk-vs-return scatter for the filtered universe.

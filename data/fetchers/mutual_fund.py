@@ -9,16 +9,9 @@ import httpx
 import polars as pl
 from bs4 import BeautifulSoup
 
-logger = logging.getLogger("data.fetchers.mutual_fund")
+from data.constants import AMFI_NAV_ALL_URL, BASE_OVERVIEW_URL, HEADERS, MFAPI_BASE_URL, NAV_URL
 
-MFAPI_BASE_URL = "https://api.mfapi.in/mf"
-AMFI_NAV_ALL_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
-BASE_OVERVIEW_URL = "https://www.advisorkhoj.com/mutual-funds-research/{scheme_name}"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "text/html",
-}
-NAV_URL = "https://www.advisorkhoj.com/mutual-funds-research/getCompleteNavReportForFundOverview"
+logger = logging.getLogger("data.fetchers.mutual_fund")
 
 
 def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:

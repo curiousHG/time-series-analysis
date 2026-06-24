@@ -5,7 +5,7 @@ import datetime
 from sqlalchemy import BigInteger, Column
 from sqlmodel import Field, SQLModel
 
-TABLE_ARGS = {"extend_existing": True}
+from core.constants import TABLE_ARGS
 
 
 class StockOhlcv(SQLModel, table=True):

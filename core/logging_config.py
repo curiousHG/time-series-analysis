@@ -4,9 +4,18 @@ import logging
 import sys
 import warnings
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
 from sqlalchemy.exc import SAWarning
+
+from core.constants import (
+    LOG_BACKUP_COUNT,
+    LOG_DATE_FORMAT,
+    LOG_FILES,
+    LOG_FORMAT,
+    LOG_HANDLER_MARKER,
+    LOG_MAX_BYTES,
+    LOGS_DIR,
+)
 
 # Streamlit re-imports modules on hot reload, which makes SQLModel re-register classes
 # in SQLAlchemy's declarative base. The redefinition is identical — the warning is noise.
@@ -21,31 +30,13 @@ warnings.filterwarnings(
 # explicitly — log capture below catches the rest.
 warnings.filterwarnings("ignore", category=FutureWarning, module=r"yfinance.*")
 
-LOGS_DIR = Path("logs")
-MAX_BYTES = 5 * 1024 * 1024  # 5 MB per file
-BACKUP_COUNT = 3
-FMT = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
-DATE_FMT = "%Y-%m-%d %H:%M:%S"
-
-# Log file categories
-LOG_FILES = {
-    "app": "app.log",  # general app lifecycle
-    "data": "data.log",  # data fetching, storage, API calls
-    "ui": "ui.log",  # UI events, state changes
-    "perf": "perf.log",  # phase/function timing markers from core.timing
-}
-
-# Marker attribute we tag every handler we attach with — survives module re-imports
-# because Python's `logging` registry holds the same logger objects across imports.
-_HANDLER_MARKER = "_app_logging_v1"
-
 
 def _has_marked_handler(logger: logging.Logger) -> bool:
-    return any(getattr(h, _HANDLER_MARKER, False) for h in logger.handlers)
+    return any(getattr(h, LOG_HANDLER_MARKER, False) for h in logger.handlers)
 
 
 def _mark(handler: logging.Handler) -> logging.Handler:
-    setattr(handler, _HANDLER_MARKER, True)
+    setattr(handler, LOG_HANDLER_MARKER, True)
     return handler
 
 
@@ -63,7 +54,7 @@ def setup_logging(level: int = logging.INFO):
     root.setLevel(level)
 
     LOGS_DIR.mkdir(exist_ok=True)
-    formatter = logging.Formatter(FMT, datefmt=DATE_FMT)
+    formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
 
     # Console handler (WARNING+ only to avoid cluttering Streamlit)
     console = logging.StreamHandler(sys.stderr)
@@ -72,13 +63,15 @@ def setup_logging(level: int = logging.INFO):
     root.addHandler(_mark(console))
 
     # app.log — catches everything
-    app_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["app"], maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT)
+    app_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["app"], maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT)
     app_handler.setLevel(level)
     app_handler.setFormatter(formatter)
     root.addHandler(_mark(app_handler))
 
     # data.log — data fetchers and store
-    data_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["data"], maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT)
+    data_handler = RotatingFileHandler(
+        LOGS_DIR / LOG_FILES["data"], maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT
+    )
     data_handler.setLevel(logging.DEBUG)
     data_handler.setFormatter(formatter)
     for namespace in ("data.fetchers", "data.store"):
@@ -97,7 +90,7 @@ def setup_logging(level: int = logging.INFO):
             ns_logger.addHandler(_mark(data_handler))
 
     # ui.log — UI components and views
-    ui_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["ui"], maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT)
+    ui_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["ui"], maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT)
     ui_handler.setLevel(logging.DEBUG)
     ui_handler.setFormatter(formatter)
     ui_logger = logging.getLogger("ui")
@@ -105,7 +98,9 @@ def setup_logging(level: int = logging.INFO):
         ui_logger.addHandler(_mark(ui_handler))
 
     # perf.log — startup/page timing from core.timing.timed()
-    perf_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["perf"], maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT)
+    perf_handler = RotatingFileHandler(
+        LOGS_DIR / LOG_FILES["perf"], maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT
+    )
     perf_handler.setLevel(logging.DEBUG)
     perf_handler.setFormatter(formatter)
     perf_logger = logging.getLogger("perf")

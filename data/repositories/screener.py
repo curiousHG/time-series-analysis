@@ -21,10 +21,7 @@ from sqlalchemy.orm import aliased
 from core.database import get_session
 from core.models import AmfiScheme, MfAmc, MfCategory, MfMetadata, MfRegistry, MfSchemeMetrics
 from core.timing import timeit
-
-# Every column on `mf_scheme_metrics` except the join key. Pulled off the table at
-# import time so adding a new metric column to the model auto-flows into the screener.
-_METRIC_COLS = [c for c in MfSchemeMetrics.__table__.columns if c.name != "scheme_code"]
+from data.constants import METRIC_COLS
 
 
 @timeit("screener.load_screener_view")
@@ -59,7 +56,7 @@ def load_screener_view() -> pl.DataFrame:
             MfRegistry.nav_status,
             MfRegistry.holdings_status,
             MfRegistry.metadata_status,
-            *_METRIC_COLS,
+            *METRIC_COLS,
         )
         .select_from(AmfiScheme)
         .join(MfAmc, AmfiScheme.fund_house_id == MfAmc.id, isouter=True)

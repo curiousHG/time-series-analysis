@@ -20,13 +20,9 @@ from core.timing import timed, timeit
 from data.repositories.scheme_metrics import clear_metrics, find_stale_schemes, load_metrics, upsert_metrics
 from data.repositories.stock import ensure_stock_data, refresh_stock_to_today
 from mutual_funds.display import make_slug  # noqa: F401 — back-compat re-export for callers
+from services.constants import RF_DAILY, TRADING_DAYS
 
 logger = logging.getLogger("services.mf_metrics")
-
-# Conservative annual risk-free rate; quantstats expects daily.
-RISK_FREE_ANNUAL = 0.06
-RF_DAILY = RISK_FREE_ANNUAL / 252
-TRADING_DAYS = 252
 
 
 # Per-scheme NAV is fetched on every metrics call; threshold raised so only the truly
@@ -178,7 +174,7 @@ def compute_metrics_for_scheme(
 ) -> dict | None:
     """Return a metrics dict, or None if there isn't enough history (< ~1Y).
 
-    Output keys mirror data/repositories/scheme_metrics._METRIC_FIELDS plus `scheme_name`.
+    Output keys mirror data.constants.METRIC_FIELDS plus `scheme_name`.
     Pass `benchmark_returns` (e.g. Nifty 50 daily returns) to populate alpha/beta/r2/
     tracking-error fields; without it those columns are NaN.
 

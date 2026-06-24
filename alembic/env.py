@@ -7,7 +7,7 @@ from sqlmodel import SQLModel
 
 import core.models  # noqa: F401  registers SQLModel tables
 from alembic import context
-from core.database import DATABASE_URL
+from core.constants import DATABASE_URL
 
 config = context.config
 

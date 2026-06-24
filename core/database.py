@@ -1,15 +1,13 @@
 """SQLModel engine and session factory."""
 
 import logging
-import os
 
 from sqlmodel import Session, SQLModel, create_engine
 
+from core.constants import DATABASE_URL
 from core.timing import timed
 
 logger = logging.getLogger("data.store.database")
-
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://harshit@localhost:5432/trading")
 
 engine = create_engine(DATABASE_URL, pool_size=5, max_overflow=2, echo=False)
 

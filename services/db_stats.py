@@ -2,9 +2,8 @@
 
 from dataclasses import dataclass
 
-from sqlalchemy import text
-
 from core.database import engine
+from services.constants import DB_SQL, TABLES_SQL
 
 
 @dataclass
@@ -24,31 +23,10 @@ class DbStats:
     tables: list[TableStat]
 
 
-_TABLES_SQL = text("""
-    SELECT
-        c.relname AS name,
-        COALESCE(s.n_live_tup, 0) AS rows,
-        pg_total_relation_size(c.oid) AS total_bytes,
-        pg_size_pretty(pg_total_relation_size(c.oid)) AS total_pretty
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
-    WHERE c.relkind = 'r' AND n.nspname = 'public'
-    ORDER BY total_bytes DESC
-""")
-
-_DB_SQL = text("""
-    SELECT
-        current_database() AS db,
-        pg_database_size(current_database()) AS bytes,
-        pg_size_pretty(pg_database_size(current_database())) AS pretty
-""")
-
-
 def get_db_stats() -> DbStats:
     with engine.connect() as conn:
-        db_row = conn.execute(_DB_SQL).one()
-        table_rows = conn.execute(_TABLES_SQL).all()
+        db_row = conn.execute(DB_SQL).one()
+        table_rows = conn.execute(TABLES_SQL).all()
 
     tables = [
         TableStat(
