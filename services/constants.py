@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from sqlalchemy import text
+
+# String-flag vocabularies used across the services layer.
+BackfillSource = Literal["nav", "metadata", "holdings"]
+SourceStatus = Literal["available", "pending", "unavailable"]
+FreshnessStatus = Literal["fresh", "stale", "missing"]
+FetchOutcome = Literal["updated", "skipped", "failed"]
 
 # Annual risk-free rate used by the strategy backtest (Indian markets).
 BACKTEST_RISK_FREE = 0.065

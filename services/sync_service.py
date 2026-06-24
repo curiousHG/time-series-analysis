@@ -12,14 +12,13 @@ import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Literal
 
 import polars as pl
 
 from data.repositories.holdings import fetch_holdings_frames, replace_holdings_atomic
 from data.repositories.nav import fetch_single_nav, last_nav_date_by_name, save_nav_df
 from mutual_funds.display import make_slug
-from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS
+from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS, FetchOutcome
 
 logger = logging.getLogger("services.sync")
 
@@ -34,7 +33,7 @@ class FetchEvent:
     done: int  # 1-indexed completed count across the run
     total: int
     scheme_name: str
-    outcome: Literal["updated", "skipped", "failed"]
+    outcome: FetchOutcome
     detail: str  # human-readable one-liner (new rows / up-to-date / error)
 
 
@@ -91,7 +90,7 @@ def update_nav_incremental(
         for future in as_completed(future_to_name):
             name = future_to_name[future]
             done += 1
-            outcome: Literal["updated", "skipped", "failed"]
+            outcome: FetchOutcome
             detail: str
 
             try:
@@ -156,7 +155,7 @@ def refresh_holdings_for_schemes(
         for future in as_completed(future_to_pair):
             name, _slug = future_to_pair[future]
             done += 1
-            outcome: Literal["updated", "skipped", "failed"]
+            outcome: FetchOutcome
             detail: str
 
             try:

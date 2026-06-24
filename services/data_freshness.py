@@ -12,9 +12,7 @@ from core.database import get_session
 from core.models import AmfiScheme, MfHolding, MfNav
 from data.repositories.holdings import _slug_to_code_map_cached
 from mutual_funds.display import make_slug
-from services.constants import HOLDINGS_STALE_DAYS, NAV_STALE_BUSINESS_DAYS
-
-Status = Literal["fresh", "stale", "missing"]
+from services.constants import HOLDINGS_STALE_DAYS, NAV_STALE_BUSINESS_DAYS, FreshnessStatus
 
 
 @dataclass
@@ -24,7 +22,7 @@ class FreshnessRow:
     last_date: date | None
     days_old: int | None
     business_days_old: int | None
-    status: Status
+    status: FreshnessStatus
 
 
 @dataclass
@@ -79,7 +77,7 @@ def _build_report(
         bdays = _busdays_between(last, current_date) if use_business_days else None
         compare = bdays if use_business_days else days
         is_stale = compare > threshold_days
-        status: Status = "stale" if is_stale else "fresh"
+        status: FreshnessStatus = "stale" if is_stale else "fresh"
 
         rows.append(
             FreshnessRow(

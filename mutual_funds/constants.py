@@ -1,8 +1,13 @@
-"""Mutual-funds package constants: scheme-name parsing patterns, label column, ISIN regex."""
+"""Mutual-funds package constants: plan/option vocab, parsing patterns, label column, ISIN regex."""
 
 from __future__ import annotations
 
 import re
+from typing import Literal
+
+# Scheme plan + payout-option vocabularies (returned by detect_plan / detect_option).
+Plan = Literal["Direct", "Regular"]
+FundOption = Literal["Growth", "IDCW", "Bonus", "ETF", "Other"]
 
 # Column preferred for chart/cluster labels (mutual_funds.correlation_analytics).
 LABEL_COL = "shortName"

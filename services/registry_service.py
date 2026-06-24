@@ -38,6 +38,7 @@ from data.repositories.metadata import load_metadata
 from data.repositories.nav import fetch_single_nav, save_nav_df
 from data.repositories.scheme_codes import resolve_or_mint_code
 from mutual_funds.display import make_slug, short_scheme_name
+from services.constants import BackfillSource, SourceStatus
 
 logger = logging.getLogger("services.registry_service")
 
@@ -136,7 +137,7 @@ def _upsert_registry(scheme_name: str, scheme_code: int | None = None) -> int:
 # ---- Fetchers wired to status updates ----
 
 
-def _fetch_nav(scheme_name: str) -> str:
+def _fetch_nav(scheme_name: str) -> SourceStatus:
     try:
         df = fetch_single_nav(scheme_name)
         if df.height == 0:
@@ -148,7 +149,7 @@ def _fetch_nav(scheme_name: str) -> str:
         return "unavailable"
 
 
-def _fetch_holdings(scheme_name: str) -> str:
+def _fetch_holdings(scheme_name: str) -> SourceStatus:
     slug = make_slug(scheme_name)
     try:
         h, s, a = fetch_holdings_frames(slug)
@@ -163,7 +164,7 @@ def _fetch_holdings(scheme_name: str) -> str:
         return "unavailable"
 
 
-def _fetch_metadata(scheme_name: str) -> str:
+def _fetch_metadata(scheme_name: str) -> SourceStatus:
     try:
         meta = fetch_metadata_and_save(scheme_name)
         if not meta or not any(meta.get(k) for k in ("aum_crores", "expense_ratio", "benchmark", "launch_date")):
@@ -177,7 +178,7 @@ def _fetch_metadata(scheme_name: str) -> str:
 # ---- Public API ----
 
 
-def retry_unavailable(scheme_name: str) -> dict[str, str]:
+def retry_unavailable(scheme_name: str) -> dict[str, SourceStatus]:
     """Retry only the sources currently marked 'unavailable' for a fund."""
     code = _resolve_scheme_code(scheme_name)
     if code is None:
@@ -192,7 +193,7 @@ def retry_unavailable(scheme_name: str) -> dict[str, str]:
             "metadata_status": row.metadata_status,
         }
 
-    results: dict[str, str] = {}
+    results: dict[str, SourceStatus] = {}
     if targets["nav_status"] == "unavailable":
         results["nav_status"] = _fetch_nav(scheme_name)
     if targets["holdings_status"] == "unavailable":
@@ -208,7 +209,7 @@ def retry_unavailable(scheme_name: str) -> dict[str, str]:
 def backfill_missing(
     *,
     scheme_names: list[str] | None = None,
-    sources: tuple[str, ...] = ("nav", "metadata"),
+    sources: tuple[BackfillSource, ...] = ("nav", "metadata"),
     max_per_run: int = 50,
     submit_delay: float = 0.05,
     max_workers: int = 8,

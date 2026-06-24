@@ -13,6 +13,8 @@ from mutual_funds.constants import (
     IDCW_RE,
     NOISE_PATTERNS,
     REGULAR_RE,
+    FundOption,
+    Plan,
 )
 
 
@@ -41,7 +43,7 @@ def make_slug(name: str) -> str:
     return "-".join(c.strip("-") for c in name.replace("(", " ").replace(")", " ").split() if c and c != "-").lower()
 
 
-def detect_plan(name: str) -> str | None:
+def detect_plan(name: str) -> Plan | None:
     """Return 'Direct', 'Regular', or None (for funds without that distinction — older schemes,
     ETFs, etc.)."""
     if not name:
@@ -53,7 +55,7 @@ def detect_plan(name: str) -> str | None:
     return None
 
 
-def detect_option(name: str) -> str:
+def detect_option(name: str) -> FundOption:
     """Return one of 'Growth', 'IDCW', 'Bonus', 'ETF', 'Other'.
 
     Never None — every fund gets a category so the filter UI has full coverage.
