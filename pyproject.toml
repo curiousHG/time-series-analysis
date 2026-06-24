@@ -34,7 +34,7 @@ dev = [
     "ruff>=0.14.10",
     "pre-commit>=4.0",   # runs ruff + hygiene hooks on every commit
     "vulture>=2.14",     # finds dead code (unused funcs/classes/vars)
-    "pyrefly>=0.16",     # type checker (config already in [tool.pyrefly])
+    "basedpyright>=1.31", # type checker (config in [tool.basedpyright])
 ]
 
 [tool.setuptools.packages.find]
@@ -99,9 +99,25 @@ paths = ["core", "data", "services", "ui", "mutual_funds", "indicators"]
 exclude = ["notebooks/", "*/__pycache__/"]
 # Run: uv run vulture  (reports unused functions/classes/vars at >=80% confidence)
 
-[tool.pyrefly]
-project_root = "."
-search_path = ["."]
+[tool.basedpyright]
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+include = ["core", "services", "data", "ui", "indicators", "strategies", "mutual_funds", "main.py"]
+exclude = ["notebooks", ".venv", "**/__pycache__", "scripts", "tests", "alembic"]
+reportMissingTypeStubs = false
+# The scientific stack (pandas/polars/numpy/TA-Lib/vectorbt/st_aggrid) and SQLModel/SQLAlchemy
+# type their returns as broad unions / ship over-broad stubs, so these rules fire almost
+# entirely on library-boundary friction (Series↔ndarray args, union returns, ORM overload
+# mismatches) rather than real bugs — and that's true in both basic and standard mode.
+# Silenced to keep the high-signal rules loud: None access (reportOptional*), undefined
+# names, missing imports, redeclarations, index issues, etc. all stay errors.
+reportAssignmentType = "none"
+reportArgumentType = "none"
+reportAttributeAccessIssue = "none"
+reportCallIssue = "none"
+reportReturnType = "none"
 
 [tool.uv]
 

@@ -106,7 +106,7 @@ loading of `ui.app` was verified; live UI was not.
 - Knowledge graph: `graphify-out/GRAPH_REPORT.md` (god nodes + communities);
   `graphify query "<question>"` for cross-module questions. Run `graphify update .` after
   code changes.
-- Dev tooling already configured: ruff rules + `vulture` + `pyrefly` in `pyproject.toml`;
+- Dev tooling already configured: ruff rules + `vulture` + `basedpyright` in `pyproject.toml`;
   `.pre-commit-config.yaml`. Adopt with `uv sync && uv run pre-commit install`.
 
 ### Verification commands

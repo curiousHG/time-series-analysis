@@ -611,8 +611,8 @@ with tab_about:
                 ("Source URL", meta.get("sourceUrl") or "—"),
                 (
                     "Metadata Fetched At",
-                    meta.get("fetchedAt").strftime("%Y-%m-%d %H:%M")
-                    if isinstance(meta.get("fetchedAt"), datetime)
+                    fetched.strftime("%Y-%m-%d %H:%M")
+                    if isinstance(fetched := meta.get("fetchedAt"), datetime)
                     else "—",
                 ),
             ]

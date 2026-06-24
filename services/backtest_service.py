@@ -52,7 +52,7 @@ def run_backtest(
 
     portfolio = vbt.Portfolio.from_signals(**pf_kwargs)
     returns = portfolio.returns()
-    trades = portfolio.trades.records_readable
+    trades = portfolio.trades.records_readable  # pyright: ignore[reportFunctionMemberAccess]  # vectorbt dynamic attr
 
     result = BacktestResult(
         portfolio=portfolio,
@@ -63,7 +63,7 @@ def run_backtest(
         trades=trades,
     )
 
-    if not returns.empty and len(returns) >= 2 and portfolio.trades.count() > 0:
+    if not returns.empty and len(returns) >= 2 and portfolio.trades.count() > 0:  # pyright: ignore[reportFunctionMemberAccess]  # vectorbt dynamic attr
         result.metrics = compute_metrics(returns, trades)
 
     return result

@@ -9,6 +9,15 @@ repos:
       - id: ruff-format   # format
         args: [--exclude, notebooks/]
 
+  - repo: local
+    hooks:
+      - id: basedpyright       # type check (config in [tool.basedpyright])
+        name: basedpyright
+        entry: uv run basedpyright
+        language: system
+        types: [python]
+        pass_filenames: false
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

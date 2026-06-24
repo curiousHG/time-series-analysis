@@ -75,7 +75,7 @@ def _build_report(
 
         days = (current_date - last).days
         bdays = _busdays_between(last, current_date) if use_business_days else None
-        compare = bdays if use_business_days else days
+        compare = bdays if bdays is not None else days
         is_stale = compare > threshold_days
         status: FreshnessStatus = "stale" if is_stale else "fresh"
 

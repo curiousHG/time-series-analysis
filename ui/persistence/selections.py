@@ -1,6 +1,7 @@
 """File-based persistence for user selections (replaces flaky cookie layer)."""
 
 import json
+from typing import Any
 
 from ui.constants import SELECTIONS_PATH
 
@@ -19,7 +20,8 @@ def _save_all(data: dict):
     SELECTIONS_PATH.write_text(json.dumps(data, indent=2))
 
 
-def load_selection(key: str, default=None):
+def load_selection(key: str, default: Any = None) -> Any:
+    """Return the stored value for `key` (arbitrary JSON), or `default`."""
     return _load_all().get(key, default)
 
 

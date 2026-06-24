@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import polars as pl
 import quantstats as qs
-from sqlmodel import select
+from sqlmodel import col, select
 
 from core.database import get_session
 from core.models import AmfiScheme, MfHolding, MfNav
@@ -125,7 +125,7 @@ def _holdings_composition(scheme_name: str) -> dict[str, float]:
         rows = session.exec(
             select(MfHolding.weight, MfHolding.asset_class, MfHolding.portfolio_date)
             .where(MfHolding.scheme_code == code)
-            .order_by(MfHolding.portfolio_date.desc(), MfHolding.weight.desc())
+            .order_by(col(MfHolding.portfolio_date).desc(), col(MfHolding.weight).desc())
         ).all()
     if not rows:
         return nan
