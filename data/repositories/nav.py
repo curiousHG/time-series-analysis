@@ -102,7 +102,6 @@ def save_nav_df(df: pl.DataFrame) -> None:
     logger.info("Saved %d NAV rows to database", df.height)
 
 
-@timeit("nav.load_nav_df")
 def load_nav_df(scheme_names: list[str] | None = None) -> pl.DataFrame:
     """Load NAV data; output schema unchanged (date, nav, schemeName).
 

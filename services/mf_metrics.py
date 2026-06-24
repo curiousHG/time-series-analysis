@@ -25,9 +25,6 @@ from services.constants import RF_DAILY, TRADING_DAYS
 logger = logging.getLogger("services.mf_metrics")
 
 
-# Per-scheme NAV is fetched on every metrics call; threshold raised so only the truly
-# slow ones (large NAV histories) make it to INFO and the rest stay at DEBUG.
-@timeit("mf_metrics.nav_series", slow_threshold_ms=50)
 def nav_series(scheme_name: str) -> pd.Series:
     """Return the daily NAV series for a scheme as a date-indexed pd.Series (empty if none).
 
@@ -513,7 +510,6 @@ def recompute_stale_metrics(*, max_workers: int = 4) -> int:
     return recompute_metrics(stale, max_workers=max_workers)
 
 
-@timeit("mf_metrics.load_cached")
 def load_cached_metrics(scheme_names: list[str] | None = None) -> pl.DataFrame:
     """Read pre-computed metrics from mf_scheme_metrics — single SELECT, no quantstats."""
     return load_metrics(scheme_names)

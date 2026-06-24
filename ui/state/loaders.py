@@ -21,13 +21,12 @@ from mutual_funds.display import short_scheme_name
 from mutual_funds.tradebook import normalize_transactions
 from services.screener_service import build_screener_df
 
-# Instrumentation note: @st.cache_data is the outermost decorator on every loader so cache
-# hits return without entering @timeit. Anything that lands in logs/perf.log here is a real
-# cache miss — i.e. work that actually ran.
+# Instrumentation note: only the heavy loaders carry @timeit (screener / metrics / stock
+# bulk loads). @st.cache_data is the outermost decorator, so cache hits skip @timeit and
+# anything in logs/perf.log is a real cache miss — work that actually ran.
 
 
 @st.cache_data(show_spinner=False)
-@timeit("loaders.load_txn_data")
 def load_txn_data() -> pl.DataFrame | None:
     tradebook = load_tradebook_from_db()
     if tradebook.is_empty():
@@ -36,19 +35,16 @@ def load_txn_data() -> pl.DataFrame | None:
 
 
 @st.cache_data(show_spinner="Loading NAV data...", ttl=3600)
-@timeit("loaders.load_nav_data")
 def load_nav_data(scheme_names: list[str]) -> pl.DataFrame:
     return ensure_nav_data(scheme_names)
 
 
 @st.cache_data(show_spinner="Loading holdings data...", ttl=3600)
-@timeit("loaders.load_holdings_data")
 def load_holdings_data(scheme_slugs: list[str]):
     return ensure_holdings_data(scheme_slugs)
 
 
 @st.cache_data(ttl=3600, show_spinner="Loading benchmark…")
-@timeit("loaders.load_benchmark_returns")
 def load_benchmark_returns(symbol: str, start: datetime, end: datetime) -> pd.Series:
     """Daily percent-change series for a benchmark `symbol`.
 
@@ -98,20 +94,17 @@ def load_stock_open_close(
 
 
 @st.cache_data(ttl=24 * 3600)
-@timeit("loaders.cached_search_amfi")
 def cached_search(query: str) -> pl.DataFrame:
     """Fuzzy-search AMFI schemes by name. Returns a DataFrame with schemeName + metadata."""
     return search_amfi(query)
 
 
 @st.cache_data(ttl=900, show_spinner=False)
-@timeit("loaders.load_metadata_cached")
 def load_metadata_cached(scheme_names: tuple[str, ...]) -> pl.DataFrame:
     return load_metadata(list(scheme_names))
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-@timeit("loaders.get_short_names")
 def get_short_names(scheme_names: tuple[str, ...]) -> dict[str, str]:
     return {n: short_scheme_name(n) for n in scheme_names}
 
@@ -142,7 +135,6 @@ def load_metrics_cached() -> pl.DataFrame:
 
 
 @st.cache_data(ttl=24 * 3600)
-@timeit("loaders.cached_search_stock")
 def cached_search_stock(query: str) -> pd.DataFrame:
     return search_stock_symbols(query)
 

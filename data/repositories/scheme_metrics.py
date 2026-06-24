@@ -28,7 +28,6 @@ from data.repositories.scheme_codes import resolve_codes_with_synthetic
 logger = logging.getLogger("data.repositories.scheme_metrics")
 
 
-@timeit("scheme_metrics.load")
 def load_metrics(scheme_names: list[str] | None = None) -> pl.DataFrame:
     """Return cached metrics for the given schemes (or all). Output schema unchanged —
     `scheme_name` projected via the JOIN to `amfi_schemes`.
@@ -90,7 +89,6 @@ def upsert_metrics(rows: list[dict[str, Any]]) -> int:
     return len(payload)
 
 
-@timeit("scheme_metrics.find_stale")
 def find_stale_schemes() -> list[str]:
     """Return scheme_names whose cached metric is older than the latest NAV.
 
