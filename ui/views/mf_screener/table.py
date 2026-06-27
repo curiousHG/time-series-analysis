@@ -8,7 +8,14 @@ from typing import Any
 import pandas as pd
 import polars as pl
 import streamlit as st
-from st_aggrid import AgGrid, GridOptionsBuilder
+from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
+
+# Re-flow columns to fill the grid width on first render AND whenever the grid resizes (e.g.
+# the browser window widens) — otherwise AG Grid leaves columns at fixed widths and a wider
+# window just shows empty space on the right. sizeColumnsToFit respects each column's
+# min/max width, so when many metrics are shown they stay readable and overflow to a
+# horizontal scroll instead of being crushed.
+_FIT_COLUMNS = JsCode("function(params) { params.api.sizeColumnsToFit(); }")
 
 from mutual_funds.metric_catalog import (
     DISPLAY_COL_ORDER,
@@ -101,6 +108,8 @@ def _build_grid_options(pdf: pd.DataFrame):
         ensureDomOrder=True,  # Cmd/Ctrl+C honours visual order, not insertion order
         suppressCopyRowsToClipboard=False,
         copyHeadersToClipboard=True,  # include column names in the clipboard payload
+        onGridSizeChanged=_FIT_COLUMNS,  # re-fit columns to width when the window/grid resizes
+        onFirstDataRendered=_FIT_COLUMNS,  # ...and once on initial render
     )
 
     grid_options = gob.build()
@@ -143,7 +152,7 @@ def render_table(
         gridOptions=grid_options,
         height=650,
         theme=aggrid_theme,
-        allow_unsafe_jscode=False,
+        allow_unsafe_jscode=True,  # required for the sizeColumnsToFit resize callbacks above
         # `cellClicked` lets `render_open_action` open a fund straight from a single
         # click on its Scheme cell. The other three keep the selection-echo / filter /
         # sort sections in sync with the grid (they're the library defaults minus
