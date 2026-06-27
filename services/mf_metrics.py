@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import logging
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -168,30 +169,41 @@ def compute_metrics_for_scheme(
     Skips funds with corrupt NAV (|daily return| > 100% — wound-up debt funds, side-pockets where MFAPI
     reports cumulative payouts) that would otherwise yield millions-of-percent volatility.
     """
+    # Non-investable schemes never get metrics — their "returns" are real but meaningless to
+    # screen: segregated portfolios are tiny distressed-debt recovery units (±100s of % swings),
+    # and defunct/wound-up funds (NAV stale > ~9 months) only have stale, extinguished history.
+    if "segregated" in scheme_name.lower():
+        return None
+
     nav = nav_series(scheme_name)
     if len(nav) < TRADING_DAYS:
+        return None
+    if (datetime.date.today() - nav.index[-1].date()).days > 270:
         return None
 
     returns = nav.pct_change().dropna()
     if returns.empty:
         return None
 
-    # Sanity gate: real fund NAVs don't move >100% in a day. If we see one, the upstream
-    # data is wrong (post-winding-up cumulative payouts, NAV-scale changes mid-series, etc.)
-    # and every downstream stat will be garbage. Skip the row entirely.
+    # Sanity gate: real fund NAVs don't move >100% in a day. An isolated >100% move is upstream
+    # corruption (NAV-scale change, post-winding-up payout, a bad print). Drop just those
+    # return-day(s) so one bad point doesn't poison vol/alpha — but KEEP the fund; its real
+    # history is still usable. (Previously the whole fund was discarded, wrongly skipping ~370
+    # funds over a single ancient bad day.) The source NAV is cleaned for good by
+    # data.repositories.nav.repair_nav_glitches; this is the in-compute safety net.
     _CORRUPT_CUTOFF = 1.0
     bad = returns[returns.abs() > _CORRUPT_CUTOFF]
     if not bad.empty:
-        worst_date = bad.abs().idxmax().date()
-        worst_return = float(bad.loc[bad.abs().idxmax()])
-        logger.warning(
-            "Skipping '%s' — %d corrupt NAV day(s); worst on %s (%.0f%% single-day move)",
+        logger.info(
+            "'%s': dropping %d corrupt NAV return-day(s); worst %.0f%% on %s",
             scheme_name,
             len(bad),
-            worst_date,
-            worst_return * 100,
+            float(bad.loc[bad.abs().idxmax()]) * 100,
+            bad.abs().idxmax().date(),
         )
-        return None
+        returns = returns.drop(bad.index)
+        if len(returns) < TRADING_DAYS:
+            return None
 
     last_year = returns.iloc[-TRADING_DAYS:]
 
