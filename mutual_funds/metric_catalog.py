@@ -118,7 +118,7 @@ METRIC_GROUPS: dict[str, tuple[str, ...]] = {
         "Roll 5Y Max %",
     ),
     "Risk-adjusted ratios": ("1Y Vol %", "1Y Downside Vol %", "Sharpe", "Sortino", "Calmar", "Gain/Pain"),
-    "CAPM vs Nifty 50": ("Alpha (1Y) %", "Beta (1Y)", "R² (1Y)", "Tracking Error %"),
+    "CAPM vs category benchmark": ("Alpha (1Y) %", "Beta (1Y)", "R² (1Y)", "Tracking Error %"),
     "Drawdown": ("Max DD 1Y %", "Max DD All %", "% from ATH"),
     "Distribution stats": (
         "Win Rate %",
@@ -237,14 +237,19 @@ RISK_AXIS_OPTIONS: dict[str, tuple[str, str, bool]] = {
 # Y axes — return measures. Some are derived rather than direct cache reads (excess return
 # subtracts the risk-free rate, IR numerator subtracts Nifty 50's CAGR). The concrete
 # derivation lives in services.screener_service.resolve_return_axis.
+# NOTE: alpha_1y is the CAPM intercept vs *each fund's category benchmark* (Large Cap → Nifty
+# 100, Mid Cap → Nifty Midcap 150, …; see services.benchmarks.SUBCATEGORY_BENCHMARK), NOT a
+# single index. The IR-numerator is the one axis still measured against Nifty 50 (it needs a
+# single per-fund benchmark CAGR we don't cache), hence its label keeps the Nifty 50 wording.
 RETURN_AXIS_OPTIONS: dict[str, str] = {
     "excess_return_1y": "Annualised Geometric Excess Return (vs RF)",
-    "alpha_1y": "Jensen's Alpha (vs Nifty 50)",
+    "alpha_1y": "Jensen's Alpha (vs category benchmark)",
     "ir_numerator_1y": "Information Ratio numerator (active return vs Nifty 50)",
 }
 
-# Anything keyed off Nifty 50 — the screener surfaces a benchmark caveat caption when any
-# of these axes are picked.
+# Benchmark-relative measures — the screener surfaces a benchmark caveat caption when any of
+# these axes/columns are picked. All but ir_numerator_1y are computed against each fund's
+# category benchmark; ir_numerator_1y still uses Nifty 50.
 BENCHMARK_DEPENDENT: frozenset[str] = frozenset(
     {"alpha_1y", "beta_1y", "tracking_error_1y", "r2_1y", "ir_numerator_1y"}
 )
