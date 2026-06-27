@@ -22,7 +22,11 @@ df = load_stock_open_close(
     pd.Timestamp.today(),
 )
 symbols = df.select("Symbol").unique().to_series().to_list()
-symbol = st.selectbox("Select stock", symbols)
+# Drop a stale pre-selection (e.g. from a screener click whose OHLCV didn't load) so the
+# keyed selectbox never gets a value outside its options.
+if st.session_state.get("stock_analysis_symbol") not in symbols:
+    st.session_state.pop("stock_analysis_symbol", None)
+symbol = st.selectbox("Select stock", symbols, key="stock_analysis_symbol")
 
 if symbol:
     sdf = (

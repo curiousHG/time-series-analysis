@@ -9,9 +9,55 @@ from sqlmodel import col, select
 from core.database import get_session
 from core.models import StockOhlcv, StockRegistry
 from data.constants import EMPTY_OHLCV, MIN_FETCH_DAYS
-from data.fetchers.stock import fetch_symbol_data, fetch_symbol_data_jugaad, query_stocks
+from data.fetchers.stock import (
+    fetch_nse_equity_list,
+    fetch_nse_index,
+    fetch_symbol_data,
+    fetch_symbol_data_jugaad,
+    query_stocks,
+)
 
 logger = logging.getLogger("data.store.stock")
+
+# Negative cache for symbols that returned zero rows. Without this, a symbol yfinance can
+# never serve (e.g. the NIFTY_MIDCAP_150.NS index benchmark) keeps `_get_date_range`
+# returning None, so ensure_stock_data re-runs a slow doomed fetch on every call/rerun —
+# which hangs pages like MF Analysis. In-process, short TTL so transient outages still retry.
+_EMPTY_FETCH_TTL = timedelta(hours=1)
+_empty_fetch_cache: dict[str, datetime] = {}
+
+
+def sync_nse_universe() -> int:
+    """Upsert the NSE equity master into stock_registry. Returns the row count."""
+    rows = fetch_nse_equity_list()
+    if not rows:
+        return 0
+    payload = [
+        {
+            "symbol": r["symbol"],
+            "stock_name": r["name"],
+            "isin": r["isin"],
+            "series": r["series"],
+            "exchange": "NSE",
+        }
+        for r in rows
+        if r["symbol"]
+    ]
+    with get_session() as session:
+        stmt = pg_insert(StockRegistry).values(payload)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["symbol"],
+            set_={
+                "stock_name": stmt.excluded.stock_name,
+                "isin": stmt.excluded.isin,
+                "series": stmt.excluded.series,
+                "exchange": stmt.excluded.exchange,
+            },
+        )
+        session.exec(stmt)
+        session.commit()
+    logger.info("synced %d NSE symbols into stock_registry", len(payload))
+    return len(payload)
 
 
 def _to_date(d: datetime | date) -> date:
@@ -19,7 +65,17 @@ def _to_date(d: datetime | date) -> date:
 
 
 def _fetch_and_save(symbol: str, start: date, end: date) -> None:
-    """Fetch stock data from external sources and upsert into DB."""
+    """Fetch stock data from external sources and upsert into DB.
+
+    Routing: "NIFTY …" index names → niftyindices.com (yfinance lacks Smallcap 250 / Midcap 150);
+    `.NS` symbols → jugaad-data first, then yfinance; everything else → yfinance.
+    """
+    if symbol.startswith("NIFTY "):
+        data = fetch_nse_index(symbol, start, end)
+        if data is not None and not data.empty:
+            _upsert_ohlcv(symbol, pl.from_pandas(data.reset_index()))
+        return
+
     if symbol.endswith(".NS"):
         data = fetch_symbol_data_jugaad(symbol, start, end)
         if data is not None and not data.empty:
@@ -115,7 +171,15 @@ def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: dateti
     existing = _get_date_range(symbol)
 
     if existing is None:
+        last_empty = _empty_fetch_cache.get(symbol)
+        if last_empty is not None and datetime.now() - last_empty < _EMPTY_FETCH_TTL:
+            return EMPTY_OHLCV.clone()  # known-empty (e.g. unfetchable index) — don't re-hammer
         _fetch_and_save(symbol, start, end)
+        if _get_date_range(symbol) is None:
+            _empty_fetch_cache[symbol] = datetime.now()
+            logger.info("no OHLCV for %s — negative-caching for %s", symbol, _EMPTY_FETCH_TTL)
+        else:
+            _empty_fetch_cache.pop(symbol, None)
     else:
         db_min, db_max = existing
         if start < db_min and (db_min - start).days >= MIN_FETCH_DAYS:

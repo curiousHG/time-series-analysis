@@ -127,6 +127,15 @@ def cached_search_stock(query: str) -> pd.DataFrame:
     return search_stock_symbols(query)
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+@timeit("loaders.load_stock_screener_df")
+def load_stock_screener_df_cached() -> pl.DataFrame:
+    """Cached wrapper around build_stock_screener_df (registry ⨝ stock_metrics + alpha tag)."""
+    from services.stock_screener_service import build_stock_screener_df  # noqa: PLC0415 — defer heavy import off boot
+
+    return build_stock_screener_df()
+
+
 def get_trade_symbols(trades_df: pl.DataFrame) -> list[str]:
     return trades_df.select(["symbol"]).unique().sort("symbol").to_series().to_list()
 

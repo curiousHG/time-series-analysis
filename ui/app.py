@@ -19,6 +19,7 @@ def run():
             st.Page("ui/views/mutual_fund/page.py", title="Mutual Fund Analysis"),
             st.Page("ui/views/mf_screener/page.py", title="MF Screener", url_path="screener"),
             st.Page("ui/views/stock_analysis/page.py", title="Stock Analysis", url_path="stock"),
+            st.Page("ui/views/stock_screener/page.py", title="Stock Screener", url_path="stock-screener"),
             st.Page("ui/views/settings/page.py", title="Settings", url_path="settings"),
         ]
         pg = st.navigation(pages, position="top")

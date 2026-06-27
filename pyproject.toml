@@ -40,7 +40,7 @@ dev = [
 [tool.setuptools.packages.find]
 include = [
     "core*", "data*", "mutual_funds*", "strategies*", "ui*", "scripts*",
-    "indicators*", "services*",
+    "indicators*", "services*", "stocks*",
 ]
 
 [tool.ruff]
@@ -85,7 +85,7 @@ ban-relative-imports = "all"  # always use absolute imports (core.x, services.y)
 [tool.ruff.lint.isort]
 known-first-party = [
     "core", "data", "mutual_funds", "strategies", "ui",
-    "indicators", "services",
+    "indicators", "services", "stocks",
 ]
 
 [tool.ruff.format]

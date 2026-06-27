@@ -1,9 +1,91 @@
+import json
 import logging
+from datetime import date, datetime, timedelta
+from io import StringIO
 
+import httpx
 import pandas as pd
 import yfinance as yf
 
+from data.constants import (
+    NIFTYINDICES_HEADERS,
+    NIFTYINDICES_HISTORY_URL,
+    NIFTYINDICES_PAGE_URL,
+    NSE_EQUITY_LIST_URL,
+    NSE_HEADERS,
+)
+
 logger = logging.getLogger("data.fetchers.stock")
+
+
+def fetch_nse_index(name: str, start: date, end: date) -> pd.DataFrame | None:
+    """Fetch a Nifty index's OHLC history from niftyindices.com (for indices yfinance lacks).
+
+    `name` is the niftyindices index name, e.g. "NIFTY SMALLCAP 250". Returns a Date-indexed
+    DataFrame (Open/High/Low/Close; Volume is None for indices), or None. Requests are chunked
+    by year — the first full-history fetch is slow, but DB-first caching makes the rest
+    incremental.
+    """
+    raw: list[dict] = []
+    with httpx.Client(timeout=40, follow_redirects=True, headers=NIFTYINDICES_HEADERS) as client:
+        try:
+            client.get(NIFTYINDICES_PAGE_URL)  # prime ASP.NET session cookies
+        except httpx.HTTPError:
+            pass
+        cur = start
+        while cur <= end:
+            chunk_end = min(cur + timedelta(days=364), end)
+            cinfo = json.dumps(
+                {
+                    "name": name,
+                    "startDate": cur.strftime("%d-%b-%Y"),
+                    "endDate": chunk_end.strftime("%d-%b-%Y"),
+                    "indexName": name,
+                }
+            )
+            try:
+                resp = client.post(NIFTYINDICES_HISTORY_URL, json={"cinfo": cinfo})
+                resp.raise_for_status()
+                raw.extend(json.loads(resp.json()["d"]))
+            except (httpx.HTTPError, KeyError, ValueError) as e:
+                logger.warning("niftyindices fetch failed for %s %s..%s: %s", name, cur, chunk_end, e)
+            cur = chunk_end + timedelta(days=1)
+
+    records = []
+    for row in raw:
+        try:
+            records.append(
+                {
+                    "Date": datetime.strptime(row["HistoricalDate"], "%d %b %Y").date(),
+                    "Open": float(str(row["OPEN"]).replace(",", "")),
+                    "High": float(str(row["HIGH"]).replace(",", "")),
+                    "Low": float(str(row["LOW"]).replace(",", "")),
+                    "Close": float(str(row["CLOSE"]).replace(",", "")),
+                    "Volume": None,
+                }
+            )
+        except (KeyError, ValueError):
+            continue
+    if not records:
+        return None
+    return pd.DataFrame(records).drop_duplicates("Date").set_index("Date").sort_index()
+
+
+def fetch_nse_equity_list() -> list[dict]:
+    """Download the NSE equity master (EQUITY_L.csv) → [{symbol, name, isin, series}, ...]."""
+    r = httpx.get(NSE_EQUITY_LIST_URL, headers=NSE_HEADERS, timeout=30, follow_redirects=True)
+    r.raise_for_status()
+    df = pd.read_csv(StringIO(r.text))
+    df.columns = [c.strip() for c in df.columns]
+    return [
+        {
+            "symbol": str(row["SYMBOL"]).strip(),
+            "name": str(row["NAME OF COMPANY"]).strip(),
+            "isin": str(row["ISIN NUMBER"]).strip(),
+            "series": str(row["SERIES"]).strip(),
+        }
+        for _, row in df.iterrows()
+    ]
 
 
 def query_stocks(query: str) -> pd.DataFrame:
