@@ -23,7 +23,7 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
     st.divider()
     st.subheader(f"Risk vs Return — filtered universe ({filtered.height:,} funds)")
 
-    cc1, cc2, cc3, cc4 = st.columns([2, 2, 1, 1])
+    cc1, cc2, cc3, cc4, cc5 = st.columns([2, 2, 1, 1, 1])
     risk_choice = cc1.selectbox(
         "X-axis (risk)",
         options=list(RISK_AXIS_OPTIONS.keys()),
@@ -44,7 +44,14 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
         index=0,
         key="screener_chart_color",
     )
-    show_frontier = cc4.checkbox("Show frontier", value=True, key="screener_chart_frontier")
+    size_mode = cc4.selectbox(
+        "Bubble size",
+        options=("AUM", "Uniform"),
+        index=0,
+        key="screener_chart_size",
+        help="AUM: bubble area scales with fund size (log₁₀, floored at ₹10 Cr). Uniform: all equal.",
+    )
+    show_frontier = cc5.checkbox("Show frontier", value=True, key="screener_chart_frontier")
 
     risk_db_col, risk_label, risk_take_abs = RISK_AXIS_OPTIONS[risk_choice]
     chart_pdf = filtered.to_pandas()
@@ -86,8 +93,8 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
     chart_pdf["__return__"] *= 100
     return_label += " (%)"
 
-    _draw_scatter(chart_pdf, risk_label, return_label, color_mode, show_frontier)
-    _render_captions(risk_db_col, return_choice)
+    _draw_scatter(chart_pdf, risk_label, return_label, color_mode, size_mode, show_frontier)
+    _render_captions(risk_db_col, return_choice, size_mode)
 
 
 def _resolve_return_axis(chart_pdf, return_choice: str) -> tuple[str, str]:
@@ -117,18 +124,20 @@ def _resolve_return_axis(chart_pdf, return_choice: str) -> tuple[str, str]:
     return RETURN_AXIS_OPTIONS[return_choice], return_choice
 
 
-def _draw_scatter(chart_pdf, risk_label: str, return_label: str, color_mode: str, show_frontier: bool) -> None:
+def _draw_scatter(
+    chart_pdf, risk_label: str, return_label: str, color_mode: str, size_mode: str, show_frontier: bool
+) -> None:
     """Render the Plotly scatter with optional efficient-frontier overlay."""
     import numpy as np  # noqa: PLC0415 — heavy viz deps; deferred to chart-render time
     import plotly.express as px  # noqa: PLC0415 — heavy viz deps; deferred to chart-render time
 
-    # Bubble size from AUM (₹ Cr). Floor + log so micro-funds stay visible and mega-funds
-    # don't dominate. NaN AUM → uniform fallback size.
-    if "aum_crores" in chart_pdf.columns:
+    # Bubble size: AUM-scaled (₹ Cr; floor + log so micro-funds stay visible and mega-funds
+    # don't dominate, NaN AUM → floor) or uniform when the user turns sizing off.
+    if size_mode == "AUM" and "aum_crores" in chart_pdf.columns:
         aum = chart_pdf["aum_crores"].fillna(0).clip(lower=10)  # floor at ₹10 Cr
         chart_pdf["__size__"] = np.log10(aum + 1) * 6 + 6
     else:
-        chart_pdf["__size__"] = 10
+        chart_pdf["__size__"] = 12
 
     # Colour channel — Sharpe / Sortino are continuous diverging, Category / Asset class
     # are discrete categorical.
@@ -236,7 +245,7 @@ def _add_efficient_frontier(fig, chart_pdf) -> None:
     )
 
 
-def _render_captions(risk_db_col: str, return_choice: str) -> None:
+def _render_captions(risk_db_col: str, return_choice: str, size_mode: str) -> None:
     """Footer captions: benchmark caveat (when applicable) + bubble-size / frontier note."""
     if return_choice in BENCHMARK_DEPENDENT or risk_db_col in BENCHMARK_DEPENDENT:
         st.caption(
@@ -247,9 +256,13 @@ def _render_captions(risk_db_col: str, return_choice: str) -> None:
             "equity benchmark, so their CAPM stats are blank. The **IR-numerator** axis still "
             "uses Nifty 50. Mapping lives in `services.benchmarks.SUBCATEGORY_BENCHMARK`."
         )
-    st.caption(
+    size_note = (
         "Bubble size = AUM (log₁₀, floored at ₹10 Cr so micro-funds stay visible). "
-        "The dashed gold line is the Pareto / efficient frontier — funds on it offer the "
+        if size_mode == "AUM"
+        else "Bubble size is uniform (AUM scaling off). "
+    )
+    st.caption(
+        size_note + "The dashed gold line is the Pareto / efficient frontier — funds on it offer the "
         "highest return for their risk level relative to the rest of the filtered set "
         "(Markowitz upper-left convex hull)."
     )
