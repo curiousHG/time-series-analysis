@@ -10,11 +10,8 @@ import polars as pl
 import streamlit as st
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
-# Re-flow columns to fill the grid width on first render AND whenever the grid resizes (e.g.
-# the browser window widens) — otherwise AG Grid leaves columns at fixed widths and a wider
-# window just shows empty space on the right. sizeColumnsToFit respects each column's
-# min/max width, so when many metrics are shown they stay readable and overflow to a
-# horizontal scroll instead of being crushed.
+# Re-fit columns to grid width on first render and on resize. Respects each column's
+# min/max, so many metrics overflow to a horizontal scroll instead of being crushed.
 _FIT_COLUMNS = JsCode("function(params) { params.api.sizeColumnsToFit(); }")
 
 from mutual_funds.metric_catalog import (
@@ -33,13 +30,12 @@ def _build_display_pdf(filtered: pl.DataFrame, visible_metrics: list[str]) -> pd
     """Project + rename + percent-scale the screener frame to match the AgGrid display."""
     pdf = filtered.to_pandas()
 
-    # Per-source tracking glyphs (✓ / ✗ / —) so the user can see which datasets are
-    # missing per fund without leaving the screener.
+    # Per-source tracking glyphs (✓ / ✗ / —) for which datasets each fund has.
     pdf["NAV"] = pdf["nav_status"].apply(status_cell) if "nav_status" in pdf.columns else "—"
     pdf["Holdings"] = pdf["holdings_status"].apply(status_cell) if "holdings_status" in pdf.columns else "—"
     pdf["Metadata"] = pdf["metadata_status"].apply(status_cell) if "metadata_status" in pdf.columns else "—"
 
-    # DB-named columns → display names, ordered as in METRIC_RENAME so they don't shuffle.
+    # DB names → display names, ordered as in METRIC_RENAME.
     db_cols_in_order = [c for c in METRIC_RENAME if c in pdf.columns]
     extra_status = [c for c in ("NAV", "Holdings", "Metadata") if c in pdf.columns]
     pdf = pdf[db_cols_in_order + extra_status].rename(columns=METRIC_RENAME)
@@ -48,10 +44,10 @@ def _build_display_pdf(filtered: pl.DataFrame, visible_metrics: list[str]) -> pd
     visible = [c for c in IDENTITY_COLS if c in pdf.columns] + [c for c in visible_metrics if c in pdf.columns]
     pdf = pdf[visible]
 
-    # Re-order to canonical left-to-right so columns don't shuffle as the user toggles.
+    # Canonical left-to-right order so columns don't shuffle as the user toggles.
     pdf = pdf[[c for c in DISPLAY_COL_ORDER if c in pdf.columns]]
 
-    # Percent-scale stored decimal fractions for human-readable cells.
+    # Percent-scale stored decimal fractions.
     for col in METRIC_PCT_COLS:
         if col in pdf.columns:
             pdf[col] = pdf[col] * 100
@@ -67,7 +63,7 @@ def _build_grid_options(pdf: pd.DataFrame):
         sortable=True,
         resizable=True,
         filter=True,
-        floatingFilter=True,  # filter input directly under the column header
+        floatingFilter=True,  # filter input under the column header
         minWidth=80,
     )
     for c in pdf.columns:
@@ -81,18 +77,14 @@ def _build_grid_options(pdf: pd.DataFrame):
         elif c in METRIC_TEXT_COLS:
             gob.configure_column(c, filter="agTextColumnFilter")
 
-    # Multi-row selection (for the copy-to-TSV echo). `use_checkbox=False` keeps the
-    # checkbox OFF the Scheme column — it gets its own dedicated column (injected after
-    # build) so a click on the fund name *only* opens the fund and the checkbox *only*
-    # toggles selection. One interactive affordance per column = no ambiguous targets.
-    # `suppressRowClickSelection` ensures a name click never doubles as a row select.
+    # Multi-row selection for the copy-to-TSV echo. The checkbox lives in its own column
+    # (injected after build), so a Scheme click only opens the fund and never selects a row.
     gob.configure_selection(
         selection_mode="multiple",
         use_checkbox=False,
         suppressRowClickSelection=True,
     )
-    # Style the Scheme cell as a link (blue + pointer cursor) to advertise that
-    # clicking it opens the fund in MF Analysis — see render_open_action.
+    # Style the Scheme cell as a link — clicking it opens the fund (see render_open_action).
     gob.configure_column(
         "Scheme",
         pinned="left",
@@ -104,17 +96,16 @@ def _build_grid_options(pdf: pd.DataFrame):
         domLayout="normal",
         suppressHorizontalScroll=False,
         alwaysShowVerticalScroll=True,
-        enableCellTextSelection=True,  # cells are text-selectable for native browser copy
-        ensureDomOrder=True,  # Cmd/Ctrl+C honours visual order, not insertion order
+        enableCellTextSelection=True,  # text-selectable cells for native copy
+        ensureDomOrder=True,  # Cmd/Ctrl+C honours visual order
         suppressCopyRowsToClipboard=False,
-        copyHeadersToClipboard=True,  # include column names in the clipboard payload
-        onGridSizeChanged=_FIT_COLUMNS,  # re-fit columns to width when the window/grid resizes
-        onFirstDataRendered=_FIT_COLUMNS,  # ...and once on initial render
+        copyHeadersToClipboard=True,  # include column names in the clipboard
+        onGridSizeChanged=_FIT_COLUMNS,  # re-fit on resize
+        onFirstDataRendered=_FIT_COLUMNS,  # ...and on initial render
     )
 
     grid_options = gob.build()
-    # Dedicated, field-less checkbox column for the copy-to-TSV selection, pinned hard left.
-    # Kept separate from Scheme so the two click behaviours can't collide (see above).
+    # Field-less checkbox column for selection, pinned hard left and kept off Scheme.
     grid_options["columnDefs"].insert(
         0,
         {
@@ -152,11 +143,8 @@ def render_table(
         gridOptions=grid_options,
         height=650,
         theme=aggrid_theme,
-        allow_unsafe_jscode=True,  # required for the sizeColumnsToFit resize callbacks above
-        # `cellClicked` lets `render_open_action` open a fund straight from a single
-        # click on its Scheme cell. The other three keep the selection-echo / filter /
-        # sort sections in sync with the grid (they're the library defaults minus
-        # `cellValueChanged`, which is irrelevant on this read-only grid).
+        allow_unsafe_jscode=True,  # required for the sizeColumnsToFit callbacks
+        # `cellClicked` drives open-on-click; the rest keep selection / filter / sort in sync.
         update_on=["cellClicked", "selectionChanged", "filterChanged", "sortChanged"],
     )
     return display_pdf, grid_response
@@ -176,20 +164,12 @@ def render_selection_echo(grid_response: dict) -> None:
     if sel_df is None:
         return
     with st.expander(f"📋 {len(sel_df)} selected row(s) — copy", expanded=False):
-        st.caption(
-            "Tab-separated; paste straight into Excel / Sheets / Notion. The checkbox in "
-            "the Scheme column drives the selection (Shift+click ranges, Cmd/Ctrl+click "
-            "individual rows)."
-        )
+        st.caption("Tab-separated; paste straight into Excel / Sheets / Notion.")
         st.code(sel_df.to_csv(sep="\t", index=False), language="text")
 
 
 def _clicked_scheme(grid_response: dict) -> str | None:
-    """Return the fund name when the user just clicked a Scheme cell, else None.
-
-    Only acts on a Scheme-column click so clicks elsewhere (checkbox column, or a numeric
-    cell being text-selected for copy) are left alone.
-    """
+    """Return the fund name when the user just clicked a Scheme cell, else None."""
     event = grid_response.get("event_data") or {}
     if event.get("streamlitRerunEventTriggerName") != "cellClicked":
         return None
@@ -211,11 +191,9 @@ def render_open_action(grid_response: dict) -> None:
             scheme_names=[scheme_name],
             sources=("nav", "metadata"),
             max_per_run=2,
-            submit_delay=0.0,  # single fund, no inter-request rate limiting needed
+            submit_delay=0.0,  # single fund, no rate limiting needed
         )
-    # Clear the Analysis page's sidebar filters so the opened fund is guaranteed to
-    # be in the selectbox options (leftover filters from a prior visit could exclude
-    # it and make the selectbox raise on the pre-set value).
+    # Clear the Analysis page's filters so the opened fund stays in the selectbox options.
     st.session_state["mf_analysis_fund"] = scheme_name
     st.session_state["mf_analysis_search"] = ""
     for k in ("mf_analysis_amc", "mf_analysis_cat", "mf_analysis_plan", "mf_analysis_option"):

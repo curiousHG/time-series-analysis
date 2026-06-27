@@ -32,9 +32,7 @@ def status_cell(status: str | None) -> str:
 
 
 def build_screener_df() -> pl.DataFrame:
-    """Full screener DataFrame. `load_screener_view` does the AMFI x metadata x metrics x registry
-    JOIN at the DB; we only add derived `plan`/`option` columns (cheap string parses).
-    """
+    """Full screener DataFrame: the DB JOIN from `load_screener_view` plus derived `plan`/`option`."""
     df = load_screener_view()
     if df.is_empty():
         return df
@@ -50,7 +48,7 @@ def build_screener_df() -> pl.DataFrame:
 def apply_name_filter(df: pl.DataFrame, name_query: str, *, column: str = "scheme_name") -> pl.DataFrame:
     """Filter rows matching every whitespace-separated token (AND, case-insensitive substring).
 
-    Tokens are regex-escaped so input like parentheses is literal. Empty query returns `df` unchanged.
+    Tokens are regex-escaped so input is literal. Empty query returns `df` unchanged.
     """
     if not name_query:
         return df
@@ -81,10 +79,8 @@ def apply_filters(
 ) -> pl.DataFrame:
     """Sidebar filter pipeline; all inputs optional (empty list / 0 = no constraint).
 
-    `cagr_min`/`sharpe_min`/`dd_min` honoured only when `has_nav=True` — they need the metric
-    columns populated and would otherwise drop every row. `min_age_years` filters on
-    `inception_date` (first NAV date); funds without a computed inception are dropped when an
-    age floor is set, since their age can't be verified.
+    `cagr_min`/`sharpe_min`/`dd_min` honoured only when `has_nav=True` (they need metric columns).
+    `min_age_years` filters on `inception_date`; funds with no computed inception are dropped when set.
     """
     out = apply_name_filter(df, name_query)
     if min_age_years and min_age_years > 0 and "inception_date" in out.columns:
@@ -124,10 +120,7 @@ def apply_filters(
 
 
 def nifty_1y_cagr() -> float | None:
-    """Nifty 50 1Y annualised geometric return from `stock_ohlcv`; None on missing data.
-
-    `ensure_stock_data` is DB-first, so this is one SELECT in the steady state.
-    """
+    """Nifty 50 1Y annualised geometric return from `stock_ohlcv`; None on missing data."""
     try:
         end = _date.today()
         start = end - timedelta(days=400)

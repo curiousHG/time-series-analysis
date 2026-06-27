@@ -1,29 +1,16 @@
 """Single source of truth for mutual-fund metric column metadata.
 
-Used by the MF Screener (and any other view that surfaces these metrics) so renames,
-groupings, and formatting rules don't drift across pages.
-
-What lives here:
-  • IDENTITY_COLS         — display names for the columns that identify a row.
-  • METRIC_GROUPS         — logical buckets of metric columns (display names).
-  • METRIC_RENAME         — DB column → friendly display name.
-  • METRIC_PCT_COLS       — columns whose stored value is a decimal fraction
-                             and needs x100 to render as a percent.
-  • METRIC_NUMERIC_COLS   — columns that should use AgGrid's numeric filter.
-  • METRIC_TEXT_COLS      — columns that should use AgGrid's text filter.
-  • DISPLAY_COL_ORDER     — canonical left-to-right order for the screener table.
-  • DEFAULT_VISIBLE_METRICS — the lean default set of metric columns to show.
+Keeps renames, groupings, and formatting rules from drifting across views that surface
+these metrics (primarily the MF Screener).
 """
 
 from __future__ import annotations
 
-# Always-shown identifying columns (display names, post-rename). AMC / Plan / Option are
-# intentionally excluded — they're driven by sidebar / inline filters in the screener,
-# so showing them as table columns wastes horizontal space.
+# Always-shown identifying columns (display names). AMC/Plan/Option are excluded — they're
+# driven by the screener's sidebar/inline filters, so columns would waste horizontal space.
 IDENTITY_COLS: tuple[str, ...] = ("Scheme", "Category", "Sub-category")
 
-# DB column name → display column name. Stored separately from grouping so renames stay
-# in one place; downstream code only deals with display names.
+# DB column name → display column name; downstream code only deals with display names.
 METRIC_RENAME: dict[str, str] = {
     "scheme_name": "Scheme",
     "fund_house": "AMC",
@@ -74,7 +61,7 @@ METRIC_RENAME: dict[str, str] = {
     "r2_1y": "R² (1Y)",
     "tracking_error_1y": "Tracking Error %",
     "inception_date": "Inception",
-    # Rolling annualised-CAGR distribution (1/3/5Y windows). Stored as decimal fractions.
+    # Rolling annualised-CAGR distribution (1/3/5Y windows), stored as decimal fractions.
     "rolling_1y_min": "Roll 1Y Min %",
     "rolling_1y_median": "Roll 1Y Median %",
     "rolling_1y_mean": "Roll 1Y Mean %",
@@ -89,7 +76,7 @@ METRIC_RENAME: dict[str, str] = {
     "rolling_5y_max": "Roll 5Y Max %",
 }
 
-# Logical groupings — display names. Ordering within each list = column order in the table.
+# Logical groupings (display names). List order = column order in the table.
 METRIC_GROUPS: dict[str, tuple[str, ...]] = {
     "Fund metadata": ("AUM (₹ Cr)", "TER %", "Benchmark", "Inception"),
     "Returns": (
@@ -180,7 +167,7 @@ METRIC_PCT_COLS: tuple[str, ...] = (
     "% Top 10",
 )
 
-# Columns that should use AgGrid's numeric column type / numeric filter.
+# Columns that should use AgGrid's numeric filter.
 METRIC_NUMERIC_COLS: frozenset[str] = frozenset(
     {
         *METRIC_PCT_COLS,
@@ -199,19 +186,18 @@ METRIC_NUMERIC_COLS: frozenset[str] = frozenset(
     }
 )
 
-# Columns that should use AgGrid's text filter (substring/contains).
+# Columns that should use AgGrid's text filter.
 METRIC_TEXT_COLS: frozenset[str] = frozenset(
     {"Scheme", "AMC", "Category", "Sub-category", "Benchmark", "Plan", "Option", "NAV", "Holdings", "Metadata"}
 )
 
-# Canonical left-to-right column order for the screener table. Identity first, then by group.
+# Left-to-right column order for the screener table: identity first, then by group.
 DISPLAY_COL_ORDER: tuple[str, ...] = IDENTITY_COLS + tuple(c for cols in METRIC_GROUPS.values() for c in cols)
 
-# A flat ordered list of every metric (non-identity) column — feeds the sidebar multiselect.
+# Flat ordered list of every non-identity metric column — feeds the sidebar multiselect.
 ALL_METRIC_COLS: tuple[str, ...] = tuple(c for cols in METRIC_GROUPS.values() for c in cols)
 
-# Default metrics shown on first load. Lean enough to fit without horizontal scroll on a
-# typical laptop; user adds more from the sidebar multiselect as needed.
+# Lean default metric set shown on first load; user adds more from the sidebar multiselect.
 DEFAULT_VISIBLE_METRICS: tuple[str, ...] = (
     "AUM (₹ Cr)",
     "TER %",
@@ -221,12 +207,9 @@ DEFAULT_VISIBLE_METRICS: tuple[str, ...] = (
     "Max DD 1Y %",
 )
 
-# DB column names for metric placeholders (when the cache is empty). Kept here so callers
-# don't repeat the list — must mirror data.constants.METRIC_FIELDS.
 # --- Risk-vs-Return chart axis catalog --------------------------------------------------
-# X options are downside-style risk measures; Y options are excess-of-benchmark / risk-free
-# return measures. Each X entry is (db_column, display label, take_abs?) — `take_abs` flips
-# sign so a negative-stored stat (Max DD, CVaR) reads as a positive magnitude on the axis.
+# X-axis risk measures. Each entry is (db_column, display label, take_abs?); take_abs flips
+# sign so a negative-stored stat (Max DD, CVaR) reads as a positive magnitude.
 RISK_AXIS_OPTIONS: dict[str, tuple[str, str, bool]] = {
     "vol_1y": ("vol_1y", "Annualised Realised Volatility", False),
     "downside_vol_1y": ("downside_vol_1y", "Downside Deviation", False),
@@ -234,31 +217,27 @@ RISK_AXIS_OPTIONS: dict[str, tuple[str, str, bool]] = {
     "max_dd_1y": ("max_dd_1y", "Max Drawdown", True),
 }
 
-# Y axes — return measures. Some are derived rather than direct cache reads (excess return
-# subtracts the risk-free rate, IR numerator subtracts Nifty 50's CAGR). The concrete
-# derivation lives in services.screener_service.resolve_return_axis.
-# NOTE: alpha_1y is the CAPM intercept vs *each fund's category benchmark* (Large Cap → Nifty
-# 100, Mid Cap → Nifty Midcap 150, …; see services.benchmarks.SUBCATEGORY_BENCHMARK), NOT a
-# single index. The IR-numerator is the one axis still measured against Nifty 50 (it needs a
-# single per-fund benchmark CAGR we don't cache), hence its label keeps the Nifty 50 wording.
+# Y-axis return measures; some are derived (see services.screener_service.resolve_return_axis).
+# alpha_1y is the CAPM intercept vs each fund's category benchmark (services.benchmarks.
+# SUBCATEGORY_BENCHMARK), not a single index; only ir_numerator_1y is still vs Nifty 50.
 RETURN_AXIS_OPTIONS: dict[str, str] = {
     "excess_return_1y": "Annualised Geometric Excess Return (vs RF)",
     "alpha_1y": "Jensen's Alpha (vs category benchmark)",
     "ir_numerator_1y": "Information Ratio numerator (active return vs Nifty 50)",
 }
 
-# Benchmark-relative measures — the screener surfaces a benchmark caveat caption when any of
-# these axes/columns are picked. All but ir_numerator_1y are computed against each fund's
-# category benchmark; ir_numerator_1y still uses Nifty 50.
+# Benchmark-relative measures; the screener shows a caveat caption when any is picked. All but
+# ir_numerator_1y use each fund's category benchmark; ir_numerator_1y still uses Nifty 50.
 BENCHMARK_DEPENDENT: frozenset[str] = frozenset(
     {"alpha_1y", "beta_1y", "tracking_error_1y", "r2_1y", "ir_numerator_1y"}
 )
 
-# Risk-free rate used for the "Annualised Geometric Excess Return" axis. Mirrors
-# services.mf_metrics.RISK_FREE_ANNUAL so excess returns line up with Sharpe-rf assumptions.
+# Risk-free rate for the "Annualised Geometric Excess Return" axis. Mirrors
+# services.mf_metrics.RISK_FREE_ANNUAL so it lines up with Sharpe-rf assumptions.
 RISK_FREE_RATE_FOR_EXCESS_RETURN: float = 0.06
 
 
+# DB column names for metric placeholders when the cache is empty; mirror data.constants.METRIC_FIELDS.
 EMPTY_METRIC_DB_COLS: tuple[str, ...] = (
     "cagr_1y",
     "cagr_3y",

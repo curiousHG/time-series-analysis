@@ -24,8 +24,7 @@ import logging
 import sys
 from pathlib import Path
 
-# Allow running as `python scripts/compute_metrics.py` — that puts scripts/ on sys.path
-# rather than the project root, so we have to add the root explicitly.
+# Add project root to sys.path so `python scripts/compute_metrics.py` resolves package imports.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))

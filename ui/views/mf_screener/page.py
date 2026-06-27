@@ -17,8 +17,7 @@ from ui.views.mf_screener.table import render_open_action, render_selection_echo
 
 
 def _render_universe_summary(amfi_count: int, filtered: pl.DataFrame) -> None:
-    """Header: AMFI universe + Tracked metrics, inline add-to-tracked controls, and the
-    per-source availability breakdown underneath."""
+    """Header metrics, inline add-to-tracked controls, and per-source availability."""
     tracked_df = list_tracked()
     tracked_count = tracked_df.height
 
@@ -29,22 +28,18 @@ def _render_universe_summary(amfi_count: int, filtered: pl.DataFrame) -> None:
         holdings_count = tracked_df.filter(pl.col("holdingsStatus") == "available").height
 
     m1, m2, m3, m4 = st.columns([1, 1, 1, 2], vertical_alignment="bottom")
-    m1.metric(
-        "All schemes (AMFI)", f"{amfi_count:,}", help="Every scheme in the AMFI master — the full searchable universe."
-    )
+    m1.metric("All schemes (AMFI)", f"{amfi_count:,}", help="The full searchable AMFI universe.")
     m2.metric(
         "With data loaded",
         f"{tracked_count:,}",
-        help="Funds whose NAV/metadata we've fetched. Metrics and the risk/return chart only "
-        "appear for these — use the fetch button to load more.",
+        help="Funds with fetched NAV/metadata; metrics and the chart only appear for these.",
     )
     render_inline_backfill(filtered, m3, m4)
 
     if tracked_count:
         st.caption(
-            f"Of {tracked_count:,} loaded, data fetched per source — "
-            f"NAV: **{nav_count:,}** · Metadata: **{metadata_count:,}** · Holdings: **{holdings_count:,}**. "
-            "Filter the table, then **Fetch data for top N** to load metrics for those funds."
+            f"Of {tracked_count:,} loaded — "
+            f"NAV: **{nav_count:,}** · Metadata: **{metadata_count:,}** · Holdings: **{holdings_count:,}**."
         )
 
 
@@ -81,7 +76,7 @@ _filtered = apply_filters(
 
 # Header + inline add-to-tracked (needs `_filtered` for the Top-N picker).
 _render_universe_summary(_amfi_count, _filtered)
-st.caption(f"{_filtered.height:,} of {_df.height:,} schemes match · **click a fund name** to open it in MF Analysis")
+st.caption(f"{_filtered.height:,} of {_df.height:,} schemes match · click a fund name to open it in MF Analysis")
 
 # Table → grid response → open-fund action + selection-echo expander.
 _, _grid_response = render_table(_filtered, _state.visible_metrics, _state.aggrid_theme)

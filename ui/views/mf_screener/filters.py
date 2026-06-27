@@ -1,5 +1,4 @@
-"""Sidebar + inline filter widgets for the MF Screener. Sidebar holds the heavy filters,
-inline holds the column-visibility multiselect. Returns a `FilterState` for the page."""
+"""Sidebar + inline filter widgets for the MF Screener. Returns a `FilterState`."""
 
 from __future__ import annotations
 
@@ -16,13 +15,10 @@ from ui.persistence.selections import load_selection, save_selection
 
 
 def _hydrate_filters() -> None:
-    """Seed missing screener_* keys from disk before their widgets are created. Idempotent
-    so live edits are never clobbered. Can't be a one-time guard: Streamlit GCs the
-    screener_* keys on page nav (widgets aren't rendered elsewhere), so we re-seed from
-    selections.json — kept current by `_persist_filters` — to survive navigating away/back.
+    """Seed missing screener_* keys from selections.json before their widgets render.
 
-    Streamlit forbids passing both a widget `default=`/`value=` and a pre-seeded
-    session_state key, so the widgets below omit those args for every key we seed here.
+    Idempotent so live edits aren't clobbered; re-seeds each run since Streamlit GCs the
+    keys on page nav. Widgets that read a seeded key must omit `default=`/`value=`.
     """
     saved = load_selection(SCREENER_PERSIST_KEY, {})
     for key, default in {**FILTER_DEFAULTS, **SLIDER_DEFAULTS}.items():
@@ -79,14 +75,12 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
     with st.sidebar:
         st.header("Filters")
 
-        # Section 1 — Search & classification (search, AMC, Category, Plan, Option).
-        # Widgets seeded via session_state (see `_hydrate_filters`) omit `default=`; the
-        # shared `on_change` persists every change back to selections.json.
+        # Section 1 — Search & classification.
         with st.container(border=True):
             name_query = st.text_input(
                 "Search by name",
                 placeholder="e.g. parag parikh flexi",
-                help="Multi-token AND substring (case-insensitive).",
+                help="Case-insensitive; all tokens must match.",
                 key="screener_name_query",
                 on_change=_persist_filters,
             )
@@ -103,7 +97,7 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
                 on_change=_persist_filters,
             )
 
-        # Section 2 — Numeric thresholds + risk sliders (gated by Has-NAV).
+        # Section 2 — Numeric thresholds + risk sliders (gated by Has NAV).
         with st.container(border=True):
             n1, n2 = st.columns(2)
             aum_min = n1.number_input(
@@ -119,13 +113,12 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
                 step=0.5,
                 key="screener_min_age",
                 on_change=_persist_filters,
-                help="Keep funds with at least this much NAV history (from inception_date = first NAV "
-                "date). Funds without computed metrics are excluded when this is > 0.",
+                help="Keep funds with at least this much NAV history; funds without metrics drop out when > 0.",
             )
             only_untracked = st.checkbox(
                 "Only untracked schemes",
                 key="screener_only_untracked",
-                help="Show only schemes that are NOT in the tracked registry (mf_registry).",
+                help="Show only schemes not in the tracked registry.",
                 on_change=_persist_filters,
             )
             has_nav = st.checkbox(
@@ -139,23 +132,18 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
                 )
                 dd_min = st.slider("Max drawdown ≥ (%)", -100, 0, key="screener_dd_min", on_change=_persist_filters)
 
-        st.caption(
-            "Every column in the table also has its own header filter (funnel icon → contains "
-            "/ numeric range). Use those for ad-hoc slicing without touching the sidebar."
-        )
+        st.caption("Each table column also has its own header filter for ad-hoc slicing.")
 
-    # Inline — column visibility multiselect lives above the table since adjusting which
-    # columns are shown is a frequent action while scanning the data.
+    # Column-visibility multiselect sits above the table — toggled often while scanning.
     visible_metrics = st.multiselect(
         "Visible metrics",
         options=list(ALL_METRIC_COLS),
         key="screener_visible_metrics",
         on_change=_persist_filters,
-        help="Pick the columns to display. Identity columns (Scheme, Category) are always shown.",
+        help="Columns to display; Scheme and Category are always shown.",
     )
 
-    # Theme is fixed to the custom Streamlit-dark variant — the bare AgGrid built-ins didn't
-    # render dark on Streamlit, so a toggle would be misleading.
+    # Fixed to the custom Streamlit-dark variant; AgGrid's built-ins don't render dark here.
     aggrid_theme = streamlit_dark_aggrid_theme()
 
     return FilterState(

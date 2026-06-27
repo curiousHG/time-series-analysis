@@ -1,7 +1,6 @@
 """UI-package constants: risk-free rate, screener filter defaults, chart modes, settings tables.
 
-Grouped by the view/concern that owns each block. Large enough that a future split into
-per-subpackage constants modules (views/, persistence/) is reasonable.
+Grouped by the view/concern that owns each block.
 """
 
 from __future__ import annotations
@@ -12,16 +11,16 @@ import pandas as pd
 
 from mutual_funds.metric_catalog import DEFAULT_VISIBLE_METRICS
 
-# Risk-free rate for UI-side risk metrics (portfolio + single-fund tabs). NOTE: differs from
-# services.RISK_FREE_ANNUAL (0.06) used by mf_metrics — see audit; values are intentionally kept.
+# Risk-free rate for UI-side risk metrics (portfolio + single-fund tabs). Intentionally
+# differs from services.RISK_FREE_ANNUAL (0.06) used by mf_metrics.
 RISK_FREE = 0.065
 RF_DAILY = RISK_FREE / 252
 
 # File-based persistence of user selections (ui.persistence.selections).
 SELECTIONS_PATH = Path("data/user/selections.json")
 
-# Screener sidebar filter widget keys + fallback defaults (ui.views.mf_screener.filters).
-# Persisted to selections.json so filter state survives a full browser refresh.
+# Screener sidebar filter widget keys + fallback defaults (ui.views.mf_screener.filters),
+# persisted to selections.json so filter state survives a browser refresh.
 SCREENER_PERSIST_KEY = "screener_filters"
 FILTER_DEFAULTS = {
     "screener_name_query": "",
@@ -46,10 +45,8 @@ SLIDER_DEFAULTS = {
 
 # Screener add-to-tracked control help (ui.views.mf_screener.backfill).
 BACKFILL_HELP_TEXT = (
-    "Fetch NAV + metadata for the top-N rows of the filtered view (in the sort order shown), "
-    "then compute their risk/return metrics. Funds already loaded are skipped. Throttled to "
-    "~3 req/s to respect upstream rate limits. Holdings aren't fetched here (slower scrape) — "
-    "use Settings → *Update All Holdings*."
+    "Fetch NAV + metadata for the top-N filtered rows and compute their risk/return metrics. "
+    "Already-loaded funds are skipped. Holdings aren't fetched here — use Settings → *Update All Holdings*."
 )
 
 # Status-badge colour palette for the refresh table (ui.views.settings.refresh).

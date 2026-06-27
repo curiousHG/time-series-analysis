@@ -25,10 +25,7 @@ logger = logging.getLogger("services.mf_metrics")
 
 
 def nav_series(scheme_name: str) -> pd.Series:
-    """Daily NAV as a date-indexed pd.Series (empty if none).
-
-    MfNav is keyed on scheme_code; JOIN to AmfiScheme to filter by name.
-    """
+    """Daily NAV as a date-indexed pd.Series (empty if none)."""
     with get_session() as session:
         rows = session.exec(
             select(MfNav.date, MfNav.nav)
@@ -42,7 +39,7 @@ def nav_series(scheme_name: str) -> pd.Series:
     return s.sort_index()
 
 
-# Backwards-compat alias for any external caller still using the old underscored name.
+# Back-compat alias for the old underscored name.
 _nav_series = nav_series
 
 
@@ -60,10 +57,7 @@ def _windowed_cagr(nav: pd.Series, days: int) -> float | None:
 
 
 def _rolling_cagr_stats(nav: pd.Series, window_days: int) -> dict[str, float]:
-    """Min/median/mean/max of N-day rolling annualised CAGR over the fund's history.
-
-    Describes the distribution of "if you'd held for N years ending on any day, what return".
-    """
+    """Min/median/mean/max of N-day rolling annualised CAGR over the fund's history."""
     nan = {"min": math.nan, "median": math.nan, "mean": math.nan, "max": math.nan}
     if len(nav) < window_days + 1:
         return nan
@@ -104,10 +98,9 @@ def _absolute_return(nav: pd.Series, days_back: int) -> float:
 def _holdings_composition(scheme_name: str) -> dict[str, float]:
     """Composition + concentration weights from mf_holdings; floats in [0, 1], NaN if absent.
 
-    Latest portfolio_date snapshot only — funds re-report holdings across dates; don't double-count.
+    Latest portfolio_date snapshot only, to avoid double-counting re-reported holdings.
     """
     nan = dict.fromkeys(("pct_equity", "pct_debt", "pct_cash", "pct_top3", "pct_top5", "pct_top10"), math.nan)  # fmt: skip
-    # Phase 3: mf_holdings is keyed on scheme_code; resolve from scheme_name via AmfiScheme.
     with get_session() as session:
         code_row = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)).first()
         if code_row is None:
@@ -128,12 +121,11 @@ def _holdings_composition(scheme_name: str) -> dict[str, float]:
         return nan
 
     weights = [float(w) for (w, _, _) in latest]
-    total = sum(weights) or 1.0  # AdvisorKhoj weights are usually already in % (sum~100)
-    # Normalise: AdvisorKhoj sometimes reports 0-1, sometimes 0-100 — both end up in [0, 1].
+    total = sum(weights) or 1.0
+    # Normalise to [0, 1]: AdvisorKhoj reports either 0-1 or 0-100.
     weights = [w / 100.0 if total > 1.5 else w for w in weights]
 
-    # Asset-class buckets — the AdvisorKhoj `asset_class` field uses tags like "Equity",
-    # "Debt", "Money Market", "Cash"… so we case-fold and substring match.
+    # Asset-class buckets by case-folded substring match on AdvisorKhoj's `asset_class` tags.
     pct_equity = pct_debt = pct_cash = 0.0
     for w, ac, _ in latest:
         if ac is None:
@@ -166,12 +158,9 @@ def compute_metrics_for_scheme(
     """Metrics dict (keys mirror data.constants.METRIC_FIELDS + `scheme_name`), or None if < ~1Y history.
 
     `benchmark_returns` (e.g. Nifty 50 daily returns) populates alpha/beta/r2/tracking-error; NaN without it.
-    Skips funds with corrupt NAV (|daily return| > 100% — wound-up debt funds, side-pockets where MFAPI
-    reports cumulative payouts) that would otherwise yield millions-of-percent volatility.
     """
-    # Non-investable schemes never get metrics — their "returns" are real but meaningless to
-    # screen: segregated portfolios are tiny distressed-debt recovery units (±100s of % swings),
-    # and defunct/wound-up funds (NAV stale > ~9 months) only have stale, extinguished history.
+    # Non-investable schemes get no metrics: segregated portfolios are distressed-debt recovery
+    # units, defunct funds (NAV stale > ~9 months) only have extinguished history.
     if "segregated" in scheme_name.lower():
         return None
 
@@ -185,12 +174,8 @@ def compute_metrics_for_scheme(
     if returns.empty:
         return None
 
-    # Sanity gate: real fund NAVs don't move >100% in a day. An isolated >100% move is upstream
-    # corruption (NAV-scale change, post-winding-up payout, a bad print). Drop just those
-    # return-day(s) so one bad point doesn't poison vol/alpha — but KEEP the fund; its real
-    # history is still usable. (Previously the whole fund was discarded, wrongly skipping ~370
-    # funds over a single ancient bad day.) The source NAV is cleaned for good by
-    # data.repositories.nav.repair_nav_glitches; this is the in-compute safety net.
+    # In-compute safety net (source NAV is cleaned by nav.repair_nav_glitches): a >100% daily move
+    # is upstream corruption. Drop just those return-day(s) but keep the fund's real history.
     _CORRUPT_CUTOFF = 1.0
     bad = returns[returns.abs() > _CORRUPT_CUTOFF]
     if not bad.empty:
@@ -213,9 +198,8 @@ def compute_metrics_for_scheme(
     calmar = _safe(qs.stats.calmar, last_year)
     gain_to_pain = _safe(qs.stats.gain_to_pain_ratio, last_year)
     vol = _safe(qs.stats.volatility, last_year)
-    # Downside volatility — annualised stddev of negative-only daily returns. The Markowitz
-    # frontier is intuited on (vol, return), but for asymmetric distributions downside vol
-    # is the more honest risk axis since it ignores upside swings.
+    # Downside volatility: annualised stddev of negative-only daily returns (honest risk axis for
+    # asymmetric distributions).
     _neg = last_year[last_year < 0]
     downside_vol = float(_neg.std() * math.sqrt(TRADING_DAYS)) if len(_neg) > 1 else math.nan
 
@@ -346,9 +330,8 @@ def compute_alpha_beta(
     *,
     min_overlap: int = 60,
 ) -> dict | None:
-    """Jensen alpha/beta of fund vs benchmark daily returns (decimals, not %).
+    """Jensen alpha/beta of fund vs benchmark daily returns (decimals).
 
-    beta = cov/var, alpha = (mean_f - beta*mean_b) annualised, r2 = corr**2.
     None when < `min_overlap` aligned days or benchmark variance is zero.
     """
     if fund_returns is None or benchmark_returns is None or fund_returns.empty or benchmark_returns.empty:
@@ -365,10 +348,7 @@ def compute_alpha_beta(
 
 
 def compute_metrics_from_returns(returns: pd.Series) -> dict:
-    """1Y CAGR/Vol/Sharpe/MaxDD from a daily-returns Series (portfolio aggregate).
-
-    All NaN when the series is shorter than TRADING_DAYS. quantstats errors propagate to the caller.
-    """
+    """1Y CAGR/Vol/Sharpe/MaxDD from a daily-returns Series; all NaN when shorter than TRADING_DAYS."""
     out = {"cagr_1y": math.nan, "vol_1y": math.nan, "sharpe_1y": math.nan, "max_dd_1y": math.nan}
     if returns is None or returns.empty:
         return out
@@ -386,10 +366,7 @@ def compute_metrics_from_returns(returns: pd.Series) -> dict:
 
 
 def compute_tracking_error(scheme_name: str, benchmark_returns: pd.Series, window: int = TRADING_DAYS) -> float | None:
-    """Annualised tracking error — std-dev of (fund - benchmark) daily returns over `window`.
-
-    None if fewer than 60 overlapping days.
-    """
+    """Annualised tracking error: std-dev of (fund - benchmark) daily returns; None if < 60 overlapping days."""
     if benchmark_returns is None or benchmark_returns.empty:
         return None
     nav = nav_series(scheme_name)
@@ -406,9 +383,8 @@ def compute_tracking_error(scheme_name: str, benchmark_returns: pd.Series, windo
 def _load_benchmark_returns(symbol: str) -> pd.Series:
     """Daily returns for a benchmark index from stock_ohlcv, force-refreshed to today.
 
-    `ensure_stock_data` skips sub-5-day gaps, which would silently leave the benchmark stale
-    and push CAPM stats onto out-of-date data — so we force-refresh first. Routes through the
-    usual fetchers (yfinance for "^…", niftyindices for "NIFTY …").
+    Force-refresh because `ensure_stock_data` skips sub-5-day gaps, which would leave the benchmark
+    stale and push CAPM stats onto out-of-date data.
     """
     try:
         today, db_max = refresh_stock_to_today(symbol)
@@ -438,7 +414,7 @@ def _load_benchmark_returns(symbol: str) -> pd.Series:
 
 
 def _subcategories(scheme_names: list[str]) -> dict[str, str | None]:
-    """scheme_name → AMFI sub_category, for choosing each fund's benchmark."""
+    """scheme_name -> AMFI sub_category, for choosing each fund's benchmark."""
     with get_session() as session:
         rows = session.exec(
             select(AmfiScheme.scheme_name, AmfiScheme.sub_category).where(col(AmfiScheme.scheme_name).in_(scheme_names))
@@ -453,7 +429,6 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
     Schemes that compute to None (corrupt NAV, short history) get their stale cache row evicted.
     """
     if scheme_names is None:
-        # Phase 2: pull names via JOIN to amfi_schemes (MfNav no longer carries scheme_name).
         with get_session() as session:
             scheme_names = list(
                 session.exec(
@@ -464,9 +439,8 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
     if not scheme_names:
         return 0
 
-    # Pick each fund's benchmark from its SEBI sub-category (Large Cap → Nifty 100, Mid Cap →
-    # Nifty Midcap 150, Small Cap → Nifty Smallcap 250, …; Debt/Arbitrage/etc. → None → CAPM
-    # stats left NaN). Load each distinct index once, then broadcast to the workers.
+    # Each fund's benchmark comes from its SEBI sub-category (None for Debt/Arbitrage -> CAPM NaN).
+    # Load each distinct index once, then broadcast to the workers.
     bench_sym_by_name = {n: subcategory_benchmark(s) for n, s in _subcategories(scheme_names).items()}
     distinct_syms = sorted({s for s in bench_sym_by_name.values() if s})
     logger.info("recompute: %d funds across %d benchmark(s): %s", len(scheme_names), len(distinct_syms), distinct_syms)
@@ -495,8 +469,7 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
                 skipped.append(name)
 
     upserted = upsert_metrics(rows)
-    # Evict stale rows for schemes that no longer pass the compute validation (e.g., the
-    # corrupt-NAV guard). Without this, old runs' cached garbage would linger forever.
+    # Evict cached rows for schemes that no longer pass compute validation, else garbage lingers.
     if skipped:
         evicted = clear_metrics(skipped)
         logger.info("Evicted %d stale cache row(s) for %d skipped scheme(s)", evicted, len(skipped))
@@ -505,10 +478,7 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
 
 @timeit("mf_metrics.recompute_stale")
 def recompute_stale_metrics(*, max_workers: int = 4) -> int:
-    """Recompute metrics only for schemes whose cache is older than the latest NAV.
-
-    Drives the daily cron and the post-NAV-sync hook — cheap when nothing changed.
-    """
+    """Recompute metrics only for schemes whose cache is older than the latest NAV (daily cron / post-sync hook)."""
     stale = find_stale_schemes()
     if not stale:
         return 0

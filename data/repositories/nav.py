@@ -1,8 +1,7 @@
 """NAV data repository — load, save, fetch, and ensure NAV data.
 
-NAV is keyed on `scheme_code` (int), but public functions still take
-`scheme_names: list[str]`, resolved to codes via `amfi_schemes`. Output keeps `schemeName`
-so name-joining callers (Portfolio analytics, screener) don't change.
+Keyed on `scheme_code` internally; public functions take `scheme_names` and output `schemeName`
+so name-joining callers (Portfolio, screener) don't change.
 """
 
 from __future__ import annotations
@@ -31,9 +30,6 @@ from data.repositories.scheme_codes import resolve_codes_with_synthetic
 logger = logging.getLogger("data.repositories.nav")
 
 
-# Name -> code resolution + synthetic minting lives in data.repositories.scheme_codes.
-
-
 def _resolve_names(scheme_codes: list[int]) -> dict[int, str]:
     """Return scheme_code -> name via amfi_schemes."""
     if not scheme_codes:
@@ -46,14 +42,11 @@ def _resolve_names(scheme_codes: list[int]) -> dict[int, str]:
 
 
 def _get_or_resolve_scheme_code(scheme_name: str) -> str | None:
-    """Resolve a scheme_name to its MFAPI/AMFI code (str). Direct AMFI lookup, then fuzzy."""
+    """Resolve scheme_name to MFAPI/AMFI code: direct AMFI lookup, then fuzzy."""
     code = lookup_scheme_code_by_exact_name(scheme_name)
     if code:
         return code
     return resolve_mfapi_code(scheme_name)
-
-
-# ---- NAV data ----
 
 
 def nav_json_to_df(nav_json: list[list], scheme_name: str) -> pl.DataFrame:
@@ -88,11 +81,7 @@ def _upsert_nav_rows(session, df: pl.DataFrame, name_to_code: dict[str, int]) ->
 
 
 def save_nav_df(df: pl.DataFrame) -> None:
-    """Upsert NAV rows (date, nav, schemeName) into the DB.
-
-    schemeName -> scheme_code via amfi_schemes; names with no AMFI match get a
-    synthetic-negative code (see scheme_codes) so the FK never violates.
-    """
+    """Upsert NAV rows into the DB. Names with no AMFI match get a synthetic-negative code so the FK holds."""
     if df.height == 0:
         return
     name_to_code = resolve_codes_with_synthetic(df["schemeName"].unique().to_list())
@@ -103,9 +92,7 @@ def save_nav_df(df: pl.DataFrame) -> None:
 
 
 def load_nav_df(scheme_names: list[str] | None = None) -> pl.DataFrame:
-    """Load NAV data as (date, nav, schemeName), JOINing mf_nav -> amfi_schemes to project
-    scheme_name. Filtering by scheme_names goes through the JOIN (cheap; small, indexed).
-    """
+    """Load NAV as (date, nav, schemeName), JOINing mf_nav -> amfi_schemes for the name."""
     with get_session() as session:
         stmt = (
             select(MfNav.date, MfNav.nav, AmfiScheme.scheme_name)
@@ -158,7 +145,7 @@ def fetch_nav_parallel(scheme_names: list[str]) -> list[pl.DataFrame]:
 
 
 def _recompute_metrics_for(scheme_names: list[str]) -> None:
-    """Best-effort metrics recompute. Logged-only on failure — never break the NAV save."""
+    """Best-effort metrics recompute; failures are logged, never break the NAV save."""
     if not scheme_names:
         return
     try:
@@ -190,8 +177,8 @@ def ensure_nav_data(scheme_names: list[str]) -> pl.DataFrame:
 
 
 def refresh_nav_data(scheme_names: list[str]) -> pl.DataFrame:
-    """Re-fetch and replace NAV for given schemes. Only schemes that fetch successfully are
-    deleted/replaced — a transient upstream failure must not erase good local NAV history.
+    """Re-fetch and replace NAV. Only schemes that fetch successfully are replaced, so a transient
+    upstream failure never erases good local history.
     """
     new_frames = fetch_nav_parallel(scheme_names)
     fetched_schemes = [name for df in new_frames if df.height for name in df["schemeName"].unique().to_list()]
@@ -219,20 +206,13 @@ def count_distinct_nav_schemes() -> int:
         return int(session.exec(select(func.count(func.distinct(MfNav.scheme_code)))).one() or 0)
 
 
-# A single-day NAV that jumps >2x (or <0.5x) vs BOTH neighbours and then reverts is upstream
-# data corruption (a NAV-scale change, a one-off bad print, a near-zero division). 2.0 is
-# conservative: a real fund doesn't double in a day and undo it the next. Genuine corporate
-# actions (side-pocketing, bonus) step *permanently*, so neighbours disagree → not flagged.
+# A single-day NAV reverting >2x vs BOTH neighbours is upstream corruption, not a market move;
+# permanent steps (side-pocketing, bonus) disagree across neighbours so aren't flagged.
 _GLITCH_RATIO = 2.0
 
 
 def detect_nav_glitches(nav: pl.DataFrame) -> pl.DataFrame:
-    """Flag spurious single-day NAV spikes. In/out columns: scheme_code, date, nav.
-
-    Glitch = NAV<=0, or a point sitting >ratio away from *both* neighbours in the same
-    direction while those neighbours agree within `ratio` (i.e. an isolated spike that
-    reverts). Vectorised so it scales to the full mf_nav table in one pass.
-    """
+    """Flag spurious single-day NAV spikes (NAV<=0 or an isolated reverting spike). In/out cols: scheme_code, date, nav."""
     r = _GLITCH_RATIO
     return (
         nav.sort(["scheme_code", "date"])
@@ -260,9 +240,8 @@ def detect_nav_glitches(nav: pl.DataFrame) -> pl.DataFrame:
 def repair_nav_glitches(scheme_codes: list[int] | None = None, dry_run: bool = False) -> dict:
     """Delete spurious single-day NAV spikes from mf_nav so they stop poisoning metrics.
 
-    These isolated glitches (often one bad day in 2007-2015, frequently the *same* date across
-    many funds) made the metrics corrupt-NAV guard discard the whole fund. Removing just the bad
-    point lets the fund's real history through. `dry_run=True` reports without deleting.
+    Removing just the bad point keeps the fund's real history instead of the corrupt-NAV guard
+    discarding the whole fund. `dry_run=True` reports without deleting.
     """
     with get_session() as session:
         stmt = select(MfNav.scheme_code, MfNav.date, MfNav.nav)
@@ -296,11 +275,9 @@ def repair_nav_glitches(scheme_codes: list[int] | None = None, dry_run: bool = F
     return summary
 
 
-# A persistent jump to a clean power-of-10 (>=10x) in a non-segregated fund is a unit/scale-stitch
-# error in the upstream feed - e.g. a liquid fund's early history at a Rs10 base spliced onto the
-# real Rs1000+ NAV (MFAPI itself carries these). It's not a market move. We rescale the earlier
-# (wrong-scale) segment UP to the recent, correct scale. DOWN power-of-10 breaks (an ETF unit
-# split, Rs4000->Rs40) are real corporate actions and deliberately left untouched.
+# A persistent clean power-of-10 UP jump in a non-segregated fund is an upstream unit/scale-stitch
+# error (wrong-scale early history spliced onto the real NAV); we rescale the earlier segment up.
+# DOWN power-of-10 breaks are real corporate actions (ETF splits), left untouched.
 _SCALE_BREAK_TOL = 0.04  # |log10(ratio) - k| tolerance to call a jump a clean 10^k
 
 
@@ -317,11 +294,9 @@ def _scale_break_factor(ratio: float) -> float | None:
 def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool = False) -> dict:
     """Rescale wrong-scale NAV segments so each fund's history is one continuous scale.
 
-    For every non-segregated fund with a clean power-of-10 UP break, multiply all NAVs before the
-    break by the break factor (compounding across multiple breaks) to lift the wrong-scale early
-    history onto the correct recent scale. A post-fix sanity gate skips any fund whose resulting
-    whole-history CAGR lands outside a plausible band (catches multi-stitch oddities). `dry_run`
-    reports without writing.
+    Per non-segregated fund, multiply pre-break NAVs by the (compounded) break factor. A post-fix
+    sanity gate skips funds whose resulting whole-history CAGR lands outside a plausible band.
+    `dry_run` reports without writing.
     """
     with get_session() as session:
         stmt = (
@@ -394,7 +369,7 @@ def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool
 
 
 def last_nav_date_by_name(scheme_names: list[str]) -> dict:
-    """Map name → most-recent NAV date in mf_nav. Drives the sync service's incremental updates."""
+    """Map name -> most-recent NAV date in mf_nav; drives the sync service's incremental updates."""
     if not scheme_names:
         return {}
     with get_session() as session:

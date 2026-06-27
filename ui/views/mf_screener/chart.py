@@ -1,5 +1,5 @@
-"""Risk-vs-Return scatter for the MF Screener, with an optional Markowitz frontier overlay.
-Axes/derivations are driven by mutual_funds.metric_catalog so a new axis is one dict entry."""
+"""Risk-vs-Return scatter for the MF Screener, with optional Markowitz frontier.
+Axes are driven by mutual_funds.metric_catalog."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
         "X-axis (risk)",
         options=list(RISK_AXIS_OPTIONS.keys()),
         format_func=lambda k: RISK_AXIS_OPTIONS[k][1],
-        index=1,  # downside_vol_1y default — most honest single-number risk axis
+        index=1,  # downside_vol_1y default
         key="screener_chart_x",
     )
     return_choice = cc2.selectbox(
@@ -49,16 +49,15 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
         options=("AUM", "Uniform"),
         index=0,
         key="screener_chart_size",
-        help="AUM: bubble area scales with fund size (log₁₀, floored at ₹10 Cr). Uniform: all equal.",
+        help="AUM scales bubble area by fund size; Uniform makes all equal.",
     )
     show_frontier = cc5.checkbox("Show frontier", value=True, key="screener_chart_frontier")
 
     risk_db_col, risk_label, risk_take_abs = RISK_AXIS_OPTIONS[risk_choice]
     chart_pdf = filtered.to_pandas()
 
-    # Stale-cache recovery: a freshly-added metric column won't be on Streamlit's cached
-    # screener frame yet. Bust the relevant caches and rerun once; a session-state guard
-    # avoids ping-ponging.
+    # A freshly-added metric column won't be on the cached frame yet — bust caches and rerun
+    # once (session-state guard avoids ping-ponging).
     if risk_db_col not in chart_pdf.columns and not st.session_state.get("_screener_cache_busted"):
         st.session_state["_screener_cache_busted"] = True
         load_screener_df_cached.clear()
@@ -73,8 +72,7 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
         )
         st.stop()
 
-    # Resolve Y axis — some are derivations (excess return, IR numerator) rather than
-    # direct cache reads.
+    # Some Y axes are derivations (excess return, IR numerator), not direct cache reads.
     return_label, needed_y = _resolve_return_axis(chart_pdf, return_choice)
 
     chart_pdf = chart_pdf.dropna(subset=[risk_db_col, needed_y, "__return__"])
@@ -87,7 +85,7 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
 
     chart_pdf["__risk__"] = chart_pdf[risk_db_col].abs() if risk_take_abs else chart_pdf[risk_db_col]
 
-    # All stored fractions are decimals — multiply by 100 for human-readable axes.
+    # Stored fractions are decimals — scale to percent for the axes.
     chart_pdf["__risk__"] *= 100
     risk_label += " (%)"
     chart_pdf["__return__"] *= 100
@@ -131,16 +129,14 @@ def _draw_scatter(
     import numpy as np  # noqa: PLC0415 — heavy viz deps; deferred to chart-render time
     import plotly.express as px  # noqa: PLC0415 — heavy viz deps; deferred to chart-render time
 
-    # Bubble size: AUM-scaled (₹ Cr; floor + log so micro-funds stay visible and mega-funds
-    # don't dominate, NaN AUM → floor) or uniform when the user turns sizing off.
+    # Bubble size: AUM floored + log-scaled so micro-funds stay visible, or uniform.
     if size_mode == "AUM" and "aum_crores" in chart_pdf.columns:
         aum = chart_pdf["aum_crores"].fillna(0).clip(lower=10)  # floor at ₹10 Cr
         chart_pdf["__size__"] = np.log10(aum + 1) * 6 + 6
     else:
         chart_pdf["__size__"] = 12
 
-    # Colour channel — Sharpe / Sortino are continuous diverging, Category / Asset class
-    # are discrete categorical.
+    # Sharpe / Sortino are continuous; Category / Asset class are categorical.
     color_kwargs: dict = {}
     if color_mode == "Sharpe" and "sharpe_1y" in chart_pdf.columns:
         chart_pdf["__color__"] = chart_pdf["sharpe_1y"]
@@ -197,7 +193,7 @@ def _draw_scatter(
         margin={"l": 60, "r": 20, "t": 40, "b": 50},
     )
 
-    # Reference lines — y=0 (zero excess return), x=0 (zero risk anchor).
+    # Zero reference lines.
     fig.add_hline(y=0, line_color="#64748b", line_dash="dot", line_width=1)
     fig.add_vline(x=0, line_color="#64748b", line_dash="dot", line_width=1)
 
@@ -208,9 +204,7 @@ def _draw_scatter(
 
 
 def _add_efficient_frontier(fig, chart_pdf) -> None:
-    """Pareto-efficient overlay: walk left-to-right, keep running max-Y, connect strict
-    improvements. That's the upper-left convex frontier in (risk, return) space.
-    """
+    """Pareto frontier: walk left-to-right, connecting points that beat the running max-Y."""
     import plotly.graph_objects as go  # noqa: PLC0415 — heavy viz dep; deferred to chart-render time
 
     sorted_pts = chart_pdf.sort_values("__risk__").reset_index(drop=True)
@@ -249,20 +243,8 @@ def _render_captions(risk_db_col: str, return_choice: str, size_mode: str) -> No
     """Footer captions: benchmark caveat (when applicable) + bubble-size / frontier note."""
     if return_choice in BENCHMARK_DEPENDENT or risk_db_col in BENCHMARK_DEPENDENT:
         st.caption(
-            "Note: Alpha / Beta / Tracking Error are computed against **each fund's "
-            "category benchmark** (Large Cap → Nifty 100, Mid Cap → Nifty Midcap 150, "
-            "Small Cap → Nifty Smallcap 250, Flexi/ELSS/… → Nifty 500, etc.), over the last "
-            "~252 trading days (min 60 overlapping). Debt / arbitrage / index funds have no "
-            "equity benchmark, so their CAPM stats are blank. The **IR-numerator** axis still "
-            "uses Nifty 50. Mapping lives in `services.benchmarks.SUBCATEGORY_BENCHMARK`."
+            "Alpha / Beta / Tracking Error use each fund's category benchmark; "
+            "debt / arbitrage / index funds have none, so their CAPM stats are blank."
         )
-    size_note = (
-        "Bubble size = AUM (log₁₀, floored at ₹10 Cr so micro-funds stay visible). "
-        if size_mode == "AUM"
-        else "Bubble size is uniform (AUM scaling off). "
-    )
-    st.caption(
-        size_note + "The dashed gold line is the Pareto / efficient frontier — funds on it offer the "
-        "highest return for their risk level relative to the rest of the filtered set "
-        "(Markowitz upper-left convex hull)."
-    )
+    size_note = "Bubble size = AUM. " if size_mode == "AUM" else "Bubble size is uniform. "
+    st.caption(size_note + "The dashed gold line is the efficient frontier for the filtered set.")

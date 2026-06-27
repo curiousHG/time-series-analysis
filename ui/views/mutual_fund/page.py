@@ -26,8 +26,7 @@ from ui.components.mutual_fund_holdings import render_holdings_table
 from ui.constants import RF_DAILY
 from ui.persistence.selections import load_selection, save_selection
 
-# Sidebar filter + selected-fund state, persisted to selections.json so it survives page
-# navigation (Streamlit GCs unrendered widget keys) and full browser refreshes.
+# Filter + selected-fund state persisted to selections.json so it survives page nav/refresh.
 _MF_PERSIST_KEY = "mf_analysis_filters"
 _MF_FILTER_DEFAULTS = {
     "mf_analysis_search": "",
@@ -44,7 +43,7 @@ _MF_FILTER_DEFAULTS = {
 
 
 def _hydrate_mf_filters() -> None:
-    """Seed missing filter keys from disk (idempotent; never clobbers in-session edits)."""
+    """Seed missing filter keys from disk; never clobbers in-session edits."""
     saved = load_selection(_MF_PERSIST_KEY, {})
     for key, default in _MF_FILTER_DEFAULTS.items():
         if key in st.session_state:
@@ -55,16 +54,13 @@ def _hydrate_mf_filters() -> None:
 
 
 def _persist_mf_filters() -> None:
-    """on_change: snapshot all mf_analysis_* filter values to selections.json."""
+    """Snapshot all mf_analysis_* filter values to selections.json."""
     save_selection(_MF_PERSIST_KEY, {k: st.session_state[k] for k in _MF_FILTER_DEFAULTS if k in st.session_state})
 
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _load_tracked_enriched(names: tuple[str, ...]) -> pl.DataFrame:
-    """Tracked funds + AMFI asset class / sub-category + computed plan/option, for the filters.
-
-    Category = AMFI's SEBI asset class (Equity/Debt/…), sub_category = the granular SEBI type.
-    """
+    """Tracked funds + AMFI category/sub-category + computed plan/option, for the filters."""
     empty_schema = {
         "scheme_name": pl.Utf8,
         "fund_house": pl.Utf8,
@@ -77,7 +73,7 @@ def _load_tracked_enriched(names: tuple[str, ...]) -> pl.DataFrame:
     if not names:
         return pl.DataFrame(schema=empty_schema)
 
-    # inception_date (first NAV date) from the cached metrics — the age filter's anchor.
+    # inception_date (first NAV date) from cached metrics — the age filter's anchor.
     _m = load_metrics(list(names))
     inc = (
         _m.select(["scheme_name", "inception_date"])
@@ -87,7 +83,7 @@ def _load_tracked_enriched(names: tuple[str, ...]) -> pl.DataFrame:
 
     amfi = load_amfi_df().filter(pl.col("scheme_name").is_in(list(names)))
     if amfi.is_empty():
-        # Fall back: scheme_name + computed plan/option so search still works.
+        # Fallback: scheme_name + computed plan/option so search still works.
         return (
             pl.DataFrame({"scheme_name": list(names)})
             .with_columns(
@@ -123,7 +119,7 @@ def _load_index_returns(symbol: str, start: datetime, end: datetime) -> pd.Serie
 
 
 def _rebased_index(returns: pd.Series, dates: pd.DatetimeIndex) -> pd.Series:
-    """Reindex daily returns to `dates`, forward-fill, return cumprod rebased to 100 at first non-null."""
+    """Cumprod of daily returns reindexed to `dates`, rebased to 100 at the first non-null."""
     if returns.empty:
         return pd.Series(dtype="float64")
     idx = (1 + returns).cumprod()
@@ -136,7 +132,7 @@ def _rebased_index(returns: pd.Series, dates: pd.DatetimeIndex) -> pd.Series:
 
 st.title("Mutual Fund Analysis")
 
-# ---- Fund selection (sidebar filters narrow the dropdown options)
+# ---- Fund selection (sidebar filters narrow the dropdown)
 tracked = list_tracked()
 if tracked.is_empty():
     st.info("No tracked funds yet. Add funds from the **MF Screener** page.")
@@ -145,7 +141,7 @@ if tracked.is_empty():
 all_tracked_names = tracked["schemeName"].to_list()
 enriched = _load_tracked_enriched(tuple(all_tracked_names))
 
-_hydrate_mf_filters()  # seed from disk before any filter widget is created
+_hydrate_mf_filters()  # seed from disk before any filter widget is built
 
 with st.sidebar:
     st.header("Filter funds")
@@ -154,11 +150,11 @@ with st.sidebar:
         placeholder="e.g. parag parikh flexi",
         key="mf_analysis_search",
         on_change=_persist_mf_filters,
-        help="Case-insensitive substring match. Multiple words = AND.",
+        help="Case-insensitive substring match; multiple words are ANDed.",
     )
     amc_options = sorted(enriched["fund_house"].drop_nulls().unique().to_list())
     cat_options = sorted(enriched["category"].drop_nulls().unique().to_list())
-    # Sub-category cascades off the selected asset class(es); prune stale persisted values.
+    # Sub-category cascades off the selected category; prune stale persisted values.
     _sel_cats = st.session_state.get("mf_analysis_cat") or []
     _sub_src = enriched.filter(pl.col("category").is_in(_sel_cats)) if _sel_cats else enriched
     sub_cat_options = sorted(_sub_src["sub_category"].drop_nulls().unique().to_list())
@@ -183,10 +179,9 @@ with st.sidebar:
         step=0.5,
         key="mf_analysis_min_age",
         on_change=_persist_mf_filters,
-        help="Keep funds with at least this much NAV history (from inception_date = first NAV date).",
+        help="Keep funds with at least this much NAV history.",
     )
 
-    # Data-availability filters
     st.divider()
     st.caption("Data availability")
     only_with_metadata = st.checkbox("Only with metadata", key="mf_analysis_only_meta", on_change=_persist_mf_filters)
@@ -209,7 +204,7 @@ if min_age_years > 0 and "inception_date" in filtered.columns:
     _cutoff = date.today() - timedelta(days=round(min_age_years * 365.25))
     filtered = filtered.filter(pl.col("inception_date") <= _cutoff)
 
-# Status-based availability filters: join against the tracked statuses
+# Availability filters join against the tracked source statuses.
 if only_with_metadata or only_with_holdings:
     status_df = tracked.select(
         pl.col("schemeName").alias("scheme_name"),
@@ -234,8 +229,7 @@ if not scheme_names:
 
 st.caption(f"Showing **{len(scheme_names):,}** of {len(all_tracked_names):,} tracked funds")
 
-# Drop a persisted fund that the current filters exclude, so the keyed selectbox never gets
-# a value outside its options.
+# Drop a persisted fund the filters now exclude, so the selectbox value stays in its options.
 if st.session_state.get("mf_analysis_fund") not in scheme_names:
     st.session_state.pop("mf_analysis_fund", None)
 
@@ -247,7 +241,7 @@ selected = st.selectbox(
     on_change=_persist_mf_filters,
 )
 
-# ---- Auto-fetch any `pending` sources for this fund before rendering
+# ---- Auto-fetch any pending sources for this fund before rendering
 reg_row = tracked.filter(pl.col("schemeName") == selected).row(0, named=True)
 nav_status = reg_row["navStatus"]
 holdings_status = reg_row["holdingsStatus"]
@@ -265,21 +259,18 @@ if pending_sources:
             scheme_names=[selected],
             sources=tuple(pending_sources),
             max_per_run=len(pending_sources),
-            submit_delay=0.0,  # single fund, no inter-request rate limiting needed
+            submit_delay=0.0,  # single fund, no rate limiting needed
         )
     st.rerun()
 
-# ---- Banners for sources that are confirmed unavailable
+# ---- Banners for sources confirmed unavailable
 if nav_status == "unavailable":
-    st.error(
-        f"NAV data is **unavailable** for *{short_scheme_name(selected)}* (the upstream API "
-        "returned no rows). Try **Settings → Retry unavailable** if you think this is wrong."
-    )
+    st.error(f"NAV data is **unavailable** for *{short_scheme_name(selected)}*. Try **Settings → Retry unavailable**.")
     st.stop()
 if metadata_status == "unavailable":
     st.warning("Metadata not available for this fund — header AMC/AUM/TER/benchmark fields will be partial.")
 
-# ---- Header — AMFI + metadata at a glance.
+# ---- Header — AMFI + metadata at a glance
 amfi_row = get_scheme_details_by_name(selected)
 
 meta_df = load_metadata([selected])
@@ -364,7 +355,7 @@ with tab_growth:
 
     st.subheader("NAV growth (rebased to 100, vs benchmarks)")
 
-    # Build the comparison index: fund + Nifty 50 (always) + actual benchmark (if resolvable).
+    # Comparison index: fund + Nifty 50 (always) + actual benchmark (if resolvable).
     fund_dates = pd.DatetimeIndex(pd.to_datetime(nav_pd.index))
     start_dt = fund_dates.min().to_pydatetime()
     end_dt = fund_dates.max().to_pydatetime()
@@ -415,10 +406,7 @@ with tab_growth:
                 f"⚠️ Benchmark `{meta.get('benchmark')}` resolved to `{bench_symbol}` but no data could be fetched."
             )
     elif meta.get("benchmark") and not bench_symbol:
-        st.caption(
-            f"Benchmark `{meta.get('benchmark')}` has no fetchable symbol mapping "
-            "(CRISIL bond indices etc. aren't on yfinance/NSE). Showing Nifty 50 only."
-        )
+        st.caption(f"Benchmark `{meta.get('benchmark')}` has no fetchable symbol mapping. Showing Nifty 50 only.")
 
     fig.update_layout(
         height=480,
@@ -530,7 +518,7 @@ with tab_risk:
         c8.metric("Max DD (all-time)", f"{max_dd_all * 100:+.1f}%" if not np.isnan(max_dd_all) else "—")
 
         st.subheader("vs Nifty 50 (1Y)")
-        # Tracking error vs the fund's actual benchmark (falls back to Nifty if benchmark unmappable)
+        # Tracking error vs the fund's benchmark; falls back to Nifty if unmappable.
         bench_returns_for_te = nifty_r
         bench_label_for_te = "Nifty 50"
         bench_sym = resolve_benchmark_symbol(meta.get("benchmark"))
@@ -541,7 +529,6 @@ with tab_risk:
                 bench_label_for_te = meta.get("benchmark") or bench_sym
         te = compute_tracking_error(selected, bench_returns_for_te) if not bench_returns_for_te.empty else None
 
-        # All-time NAV signals
         ath = float(nav_pd.max())
         pct_from_ath = (float(nav_pd.iloc[-1]) / ath - 1) if ath > 0 else float("nan")
 
@@ -573,20 +560,14 @@ with tab_risk:
 # ===== Holdings =====
 with tab_holdings:
     if holdings_status == "unavailable":
-        st.warning(
-            "Holdings data is **unavailable** for this fund — AdvisorKhoj had no portfolio "
-            "snapshot at the slug we generated. This is common for ETFs and very new schemes."
-        )
+        st.warning("Holdings data is **unavailable** for this fund — common for ETFs and very new schemes.")
     else:
         slug = make_slug(selected)
         h = load_holdings([slug])
         s = load_sectors([slug])
         a = load_assets([slug])
         if h.is_empty():
-            st.info(
-                "No holdings data fetched yet. Use **MF Screener → Fetch missing data** with "
-                "`holdings` enabled, or refresh from **Settings**."
-            )
+            st.info("No holdings data fetched yet. Refresh from **Settings → Update All Holdings**.")
         else:
             stats = quick_stats(slug)
 
