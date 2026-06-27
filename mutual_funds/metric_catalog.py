@@ -20,7 +20,7 @@ from __future__ import annotations
 # Always-shown identifying columns (display names, post-rename). AMC / Plan / Option are
 # intentionally excluded — they're driven by sidebar / inline filters in the screener,
 # so showing them as table columns wastes horizontal space.
-IDENTITY_COLS: tuple[str, ...] = ("Scheme", "Category")
+IDENTITY_COLS: tuple[str, ...] = ("Scheme", "Category", "Sub-category")
 
 # DB column name → display column name. Stored separately from grouping so renames stay
 # in one place; downstream code only deals with display names.
@@ -28,6 +28,7 @@ METRIC_RENAME: dict[str, str] = {
     "scheme_name": "Scheme",
     "fund_house": "AMC",
     "category": "Category",
+    "sub_category": "Sub-category",
     "plan": "Plan",
     "option": "Option",
     "aum_crores": "AUM (₹ Cr)",
@@ -200,7 +201,7 @@ METRIC_NUMERIC_COLS: frozenset[str] = frozenset(
 
 # Columns that should use AgGrid's text filter (substring/contains).
 METRIC_TEXT_COLS: frozenset[str] = frozenset(
-    {"Scheme", "AMC", "Category", "Benchmark", "Plan", "Option", "NAV", "Holdings", "Metadata"}
+    {"Scheme", "AMC", "Category", "Sub-category", "Benchmark", "Plan", "Option", "NAV", "Holdings", "Metadata"}
 )
 
 # Canonical left-to-right column order for the screener table. Identity first, then by group.

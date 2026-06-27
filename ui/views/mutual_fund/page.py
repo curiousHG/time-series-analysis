@@ -23,27 +23,63 @@ from services.registry_service import backfill_missing, list_tracked
 from services.screener_service import apply_name_filter
 from ui.components.mutual_fund_holdings import render_holdings_table
 from ui.constants import RF_DAILY
+from ui.persistence.selections import load_selection, save_selection
+
+# Sidebar filter + selected-fund state, persisted to selections.json so it survives page
+# navigation (Streamlit GCs unrendered widget keys) and full browser refreshes.
+_MF_PERSIST_KEY = "mf_analysis_filters"
+_MF_FILTER_DEFAULTS = {
+    "mf_analysis_search": "",
+    "mf_analysis_amc": [],
+    "mf_analysis_cat": [],
+    "mf_analysis_sub_cat": [],
+    "mf_analysis_plan": [],
+    "mf_analysis_option": [],
+    "mf_analysis_only_meta": False,
+    "mf_analysis_only_holdings": False,
+    "mf_analysis_fund": None,
+}
+
+
+def _hydrate_mf_filters() -> None:
+    """Seed missing filter keys from disk (idempotent; never clobbers in-session edits)."""
+    saved = load_selection(_MF_PERSIST_KEY, {})
+    for key, default in _MF_FILTER_DEFAULTS.items():
+        if key in st.session_state:
+            continue
+        value = saved.get(key, default)
+        if value is not None:  # don't pre-seed the fund selectbox with None
+            st.session_state[key] = value
+
+
+def _persist_mf_filters() -> None:
+    """on_change: snapshot all mf_analysis_* filter values to selections.json."""
+    save_selection(_MF_PERSIST_KEY, {k: st.session_state[k] for k in _MF_FILTER_DEFAULTS if k in st.session_state})
 
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _load_tracked_enriched(names: tuple[str, ...]) -> pl.DataFrame:
-    """Tracked funds + AMFI fund_house/category + computed plan/option, for the sidebar filters."""
+    """Tracked funds + AMFI asset class / sub-category + computed plan/option, for the filters.
+
+    Category = AMFI's SEBI asset class (Equity/Debt/…), sub_category = the granular SEBI type.
+    """
+    empty_schema = {
+        "scheme_name": pl.Utf8,
+        "fund_house": pl.Utf8,
+        "category": pl.Utf8,
+        "sub_category": pl.Utf8,
+        "plan": pl.Utf8,
+        "option": pl.Utf8,
+    }
     if not names:
-        return pl.DataFrame(
-            schema={
-                "scheme_name": pl.Utf8,
-                "fund_house": pl.Utf8,
-                "category": pl.Utf8,
-                "plan": pl.Utf8,
-                "option": pl.Utf8,
-            }
-        )
+        return pl.DataFrame(schema=empty_schema)
     amfi = load_amfi_df().filter(pl.col("scheme_name").is_in(list(names)))
     if amfi.is_empty():
-        # Fall back: at least return scheme_name + computed plan/option so search still works.
+        # Fall back: scheme_name + computed plan/option so search still works.
         return pl.DataFrame({"scheme_name": list(names)}).with_columns(
             pl.lit(None, dtype=pl.Utf8).alias("fund_house"),
             pl.lit(None, dtype=pl.Utf8).alias("category"),
+            pl.lit(None, dtype=pl.Utf8).alias("sub_category"),
             pl.col("scheme_name").map_elements(detect_plan, return_dtype=pl.Utf8).alias("plan"),
             pl.col("scheme_name").map_elements(detect_option, return_dtype=pl.Utf8).alias("option"),
         )
@@ -52,19 +88,7 @@ def _load_tracked_enriched(names: tuple[str, ...]) -> pl.DataFrame:
         pl.col("scheme_name").map_elements(detect_plan, return_dtype=pl.Utf8).alias("plan"),
         pl.col("scheme_name").map_elements(detect_option, return_dtype=pl.Utf8).alias("option"),
     )
-
-    meta = load_metadata(list(names))
-    if meta.height:
-        meta_sub = meta.select(
-            pl.col("schemeName").alias("scheme_name"),
-            pl.col("category").alias("metadata_category"),
-        )
-        enriched = (
-            enriched.join(meta_sub, on="scheme_name", how="left")
-            .with_columns(pl.coalesce([pl.col("metadata_category"), pl.col("category")]).alias("category"))
-            .drop("metadata_category")
-        )
-    return enriched.select(["scheme_name", "fund_house", "category", "plan", "option"])
+    return enriched.select(["scheme_name", "fund_house", "category", "sub_category", "plan", "option"])
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -103,33 +127,53 @@ if tracked.is_empty():
 all_tracked_names = tracked["schemeName"].to_list()
 enriched = _load_tracked_enriched(tuple(all_tracked_names))
 
+_hydrate_mf_filters()  # seed from disk before any filter widget is created
+
 with st.sidebar:
     st.header("Filter funds")
     name_query = st.text_input(
         "Search by name",
         placeholder="e.g. parag parikh flexi",
         key="mf_analysis_search",
+        on_change=_persist_mf_filters,
         help="Case-insensitive substring match. Multiple words = AND.",
     )
     amc_options = sorted(enriched["fund_house"].drop_nulls().unique().to_list())
     cat_options = sorted(enriched["category"].drop_nulls().unique().to_list())
+    # Sub-category cascades off the selected asset class(es); prune stale persisted values.
+    _sel_cats = st.session_state.get("mf_analysis_cat") or []
+    _sub_src = enriched.filter(pl.col("category").is_in(_sel_cats)) if _sel_cats else enriched
+    sub_cat_options = sorted(_sub_src["sub_category"].drop_nulls().unique().to_list())
+    if "mf_analysis_sub_cat" in st.session_state:
+        st.session_state["mf_analysis_sub_cat"] = [
+            s for s in st.session_state["mf_analysis_sub_cat"] if s in sub_cat_options
+        ]
 
-    amc_filter = st.multiselect("AMC", amc_options, key="mf_analysis_amc")
-    cat_filter = st.multiselect("Category", cat_options, key="mf_analysis_cat")
-    plan_filter = st.multiselect("Plan", ["Direct", "Regular"], key="mf_analysis_plan")
-    option_filter = st.multiselect("Option", ["Growth", "IDCW", "Bonus", "ETF", "Other"], key="mf_analysis_option")
+    amc_filter = st.multiselect("AMC", amc_options, key="mf_analysis_amc", on_change=_persist_mf_filters)
+    cat_filter = st.multiselect("Category", cat_options, key="mf_analysis_cat", on_change=_persist_mf_filters)
+    sub_cat_filter = st.multiselect(
+        "Sub-category", sub_cat_options, key="mf_analysis_sub_cat", on_change=_persist_mf_filters
+    )
+    plan_filter = st.multiselect("Plan", ["Direct", "Regular"], key="mf_analysis_plan", on_change=_persist_mf_filters)
+    option_filter = st.multiselect(
+        "Option", ["Growth", "IDCW", "Bonus", "ETF", "Other"], key="mf_analysis_option", on_change=_persist_mf_filters
+    )
 
     # Data-availability filters
     st.divider()
     st.caption("Data availability")
-    only_with_metadata = st.checkbox("Only with metadata", value=False, key="mf_analysis_only_meta")
-    only_with_holdings = st.checkbox("Only with holdings", value=False, key="mf_analysis_only_holdings")
+    only_with_metadata = st.checkbox("Only with metadata", key="mf_analysis_only_meta", on_change=_persist_mf_filters)
+    only_with_holdings = st.checkbox(
+        "Only with holdings", key="mf_analysis_only_holdings", on_change=_persist_mf_filters
+    )
 
 filtered = apply_name_filter(enriched, name_query)
 if amc_filter:
     filtered = filtered.filter(pl.col("fund_house").is_in(amc_filter))
 if cat_filter:
     filtered = filtered.filter(pl.col("category").is_in(cat_filter))
+if sub_cat_filter:
+    filtered = filtered.filter(pl.col("sub_category").is_in(sub_cat_filter))
 if plan_filter:
     filtered = filtered.filter(pl.col("plan").is_in(plan_filter))
 if option_filter:
@@ -160,11 +204,17 @@ if not scheme_names:
 
 st.caption(f"Showing **{len(scheme_names):,}** of {len(all_tracked_names):,} tracked funds")
 
+# Drop a persisted fund that the current filters exclude, so the keyed selectbox never gets
+# a value outside its options.
+if st.session_state.get("mf_analysis_fund") not in scheme_names:
+    st.session_state.pop("mf_analysis_fund", None)
+
 selected = st.selectbox(
     "Fund",
     options=scheme_names,
     format_func=short_scheme_name,
     key="mf_analysis_fund",
+    on_change=_persist_mf_filters,
 )
 
 # ---- Auto-fetch any `pending` sources for this fund before rendering

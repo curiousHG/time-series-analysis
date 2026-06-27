@@ -44,6 +44,7 @@ class FilterState:
     name_query: str
     amcs: list[str]
     cats: list[str]
+    sub_cats: list[str]
     plans: list[str]
     options: list[str]
     aum_min: float
@@ -63,6 +64,16 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
 
     amc_options = sorted(df["fund_house"].drop_nulls().unique().to_list())
     cat_options = sorted(df["category"].drop_nulls().unique().to_list())
+    # Sub-category options cascade off the selected asset class(es).
+    _sel_cats = st.session_state.get("screener_cats") or []
+    _sub_source = df.filter(pl.col("category").is_in(_sel_cats)) if _sel_cats else df
+    sub_cat_options = sorted(_sub_source["sub_category"].drop_nulls().unique().to_list())
+    # Prune any persisted sub-category that the current class selection no longer offers,
+    # so the keyed multiselect never gets a value outside its options.
+    if "screener_sub_cats" in st.session_state:
+        st.session_state["screener_sub_cats"] = [
+            s for s in st.session_state["screener_sub_cats"] if s in sub_cat_options
+        ]
 
     with st.sidebar:
         st.header("Filters")
@@ -80,6 +91,9 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
             )
             amcs = st.multiselect("AMC", amc_options, key="screener_amcs", on_change=_persist_filters)
             cats = st.multiselect("Category", cat_options, key="screener_cats", on_change=_persist_filters)
+            sub_cats = st.multiselect(
+                "Sub-category", sub_cat_options, key="screener_sub_cats", on_change=_persist_filters
+            )
             plans = st.multiselect("Plan", ["Direct", "Regular"], key="screener_plans", on_change=_persist_filters)
             options = st.multiselect(
                 "Option",
@@ -137,6 +151,7 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
         name_query=name_query.strip() if name_query else "",
         amcs=amcs,
         cats=cats,
+        sub_cats=sub_cats,
         plans=plans,
         options=options,
         aum_min=aum_min,

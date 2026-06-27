@@ -341,6 +341,7 @@ def load_amfi_df() -> pl.DataFrame:
                 col(AmfiScheme.scheme_name),
                 col(MfAmc.name).label("fund_house"),
                 col(MfCategory.name).label("category"),
+                col(AmfiScheme.sub_category).label("sub_category"),
                 col(AmfiScheme.isin_growth),
                 col(AmfiScheme.nav),
                 col(AmfiScheme.nav_date),
@@ -355,6 +356,7 @@ def load_amfi_df() -> pl.DataFrame:
                 "scheme_name": pl.Utf8,
                 "fund_house": pl.Utf8,
                 "category": pl.Utf8,
+                "sub_category": pl.Utf8,
                 "isin_growth": pl.Utf8,
                 "nav": pl.Float64,
                 "nav_date": pl.Date,
@@ -366,8 +368,9 @@ def load_amfi_df() -> pl.DataFrame:
             "scheme_name": [r[1] for r in rows],
             "fund_house": [r[2] for r in rows],
             "category": [r[3] for r in rows],
-            "isin_growth": [r[4] for r in rows],
-            "nav": [r[5] for r in rows],
-            "nav_date": [r[6] for r in rows],
+            "sub_category": [r[4] for r in rows],
+            "isin_growth": [r[5] for r in rows],
+            "nav": [r[6] for r in rows],
+            "nav_date": [r[7] for r in rows],
         }
     )

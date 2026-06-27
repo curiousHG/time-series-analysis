@@ -273,11 +273,50 @@ def build_nav_params(scheme_name: str, launch_date: str) -> dict:
     }
 
 
+# AMFI scheme-type headers, e.g. "Open Ended Schemes(Equity Scheme - Large Cap Fund)".
+_AMFI_CATEGORY_RE = re.compile(
+    r"^\s*(?:Open Ended|Close Ended|Interval Fund)\s+Schemes?\s*\((?P<inner>.+)\)\s*$",
+    re.IGNORECASE,
+)
+# Legacy/close-ended headers without a "<Class> Scheme - <Sub>" split (e.g. "Income", "Growth").
+_LEGACY_CLASS = {
+    "income": "Debt",
+    "debt": "Debt",
+    "liquid": "Debt",
+    "gilt": "Debt",
+    "money market": "Debt",
+    "growth": "Equity",
+    "equity": "Equity",
+    "elss": "Equity",
+    "balanced": "Hybrid",
+}
+
+
+def _classify_amfi_header(line: str) -> tuple[str | None, str | None, str | None]:
+    """Classify a non-data AMFI line as (asset_class, sub_category, fund_house).
+
+    Category headers are SEBI scheme-type lines (`Open/Close Ended Schemes(<Class> Scheme - <Sub>)`)
+    → asset_class ("Equity"/"Debt"/"Hybrid"/"Other"/"Solution Oriented") + sub_category
+    ("Large Cap Fund"). Legacy headers without the " - " split fall back via `_LEGACY_CLASS`.
+    Everything else is an AMC/fund-house line — these can also contain parentheses (e.g.
+    "IL&FS Mutual Fund (IDF)"), which the old paren-only heuristic mis-filed as a category.
+    """
+    m = _AMFI_CATEGORY_RE.match(line)
+    if not m:
+        return None, None, line.strip()
+    inner = re.sub(r"\s+", " ", m.group("inner")).strip()
+    if " - " in inner:
+        class_part, sub = inner.split(" - ", 1)
+        asset_class = class_part.replace("Scheme", "").strip() or "Other"
+        return asset_class, sub.strip(), None
+    return _LEGACY_CLASS.get(inner.lower(), "Other"), inner, None
+
+
 def fetch_amfi_master() -> list[dict]:
     """Download AMFI NAVAll.txt → list of scheme dicts.
 
     Line format: SchemeCode;ISIN Payout/Growth;ISIN Reinvestment;SchemeName;NAV;Date.
-    Lines without semicolons are category/fund house headers.
+    Lines without semicolons are scheme-type (category) or fund-house headers.
     """
     logger.info("Fetching AMFI master data from %s", AMFI_NAV_ALL_URL)
     resp = httpx.get(AMFI_NAV_ALL_URL, timeout=60, follow_redirects=True)
@@ -285,6 +324,7 @@ def fetch_amfi_master() -> list[dict]:
 
     schemes = []
     current_category = None
+    current_sub_category = None
     current_fund_house = None
 
     for line in resp.text.strip().split("\n"):
@@ -294,11 +334,13 @@ def fetch_amfi_master() -> list[dict]:
 
         parts = line.split(";")
         if len(parts) < 5:
-            # Category or fund house header
-            if "(" in line and ")" in line:
-                current_category = line.strip()
+            # Scheme-type (asset class + sub-category) or fund-house header.
+            asset_class, sub_category, fund_house = _classify_amfi_header(line)
+            if asset_class is not None:
+                current_category = asset_class
+                current_sub_category = sub_category
             else:
-                current_fund_house = line.strip()
+                current_fund_house = fund_house
             continue
 
         try:
@@ -334,6 +376,7 @@ def fetch_amfi_master() -> list[dict]:
                 "nav_date": nav_date,
                 "fund_house": current_fund_house,
                 "category": current_category,
+                "sub_category": current_sub_category,
             }
         )
 

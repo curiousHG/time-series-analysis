@@ -9,9 +9,9 @@ that other pages reuse with tighter requirements.
 from __future__ import annotations
 
 import polars as pl
-from sqlalchemy import func
 from sqlalchemy import select as sa_select
 from sqlalchemy.orm import aliased
+from sqlmodel import col
 
 from core.database import get_session
 from core.models import AmfiScheme, MfAmc, MfCategory, MfMetadata, MfRegistry, MfSchemeMetrics
@@ -25,16 +25,18 @@ def load_screener_view() -> pl.DataFrame:
     LEFT-JOINed with metadata / metrics / registry / dim tables. (category: metadata's
     preferred over AMFI's; metrics: every mf_scheme_metrics column.)
     """
-    # `mf_category` joined twice — once via amfi.category_id, once via metadata.category_id.
+    # Category = AMFI's SEBI asset class (Equity/Debt/Hybrid/…); sub_category = the granular
+    # SEBI type. AMFI is the authoritative source — the old AdvisorKhoj-metadata coalesce
+    # mixed vocabularies (e.g. "Fund of Funds-Overseas" vs "FoF Overseas") and is dropped.
     amfi_cat = aliased(MfCategory)
-    meta_cat = aliased(MfCategory)
 
     stmt = (
         sa_select(
             AmfiScheme.scheme_code,
             AmfiScheme.scheme_name,
             MfAmc.name.label("fund_house"),
-            func.coalesce(meta_cat.name, amfi_cat.name).label("category"),
+            amfi_cat.name.label("category"),
+            col(AmfiScheme.sub_category).label("sub_category"),
             AmfiScheme.isin_growth,
             AmfiScheme.nav,
             AmfiScheme.nav_date,
@@ -51,7 +53,6 @@ def load_screener_view() -> pl.DataFrame:
         .join(MfAmc, AmfiScheme.fund_house_id == MfAmc.id, isouter=True)
         .join(amfi_cat, AmfiScheme.category_id == amfi_cat.id, isouter=True)
         .join(MfMetadata, MfMetadata.scheme_code == AmfiScheme.scheme_code, isouter=True)
-        .join(meta_cat, MfMetadata.category_id == meta_cat.id, isouter=True)
         .join(MfSchemeMetrics, MfSchemeMetrics.scheme_code == AmfiScheme.scheme_code, isouter=True)
         .join(MfRegistry, MfRegistry.scheme_code == AmfiScheme.scheme_code, isouter=True)
     )

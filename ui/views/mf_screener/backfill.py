@@ -30,7 +30,7 @@ def render_inline_backfill(filtered: pl.DataFrame, n_col, btn_col) -> None:
         )
     with btn_col:
         run_clicked = st.button(
-            f"Add top {int(batch)} to tracked + fetch",
+            f"Fetch data for top {int(batch)}",
             type="primary",
             key="screener_backfill",
             use_container_width=True,

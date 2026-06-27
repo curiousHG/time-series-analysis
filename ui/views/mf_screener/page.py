@@ -29,17 +29,22 @@ def _render_universe_summary(amfi_count: int, filtered: pl.DataFrame) -> None:
         holdings_count = tracked_df.filter(pl.col("holdingsStatus") == "available").height
 
     m1, m2, m3, m4 = st.columns([1, 1, 1, 2], vertical_alignment="bottom")
-    m1.metric("AMFI universe", f"{amfi_count:,}")
-    m2.metric("Tracked", f"{tracked_count:,}")
+    m1.metric(
+        "All schemes (AMFI)", f"{amfi_count:,}", help="Every scheme in the AMFI master — the full searchable universe."
+    )
+    m2.metric(
+        "With data loaded",
+        f"{tracked_count:,}",
+        help="Funds whose NAV/metadata we've fetched. Metrics and the risk/return chart only "
+        "appear for these — use the fetch button to load more.",
+    )
     render_inline_backfill(filtered, m3, m4)
 
     if tracked_count:
         st.caption(
-            f"Available data per source — "
-            f"NAV: **{nav_count:,}** · "
-            f"Metadata: **{metadata_count:,}** · "
-            f"Holdings: **{holdings_count:,}** "
-            f"(out of {tracked_count:,} tracked)"
+            f"Of {tracked_count:,} loaded, data fetched per source — "
+            f"NAV: **{nav_count:,}** · Metadata: **{metadata_count:,}** · Holdings: **{holdings_count:,}**. "
+            "Filter the table, then **Fetch data for top N** to load metrics for those funds."
         )
 
 
@@ -60,6 +65,7 @@ _filtered = apply_filters(
     name_query=_state.name_query,
     amcs=_state.amcs,
     cats=_state.cats,
+    sub_cats=_state.sub_cats,
     plans=_state.plans,
     options=_state.options,
     aum_min=_state.aum_min,

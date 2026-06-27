@@ -27,6 +27,7 @@ FILTER_DEFAULTS = {
     "screener_name_query": "",
     "screener_amcs": [],
     "screener_cats": [],
+    "screener_sub_cats": [],
     "screener_plans": ["Direct"],
     "screener_options": ["Growth"],
     "screener_aum_min": 0,
@@ -44,12 +45,10 @@ SLIDER_DEFAULTS = {
 
 # Screener add-to-tracked control help (ui.views.mf_screener.backfill).
 BACKFILL_HELP_TEXT = (
-    "Add-to-tracked + fetch NAV/metadata for the top-N rows of the filtered view "
-    "(in the order shown). Upserts into `mf_registry` with status `pending`, then "
-    "fetches NAV + metadata. Throttled to ~3 req/s (2 concurrent · 0.4 s submission "
-    "delay) to avoid upstream rate limits. Sources already `available` are skipped. "
-    "Holdings are not fetched here (slower scrape) — use Settings → "
-    "*Update All Holdings* once a fund is tracked."
+    "Fetch NAV + metadata for the top-N rows of the filtered view (in the sort order shown), "
+    "then compute their risk/return metrics. Funds already loaded are skipped. Throttled to "
+    "~3 req/s to respect upstream rate limits. Holdings aren't fetched here (slower scrape) — "
+    "use Settings → *Update All Holdings*."
 )
 
 # Status-badge colour palette for the refresh table (ui.views.settings.refresh).

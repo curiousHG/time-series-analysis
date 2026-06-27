@@ -119,6 +119,7 @@ class AmfiScheme(SQLModel, table=True):
     nav_date: datetime.date | None = None
     fund_house_id: int | None = Field(default=None, foreign_key="mf_amc.id", index=True)
     category_id: int | None = Field(default=None, foreign_key="mf_category.id", index=True)
+    sub_category: str | None = Field(default=None, index=True)  # SEBI sub (e.g. "Large Cap Fund")
     db_added_at: datetime.datetime | None = Field(default=None, index=True)
 
 

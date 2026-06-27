@@ -66,6 +66,7 @@ def apply_filters(
     name_query: str,
     amcs: list[str],
     cats: list[str],
+    sub_cats: list[str] | None = None,
     plans: list[str],
     options: list[str],
     aum_min: float,
@@ -87,6 +88,8 @@ def apply_filters(
         out = out.filter(pl.col("fund_house").is_in(amcs))
     if cats:
         out = out.filter(pl.col("category").is_in(cats))
+    if sub_cats:
+        out = out.filter(pl.col("sub_category").is_in(sub_cats))
     if plans:
         out = out.filter(pl.col("plan").is_in(plans))
     if options:
