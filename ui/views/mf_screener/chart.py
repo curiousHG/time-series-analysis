@@ -240,11 +240,12 @@ def _render_captions(risk_db_col: str, return_choice: str) -> None:
     """Footer captions: benchmark caveat (when applicable) + bubble-size / frontier note."""
     if return_choice in BENCHMARK_DEPENDENT or risk_db_col in BENCHMARK_DEPENDENT:
         st.caption(
-            "Note: Alpha / IR numerator / Beta / Tracking Error are all calculated against "
-            "the **Nifty 50 (^NSEI)** as the benchmark, using daily returns over the last "
-            "~252 trading days (min 60 overlapping days). To recompute against a different "
-            "benchmark, change the default in `services.mf_metrics._load_nifty_for_recompute` "
-            "and re-run `scripts/compute_metrics.py --all`."
+            "Note: Alpha / Beta / Tracking Error are computed against **each fund's "
+            "category benchmark** (Large Cap → Nifty 100, Mid Cap → Nifty Midcap 150, "
+            "Small Cap → Nifty Smallcap 250, Flexi/ELSS/… → Nifty 500, etc.), over the last "
+            "~252 trading days (min 60 overlapping). Debt / arbitrage / index funds have no "
+            "equity benchmark, so their CAPM stats are blank. The **IR-numerator** axis still "
+            "uses Nifty 50. Mapping lives in `services.benchmarks.SUBCATEGORY_BENCHMARK`."
         )
     st.caption(
         "Bubble size = AUM (log₁₀, floored at ₹10 Cr so micro-funds stay visible). "

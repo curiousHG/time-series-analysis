@@ -17,6 +17,7 @@ from core.timing import timed, timeit
 from data.repositories.scheme_metrics import clear_metrics, find_stale_schemes, load_metrics, upsert_metrics
 from data.repositories.stock import ensure_stock_data, refresh_stock_to_today
 from mutual_funds.display import make_slug  # noqa: F401 — back-compat re-export for callers
+from services.benchmarks import subcategory_benchmark
 from services.constants import RF_DAILY, TRADING_DAYS
 
 logger = logging.getLogger("services.mf_metrics")
@@ -390,39 +391,47 @@ def compute_tracking_error(scheme_name: str, benchmark_returns: pd.Series, windo
     return float(diff.std() * math.sqrt(TRADING_DAYS))
 
 
-def _load_nifty_for_recompute() -> pd.Series:
-    """Nifty 50 daily returns from stock_ohlcv — the default benchmark.
+def _load_benchmark_returns(symbol: str) -> pd.Series:
+    """Daily returns for a benchmark index from stock_ohlcv, force-refreshed to today.
 
-    Force-refreshes to today first: `ensure_stock_data` skips sub-5-day gaps, which would
-    silently leave the benchmark stale and push CAPM stats onto out-of-date data.
+    `ensure_stock_data` skips sub-5-day gaps, which would silently leave the benchmark stale
+    and push CAPM stats onto out-of-date data — so we force-refresh first. Routes through the
+    usual fetchers (yfinance for "^…", niftyindices for "NIFTY …").
     """
     try:
-        today, db_max = refresh_stock_to_today("^NSEI")
+        today, db_max = refresh_stock_to_today(symbol)
         if db_max is None:
-            logger.warning("Nifty 50 refresh returned no rows — benchmark CAPM stats will be NaN")
+            logger.warning("Benchmark %s refresh returned no rows — CAPM stats vs it will be NaN", symbol)
             return pd.Series(dtype="float64")
         if db_max < today:
-            logger.warning(
-                "Nifty 50 still %d day(s) behind today after refresh (likely weekend/holiday); "
-                "proceeding with last available data",
+            logger.info(
+                "Benchmark %s %d day(s) behind today (weekend/holiday) — using last available",
+                symbol,
                 (today - db_max).days,
             )
-        else:
-            logger.info("Nifty 50 benchmark fresh through %s", db_max)
     except Exception:
-        logger.exception("Forced Nifty 50 refresh failed — falling back to whatever's in DB")
+        logger.exception("Forced refresh of benchmark %s failed — using whatever's in DB", symbol)
 
     end = pd.Timestamp.today().to_pydatetime()
     start = (pd.Timestamp.today() - pd.DateOffset(years=10)).to_pydatetime()
     try:
-        df = ensure_stock_data("^NSEI", start, end)
+        df = ensure_stock_data(symbol, start, end)
     except Exception:
-        logger.exception("Failed to load Nifty 50 for benchmark — alpha/beta/TE will be NaN")
+        logger.exception("Failed to load benchmark %s — alpha/beta/TE will be NaN", symbol)
         return pd.Series(dtype="float64")
     if df.is_empty():
         return pd.Series(dtype="float64")
     pdf = df.select(["Date", "Close"]).to_pandas().set_index("Date").sort_index()
-    return pdf["Close"].pct_change().dropna().rename("nifty")
+    return pdf["Close"].pct_change().dropna().rename(symbol)
+
+
+def _subcategories(scheme_names: list[str]) -> dict[str, str | None]:
+    """scheme_name → AMFI sub_category, for choosing each fund's benchmark."""
+    with get_session() as session:
+        rows = session.exec(
+            select(AmfiScheme.scheme_name, AmfiScheme.sub_category).where(col(AmfiScheme.scheme_name).in_(scheme_names))
+        ).all()
+    return {r[0]: r[1] for r in rows}
 
 
 @timeit("mf_metrics.recompute_metrics")
@@ -443,8 +452,16 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
     if not scheme_names:
         return 0
 
-    # Load Nifty 50 once and broadcast to every worker — saves N redundant DB reads.
-    bench_returns = _load_nifty_for_recompute()
+    # Pick each fund's benchmark from its SEBI sub-category (Large Cap → Nifty 100, Mid Cap →
+    # Nifty Midcap 150, Small Cap → Nifty Smallcap 250, …; Debt/Arbitrage/etc. → None → CAPM
+    # stats left NaN). Load each distinct index once, then broadcast to the workers.
+    bench_sym_by_name = {n: subcategory_benchmark(s) for n, s in _subcategories(scheme_names).items()}
+    distinct_syms = sorted({s for s in bench_sym_by_name.values() if s})
+    logger.info("recompute: %d funds across %d benchmark(s): %s", len(scheme_names), len(distinct_syms), distinct_syms)
+    bench_cache = {sym: _load_benchmark_returns(sym) for sym in distinct_syms}
+
+    def _bench_for(name: str) -> pd.Series | None:
+        return bench_cache.get(bench_sym_by_name.get(name) or "")
 
     rows: list[dict] = []
     skipped: list[str] = []
@@ -452,7 +469,7 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
         timed(f"mf_metrics.recompute_metrics.parallel(n={len(scheme_names)})"),
         ThreadPoolExecutor(max_workers=max_workers) as pool,
     ):
-        futures = {pool.submit(compute_metrics_for_scheme, n, bench_returns): n for n in scheme_names}
+        futures = {pool.submit(compute_metrics_for_scheme, n, _bench_for(n)): n for n in scheme_names}
         for future in as_completed(futures):
             name = futures[future]
             try:
