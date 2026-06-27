@@ -1,6 +1,6 @@
 """Mutual Fund Analysis — single-fund deep dive."""
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -14,6 +14,7 @@ from data.repositories.amfi import get_scheme_details_by_name, load_amfi_df
 from data.repositories.holdings import load_assets, load_holdings, load_sectors
 from data.repositories.metadata import load_metadata
 from data.repositories.nav import load_nav_df
+from data.repositories.scheme_metrics import load_metrics
 from data.repositories.stock import ensure_stock_data
 from mutual_funds.display import detect_option, detect_plan, make_slug, short_scheme_name
 from mutual_funds.holdings_stats import quick_stats
@@ -37,6 +38,7 @@ _MF_FILTER_DEFAULTS = {
     "mf_analysis_option": [],
     "mf_analysis_only_meta": False,
     "mf_analysis_only_holdings": False,
+    "mf_analysis_min_age": 0.0,
     "mf_analysis_fund": None,
 }
 
@@ -70,25 +72,41 @@ def _load_tracked_enriched(names: tuple[str, ...]) -> pl.DataFrame:
         "sub_category": pl.Utf8,
         "plan": pl.Utf8,
         "option": pl.Utf8,
+        "inception_date": pl.Date,
     }
     if not names:
         return pl.DataFrame(schema=empty_schema)
+
+    # inception_date (first NAV date) from the cached metrics — the age filter's anchor.
+    _m = load_metrics(list(names))
+    inc = (
+        _m.select(["scheme_name", "inception_date"])
+        if "inception_date" in _m.columns
+        else pl.DataFrame(schema={"scheme_name": pl.Utf8, "inception_date": pl.Date})
+    )
+
     amfi = load_amfi_df().filter(pl.col("scheme_name").is_in(list(names)))
     if amfi.is_empty():
         # Fall back: scheme_name + computed plan/option so search still works.
-        return pl.DataFrame({"scheme_name": list(names)}).with_columns(
-            pl.lit(None, dtype=pl.Utf8).alias("fund_house"),
-            pl.lit(None, dtype=pl.Utf8).alias("category"),
-            pl.lit(None, dtype=pl.Utf8).alias("sub_category"),
-            pl.col("scheme_name").map_elements(detect_plan, return_dtype=pl.Utf8).alias("plan"),
-            pl.col("scheme_name").map_elements(detect_option, return_dtype=pl.Utf8).alias("option"),
+        return (
+            pl.DataFrame({"scheme_name": list(names)})
+            .with_columns(
+                pl.lit(None, dtype=pl.Utf8).alias("fund_house"),
+                pl.lit(None, dtype=pl.Utf8).alias("category"),
+                pl.lit(None, dtype=pl.Utf8).alias("sub_category"),
+                pl.col("scheme_name").map_elements(detect_plan, return_dtype=pl.Utf8).alias("plan"),
+                pl.col("scheme_name").map_elements(detect_option, return_dtype=pl.Utf8).alias("option"),
+            )
+            .join(inc, on="scheme_name", how="left")
         )
 
     enriched = amfi.with_columns(
         pl.col("scheme_name").map_elements(detect_plan, return_dtype=pl.Utf8).alias("plan"),
         pl.col("scheme_name").map_elements(detect_option, return_dtype=pl.Utf8).alias("option"),
+    ).join(inc, on="scheme_name", how="left")
+    return enriched.select(
+        ["scheme_name", "fund_house", "category", "sub_category", "plan", "option", "inception_date"]
     )
-    return enriched.select(["scheme_name", "fund_house", "category", "sub_category", "plan", "option"])
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -158,6 +176,15 @@ with st.sidebar:
     option_filter = st.multiselect(
         "Option", ["Growth", "IDCW", "Bonus", "ETF", "Other"], key="mf_analysis_option", on_change=_persist_mf_filters
     )
+    min_age_years = st.slider(
+        "Min fund age (years)",
+        0.0,
+        25.0,
+        step=0.5,
+        key="mf_analysis_min_age",
+        on_change=_persist_mf_filters,
+        help="Keep funds with at least this much NAV history (from inception_date = first NAV date).",
+    )
 
     # Data-availability filters
     st.divider()
@@ -178,6 +205,9 @@ if plan_filter:
     filtered = filtered.filter(pl.col("plan").is_in(plan_filter))
 if option_filter:
     filtered = filtered.filter(pl.col("option").is_in(option_filter))
+if min_age_years > 0 and "inception_date" in filtered.columns:
+    _cutoff = date.today() - timedelta(days=round(min_age_years * 365.25))
+    filtered = filtered.filter(pl.col("inception_date") <= _cutoff)
 
 # Status-based availability filters: join against the tracked statuses
 if only_with_metadata or only_with_holdings:

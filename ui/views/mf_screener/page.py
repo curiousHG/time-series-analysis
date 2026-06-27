@@ -70,6 +70,7 @@ _filtered = apply_filters(
     options=_state.options,
     aum_min=_state.aum_min,
     ter_max=_state.ter_max,
+    min_age_years=_state.min_age_years,
     only_tracked=False,  # filter retired — see ui.views.mf_screener.filters
     only_untracked=_state.only_untracked,
     has_nav=_state.has_nav,

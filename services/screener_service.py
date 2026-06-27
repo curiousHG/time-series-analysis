@@ -74,6 +74,7 @@ def apply_filters(
     only_tracked: bool,
     only_untracked: bool = False,
     has_nav: bool,
+    min_age_years: float | None = None,
     cagr_min: float | None = None,
     sharpe_min: float | None = None,
     dd_min: float | None = None,
@@ -81,9 +82,14 @@ def apply_filters(
     """Sidebar filter pipeline; all inputs optional (empty list / 0 = no constraint).
 
     `cagr_min`/`sharpe_min`/`dd_min` honoured only when `has_nav=True` — they need the metric
-    columns populated and would otherwise drop every row.
+    columns populated and would otherwise drop every row. `min_age_years` filters on
+    `inception_date` (first NAV date); funds without a computed inception are dropped when an
+    age floor is set, since their age can't be verified.
     """
     out = apply_name_filter(df, name_query)
+    if min_age_years and min_age_years > 0 and "inception_date" in out.columns:
+        cutoff = _date.today() - timedelta(days=round(min_age_years * 365.25))
+        out = out.filter(pl.col("inception_date") <= cutoff)
     if amcs:
         out = out.filter(pl.col("fund_house").is_in(amcs))
     if cats:

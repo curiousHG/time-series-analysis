@@ -32,6 +32,7 @@ FILTER_DEFAULTS = {
     "screener_options": ["Growth"],
     "screener_aum_min": 0,
     "screener_ter_max": 2.5,
+    "screener_min_age": 0.0,
     "screener_only_untracked": False,
     "screener_has_nav": False,
     "screener_visible_metrics": list(DEFAULT_VISIBLE_METRICS),

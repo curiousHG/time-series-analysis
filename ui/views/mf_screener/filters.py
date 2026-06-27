@@ -49,6 +49,7 @@ class FilterState:
     options: list[str]
     aum_min: float
     ter_max: float
+    min_age_years: float
     only_untracked: bool
     has_nav: bool
     cagr_min: float | None
@@ -111,6 +112,16 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
             ter_max = n2.number_input(
                 "Max TER %", min_value=0.0, step=0.05, format="%.2f", key="screener_ter_max", on_change=_persist_filters
             )
+            min_age_years = st.slider(
+                "Min fund age (years)",
+                0.0,
+                25.0,
+                step=0.5,
+                key="screener_min_age",
+                on_change=_persist_filters,
+                help="Keep funds with at least this much NAV history (from inception_date = first NAV "
+                "date). Funds without computed metrics are excluded when this is > 0.",
+            )
             only_untracked = st.checkbox(
                 "Only untracked schemes",
                 key="screener_only_untracked",
@@ -156,6 +167,7 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
         options=options,
         aum_min=aum_min,
         ter_max=ter_max,
+        min_age_years=min_age_years,
         only_untracked=only_untracked,
         has_nav=has_nav,
         cagr_min=cagr_min,
