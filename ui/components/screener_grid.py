@@ -107,12 +107,16 @@ def render_screener_grid(
     numeric_cols: set[str] | frozenset[str],
     text_cols: set[str] | frozenset[str],
     theme: Any,
-    key: str,
     pinned_col: str | None = None,
     link_col: str | None = None,
     height: int = 650,
 ) -> dict:
-    """Render the grid and return the AgGrid response (for click-through + selection echo)."""
+    """Render the grid and return the AgGrid response (for click-through + selection echo).
+
+    Deliberately keyless: with a fixed `key`, st_aggrid keeps the first mount's data and
+    won't re-render when the filtered frame changes (unless `reload_data` gymnastics are
+    added). One grid per page means no key is needed.
+    """
     grid_options = _build_grid_options(
         pdf,
         numeric_cols=numeric_cols,
@@ -128,7 +132,6 @@ def render_screener_grid(
         allow_unsafe_jscode=True,  # required for the sizeColumnsToFit callbacks
         # `cellClicked` drives open-on-click; the rest keep selection / filter / sort in sync.
         update_on=["cellClicked", "selectionChanged", "filterChanged", "sortChanged"],
-        key=key,
     )
 
 

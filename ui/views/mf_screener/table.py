@@ -68,7 +68,6 @@ def render_table(
         numeric_cols=METRIC_NUMERIC_COLS,
         text_cols=METRIC_TEXT_COLS,
         theme=aggrid_theme,
-        key="mf_screener_grid",
         pinned_col="Scheme",
         link_col="Scheme",
     )
