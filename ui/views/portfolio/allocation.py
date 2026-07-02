@@ -1,9 +1,12 @@
-"""Allocation tab — holdings table, pie chart, P&L bar."""
+"""Allocation section — per-fund positions table (with per-fund XIRR), pie chart, P&L bar."""
 
 import pandas as pd
 import plotly.express as px
 import polars as pl
 import streamlit as st
+
+from services.portfolio_analytics import compute_xirr
+from ui.charts import theme
 
 
 def render(mapped: pl.DataFrame, nav_df: pl.DataFrame):
@@ -21,6 +24,18 @@ def render(mapped: pl.DataFrame, nav_df: pl.DataFrame):
             current_value = net_units * current_nav
             pnl = current_value - net_invested
             pnl_pct = (pnl / net_invested * 100) if net_invested > 0 else 0
+
+            flows = (
+                stxn.with_columns(
+                    pl.when(pl.col("signed_qty") > 0)
+                    .then(pl.col("trade_value"))
+                    .otherwise(-pl.col("trade_value"))
+                    .alias("amount")
+                )
+                .select(pl.col("trade_date").alias("date"), "amount")
+                .to_pandas()
+            )
+            xirr = compute_xirr(flows, terminal_value=float(current_value), terminal_date=sn["date"][0])
             alloc_rows.append(
                 {
                     "Fund": scheme,
@@ -28,6 +43,7 @@ def render(mapped: pl.DataFrame, nav_df: pl.DataFrame):
                     "Current Value": round(current_value, 2),
                     "P&L": round(pnl, 2),
                     "P&L %": round(pnl_pct, 2),
+                    "XIRR %": round(xirr * 100, 2) if xirr is not None else None,
                     "Units": round(net_units, 3),
                     "NAV": round(current_nav, 4),
                     "Allocation %": 0.0,
@@ -60,6 +76,9 @@ def render(mapped: pl.DataFrame, nav_df: pl.DataFrame):
             "Current Value": st.column_config.NumberColumn(format="%.2f"),
             "P&L": st.column_config.NumberColumn(format="%.2f"),
             "P&L %": st.column_config.NumberColumn(format="%.2f%%"),
+            "XIRR %": st.column_config.NumberColumn(
+                format="%.2f%%", help="Money-weighted annual return of this fund's own cashflows."
+            ),
             "Allocation %": st.column_config.NumberColumn(format="%.1f%%"),
         },
     )
@@ -85,7 +104,7 @@ def render(mapped: pl.DataFrame, nav_df: pl.DataFrame):
             orientation="h",
             title="P&L by Fund",
             color="P&L",
-            color_continuous_scale=["#ef4444", "#fbbf24", "#10b981"],
+            color_continuous_scale=[theme.NEGATIVE, theme.WARNING, theme.POSITIVE],
         )
         fig_pnl.update_layout(height=400, showlegend=False)
         st.plotly_chart(fig_pnl, use_container_width=True, key="pnl-bar")

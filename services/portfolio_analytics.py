@@ -33,13 +33,10 @@ def compute_xirr(flows: pd.DataFrame, terminal_value: float, terminal_date: date
 
     dates = pd.to_datetime(flows["date"]).dt.normalize()
     t_end = pd.Timestamp(terminal_date)
-    years = (t_end - dates).dt.days / 365.25
-    # Flows after the valuation date aren't in `terminal_value` (stale NAV) — exclude them.
-    in_range = years >= 0
-    if not in_range.any():
-        return None
-    years = years[in_range]
-    flows = flows.loc[in_range]
+    # Flows dated after the valuation date happen when NAV is stale: their units are in
+    # `terminal_value` at the last known NAV, so treat them as invested at t_end (no
+    # growth attributed) rather than excluding them or compounding negatively.
+    years = ((t_end - dates).dt.days / 365.25).clip(lower=0.0)
 
     # Investor-perspective cashflows: buys are outflows (-), terminal value an inflow (+).
     # `years` measures flow date → valuation date, so flows are compounded forward to the
@@ -128,3 +125,78 @@ def fund_weights(fund_values: dict[str, float]) -> dict[str, float]:
     if total <= 0:
         return {}
     return {name: v / total for name, v in fund_values.items()}
+
+
+def contribution_analysis(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame, window_rows: int = 252) -> pd.DataFrame:
+    """Per-fund contribution to the portfolio's return over the trailing NAV window.
+
+    Money-based attribution: fund P&L in the window (value change minus net flows into the
+    fund) divided by the portfolio's start value. With no intra-window flows the
+    contributions sum exactly to the portfolio return; flows make it a close approximation.
+
+    :param window_rows: trailing NAV rows (~trading days) in the window.
+    :return: pandas frame — fund, weight_start_pct, pnl, contribution_pct, fund_return_pct —
+        sorted by contribution desc. Empty frame when history is shorter than the window.
+    """
+    empty = pd.DataFrame(columns=["fund", "weight_start_pct", "pnl", "contribution_pct", "fund_return_pct"])
+    if mapped.is_empty() or portfolio_nav.is_empty():
+        return empty
+
+    nav_pd = portfolio_nav.select(["date", "schemeName", "nav"]).to_pandas()
+    nav_pd["date"] = pd.to_datetime(nav_pd["date"])
+    nav_pivot = nav_pd.pivot_table(index="date", columns="schemeName", values="nav", aggfunc="last").sort_index()
+    nav_pivot = nav_pivot.ffill()
+    if len(nav_pivot) < window_rows + 1:
+        return empty
+    nav_dates = nav_pivot.index
+
+    trades = (
+        mapped.group_by(["schemeName", "trade_date"])
+        .agg(
+            pl.col("signed_qty").sum().alias("delta_units"),
+            pl.when(pl.col("signed_qty") > 0)
+            .then(pl.col("trade_value"))
+            .otherwise(-pl.col("trade_value"))
+            .sum()
+            .alias("flow"),
+        )
+        .to_pandas()
+    )
+    trades["trade_date"] = pd.to_datetime(trades["trade_date"])
+    pos = nav_dates.searchsorted(trades["trade_date"].values, side="left")
+    trades = trades.loc[pos < len(nav_dates)].copy()
+    trades["aligned_date"] = nav_dates[pos[pos < len(nav_dates)]]
+
+    schemes = [c for c in nav_pivot.columns if c in set(trades["schemeName"])]
+    if not schemes:
+        return empty
+    delta_units = trades.groupby(["aligned_date", "schemeName"])["delta_units"].sum().unstack("schemeName").fillna(0.0)
+    units = delta_units.reindex(nav_dates).fillna(0.0)[schemes].cumsum()
+    values = units * nav_pivot[schemes]
+
+    t0, t1 = nav_dates[-(window_rows + 1)], nav_dates[-1]
+    start_vals = values.loc[t0]
+    end_vals = values.loc[t1]
+    total_start = float(start_vals.sum())
+    if total_start <= 0:
+        return empty
+
+    in_window = trades[(trades["aligned_date"] > t0) & (trades["aligned_date"] <= t1)]
+    window_flows = in_window.groupby("schemeName")["flow"].sum()
+
+    rows = []
+    for scheme in schemes:
+        v0, v1 = float(start_vals.get(scheme, 0.0)), float(end_vals.get(scheme, 0.0))
+        flow = float(window_flows.get(scheme, 0.0))
+        pnl = v1 - v0 - flow
+        denom = v0 + max(flow, 0.0)
+        rows.append(
+            {
+                "fund": scheme,
+                "weight_start_pct": v0 / total_start * 100,
+                "pnl": pnl,
+                "contribution_pct": pnl / total_start * 100,
+                "fund_return_pct": (pnl / denom * 100) if denom > 0 else None,
+            }
+        )
+    return pd.DataFrame(rows).sort_values("contribution_pct", ascending=False).reset_index(drop=True)

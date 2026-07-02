@@ -24,6 +24,7 @@ from services.mf_metrics import (
     nav_series,
 )
 from services.portfolio_service import build_portfolio_returns_series
+from ui.charts import theme
 from ui.constants import BUBBLE_SIZE, MODE_ALPHA_BETA, MODE_CAGR_VOL, PORTFOLIO_COLOUR
 from ui.state.loaders import load_benchmark_returns
 
@@ -300,8 +301,8 @@ def _render_cagr_vol(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None) -
         layer="below",
     )
 
-    fig.add_vline(x=vol_mid, line={"color": "#64748b", "dash": "dot", "width": 1})
-    fig.add_hline(y=cagr_mid, line={"color": "#64748b", "dash": "dot", "width": 1})
+    fig.add_vline(x=vol_mid, line={"color": theme.NEUTRAL, "dash": "dot", "width": 1})
+    fig.add_hline(y=cagr_mid, line={"color": theme.NEUTRAL, "dash": "dot", "width": 1})
 
     fig.add_trace(
         go.Scatter(
@@ -315,7 +316,7 @@ def _render_cagr_vol(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None) -
                 "cmin": 0,
                 "showscale": True,
                 "colorbar": {"title": "Allocation %", "thickness": 12, "len": 0.6},
-                "line": {"color": "#1e293b", "width": 1},
+                "line": {"color": theme.GRID_COLOR, "width": 1},
                 "opacity": 0.9,
             },
             text=df["label"],
@@ -405,8 +406,8 @@ def _render_alpha_beta(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None,
     x0, x1 = min(x0, 0.5), max(x1, 1.3)
     y0, y1 = min(y0, -1.0), max(y1, 1.0)
 
-    fig.add_vline(x=1.0, line={"color": "#64748b", "dash": "dot", "width": 1})
-    fig.add_hline(y=0.0, line={"color": "#64748b", "dash": "dot", "width": 1})
+    fig.add_vline(x=1.0, line={"color": theme.NEUTRAL, "dash": "dot", "width": 1})
+    fig.add_hline(y=0.0, line={"color": theme.NEUTRAL, "dash": "dot", "width": 1})
 
     if not has.empty:
         fig.add_trace(
@@ -421,7 +422,7 @@ def _render_alpha_beta(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None,
                     "cmin": 0,
                     "showscale": True,
                     "colorbar": {"title": "Allocation %", "thickness": 12, "len": 0.6},
-                    "line": {"color": "#1e293b", "width": 1},
+                    "line": {"color": theme.GRID_COLOR, "width": 1},
                     "opacity": 0.9,
                 },
                 text=has["label"],
@@ -453,9 +454,9 @@ def _render_alpha_beta(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None,
                 mode="markers",
                 marker={
                     "size": BUBBLE_SIZE,
-                    "color": "#94a3b8",
+                    "color": theme.BENCHMARK_LINE,
                     "opacity": 0.35,
-                    "line": {"color": "#475569", "width": 1},
+                    "line": {"color": theme.QUADRANT_LINE, "width": 1},
                 },
                 customdata=grey[["scheme"]],
                 hovertemplate=(
@@ -549,7 +550,7 @@ def _add_portfolio_marker(fig: go.Figure, portfolio: dict | None, *, x_key: str,
                 "size": 22,
                 "symbol": "diamond",
                 "color": PORTFOLIO_COLOUR,
-                "line": {"color": "#1e293b", "width": 2},
+                "line": {"color": theme.GRID_COLOR, "width": 2},
             },
             text=["Portfolio"],
             textposition="top center",

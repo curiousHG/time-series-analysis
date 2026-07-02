@@ -1,6 +1,6 @@
-"""Portfolio page — composes eight sub-tabs over the user's tradebook.
+"""Portfolio page — PM cockpit: Overview · Positions · Risk · Flows over the tradebook.
 
-Holdings and overlap views are shared with MF Analysis (`ui.views.mutual_fund.*`).
+Positions/holdings views are shared with MF Analysis (`ui.views.mutual_fund.*`).
 """
 
 from __future__ import annotations
@@ -11,8 +11,7 @@ import streamlit as st
 from services.registry_service import load_registry
 from ui.components.freshness_banner import render_freshness_banner
 from ui.state.loaders import load_holdings_data, load_txn_data
-from ui.views.mutual_fund import holdings, overlap
-from ui.views.portfolio import allocation, drawdown, fund_returns, growth, risk_metrics, risk_vs_return
+from ui.views.portfolio import flows_tab, overview_tab, positions_tab, risk_tab
 from ui.views.portfolio.helpers import build_portfolio_value_series, get_mapped_data
 
 
@@ -47,34 +46,15 @@ def _render(txn_df: pl.DataFrame | None) -> None:
         st.info("Not enough data to compute portfolio analytics.")
         return
 
-    t_alloc, t_growth, t_drawdown, t_risk, t_rvr, t_returns, t_overlap, t_holdings = st.tabs(
-        [
-            "Allocation",
-            "Growth",
-            "Drawdown",
-            "Risk Metrics",
-            "Risk vs Return",
-            "Fund Returns",
-            "Overlap & Allocation",
-            "Holdings",
-        ]
-    )
-    with t_alloc:
-        allocation.render(mapped, portfolio_nav)
-    with t_growth:
-        growth.render(mapped, pv_series)
-    with t_drawdown:
-        drawdown.render(pv_series)
+    t_overview, t_positions, t_risk, t_flows = st.tabs(["Overview", "Positions", "Risk", "Flows"])
+    with t_overview:
+        overview_tab.render(mapped, portfolio_nav, pv_series)
+    with t_positions:
+        positions_tab.render(mapped, portfolio_nav, holdings_df, sectors_df, assets_df, active_registry)
     with t_risk:
-        risk_metrics.render(pv_series, mapped)
-    with t_rvr:
-        risk_vs_return.render(mapped, portfolio_nav)
-    with t_returns:
-        fund_returns.render(mapped, portfolio_nav)
-    with t_overlap:
-        overlap.render(holdings_df, sectors_df, active_registry)
-    with t_holdings:
-        holdings.render(holdings_df, sectors_df, assets_df, active_registry)
+        risk_tab.render(mapped, portfolio_nav, pv_series)
+    with t_flows:
+        flows_tab.render(mapped, portfolio_nav)
 
 
 st.title("Portfolio")

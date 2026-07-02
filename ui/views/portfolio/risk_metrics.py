@@ -7,6 +7,7 @@ import polars as pl
 import quantstats as qs
 import streamlit as st
 
+from ui.charts import theme
 from ui.constants import RISK_FREE
 
 
@@ -187,21 +188,21 @@ def _render_charts(returns: pd.Series, pv: pd.DataFrame):
             go.Histogram(
                 x=returns * 100,
                 nbinsx=80,
-                marker_color="#6366f1",
+                marker_color=theme.ACCENT,
                 opacity=0.7,
                 name="Daily Returns",
             )
         )
-        fig_hist.add_vline(x=0, line_color="#94a3b8", line_dash="dash")
+        fig_hist.add_vline(x=0, line_color=theme.BENCHMARK_LINE, line_dash="dash")
         fig_hist.add_vline(
             x=returns.mean() * 100,
-            line_color="#f59e0b",
+            line_color=theme.WARNING,
             annotation_text=f"Mean: {returns.mean() * 100:.3f}%",
         )
         var_95 = qs.stats.var(returns) * 100
         fig_hist.add_vline(
             x=var_95,
-            line_color="#ef4444",
+            line_color=theme.NEGATIVE,
             line_dash="dot",
             annotation_text=f"VaR 95%: {var_95:.2f}%",
         )
@@ -223,7 +224,7 @@ def _render_charts(returns: pd.Series, pv: pd.DataFrame):
                 y=rolling_vol,
                 mode="lines",
                 name="30d Rolling Vol",
-                line=dict(color="#f59e0b", width=1.5),
+                line=dict(color=theme.WARNING, width=1.5),
                 fill="tozeroy",
                 fillcolor="rgba(245, 158, 11, 0.15)",
             )
@@ -245,11 +246,11 @@ def _render_charts(returns: pd.Series, pv: pd.DataFrame):
             y=rolling_sharpe,
             mode="lines",
             name="60d Rolling Sharpe",
-            line=dict(color="#6366f1", width=1.5),
+            line=dict(color=theme.ACCENT, width=1.5),
         )
     )
-    fig_sharpe.add_hline(y=0, line_dash="dash", line_color="#94a3b8")
-    fig_sharpe.add_hline(y=1, line_dash="dot", line_color="#10b981", annotation_text="Sharpe = 1")
+    fig_sharpe.add_hline(y=0, line_dash="dash", line_color=theme.BENCHMARK_LINE)
+    fig_sharpe.add_hline(y=1, line_dash="dot", line_color=theme.POSITIVE, annotation_text="Sharpe = 1")
     fig_sharpe.update_layout(
         height=300,
         title="Rolling 60-Day Sharpe Ratio",

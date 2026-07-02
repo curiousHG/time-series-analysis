@@ -6,6 +6,8 @@ import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
 
+from ui.charts import theme
+
 
 def render(mapped: pl.DataFrame, nav_df: pl.DataFrame):
     _render_fund_growth(mapped, nav_df)
@@ -43,7 +45,7 @@ def _render_fund_growth(mapped: pl.DataFrame, nav_df: pl.DataFrame):
             )
         )
 
-    fig.add_hline(y=100, line_dash="dash", line_color="#94a3b8")
+    fig.add_hline(y=100, line_dash="dash", line_color=theme.BENCHMARK_LINE)
     fig.update_layout(
         height=500,
         yaxis_title="Growth",

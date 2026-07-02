@@ -6,16 +6,11 @@ import polars as pl
 import streamlit as st
 
 from data.repositories.stock import ensure_stock_data
+from ui.charts import theme
 from ui.views.portfolio.helpers import get_signed_invested
 
 
-def render(mapped: pl.DataFrame, pv: pd.DataFrame):
-    _render_invested_over_time(mapped)
-    st.divider()
-    _render_growth_comparison(mapped, pv)
-
-
-def _render_invested_over_time(mapped: pl.DataFrame):
+def render_invested_over_time(mapped: pl.DataFrame):
     st.subheader("Total Invested Over Time")
     invested_df = (
         mapped.with_columns((pl.col("price") * pl.col("signed_qty")).alias("invested_amount"))
@@ -45,7 +40,7 @@ def _render_invested_over_time(mapped: pl.DataFrame):
     st.plotly_chart(fig, use_container_width=True, key="invested-over-time")
 
 
-def _render_growth_comparison(mapped: pl.DataFrame, pv: pd.DataFrame):
+def render_growth_comparison(mapped: pl.DataFrame, pv: pd.DataFrame):
     st.subheader("Portfolio Value vs Nifty 50 vs FD")
 
     start_dt = pv["date"].min()
@@ -119,7 +114,7 @@ def _render_growth_comparison(mapped: pl.DataFrame, pv: pd.DataFrame):
             y=merged["portfolio_value"],
             mode="lines",
             name="Portfolio",
-            line=dict(color="#6366f1", width=2),
+            line=dict(color=theme.ACCENT, width=2),
         )
     )
     fig.add_trace(
@@ -128,7 +123,7 @@ def _render_growth_comparison(mapped: pl.DataFrame, pv: pd.DataFrame):
             y=merged["cum_invested"],
             mode="lines",
             name="Invested",
-            line=dict(color="#94a3b8", width=1, dash="dot"),
+            line=dict(color=theme.BENCHMARK_LINE, width=1, dash="dot"),
         )
     )
     if "nifty_value" in merged.columns:
@@ -138,7 +133,7 @@ def _render_growth_comparison(mapped: pl.DataFrame, pv: pd.DataFrame):
                 y=merged["nifty_value"],
                 mode="lines",
                 name="If Nifty 50",
-                line=dict(color="#f59e0b", width=2),
+                line=dict(color=theme.WARNING, width=2),
             )
         )
     fig.add_trace(
@@ -147,7 +142,7 @@ def _render_growth_comparison(mapped: pl.DataFrame, pv: pd.DataFrame):
             y=merged["fd_value"],
             mode="lines",
             name=f"If {interest_rate * 100:.1f}% FD",
-            line=dict(color="#10b981", width=1, dash="dash"),
+            line=dict(color=theme.POSITIVE, width=1, dash="dash"),
         )
     )
     fig.update_layout(

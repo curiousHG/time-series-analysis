@@ -4,6 +4,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from ui.charts import theme
+
 
 def render(pv: pd.DataFrame):
     pv = pv.sort_values("date").copy()
@@ -28,11 +30,11 @@ def render(pv: pd.DataFrame):
             fill="tozeroy",
             mode="lines",
             name="Drawdown",
-            line=dict(color="#ef4444", width=1),
+            line=dict(color=theme.NEGATIVE, width=1),
             fillcolor="rgba(239, 68, 68, 0.2)",
         )
     )
-    fig.add_hline(y=max_dd, line_dash="dash", line_color="#94a3b8", annotation_text=f"Max: {max_dd:.2f}%")
+    fig.add_hline(y=max_dd, line_dash="dash", line_color=theme.BENCHMARK_LINE, annotation_text=f"Max: {max_dd:.2f}%")
     fig.update_layout(height=350, yaxis_title="Drawdown (%)", xaxis_title="Date", hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True, key="drawdown")
 
@@ -44,7 +46,7 @@ def render(pv: pd.DataFrame):
             y=pv["portfolio_value"],
             mode="lines",
             name="Portfolio",
-            line=dict(color="#6366f1", width=2),
+            line=dict(color=theme.ACCENT, width=2),
         )
     )
     fig2.add_trace(
@@ -53,7 +55,7 @@ def render(pv: pd.DataFrame):
             y=pv["peak"],
             mode="lines",
             name="Peak",
-            line=dict(color="#94a3b8", width=1, dash="dash"),
+            line=dict(color=theme.BENCHMARK_LINE, width=1, dash="dash"),
         )
     )
     fig2.update_layout(

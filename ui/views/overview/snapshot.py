@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from services.portfolio_analytics import compute_xirr
+from services.portfolio_analytics import compute_xirr, fund_values_from_nav
 from services.portfolio_service import build_portfolio_returns_series, get_signed_invested
 from ui.charts import theme
 from ui.components.metric_tiles import Kpi, fmt_inr_compact, render_kpi_row
@@ -23,8 +23,10 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame, pv_df: pd.DataFram
     import quantstats as qs  # noqa: PLC0415 — heavy dep; deferred to render time
 
     pv = pv_df.set_index("date")["portfolio_value"]
-    current_value = float(pv.iloc[-1])
     as_of = pv.index[-1]
+    # Value ALL units at the latest known NAV (matches the Portfolio page) — the pv series
+    # excludes units bought after the last NAV date, understating value when NAV is stale.
+    current_value = sum(fund_values_from_nav(mapped, portfolio_nav).values())
 
     signed = get_signed_invested(mapped)
     net_invested = float(signed["signed_invested"].sum())
@@ -39,7 +41,7 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame, pv_df: pd.DataFram
     twr_cagr = float(qs.stats.cagr(twr)) if len(twr) > 252 else None
 
     peak = float(pv.cummax().iloc[-1])
-    curr_dd = (current_value / peak - 1) if peak > 0 else None
+    curr_dd = (float(pv.iloc[-1]) / peak - 1) if peak > 0 else None
 
     st.subheader("Portfolio")
     st.caption(f"As of {as_of:%d %b %Y}")
