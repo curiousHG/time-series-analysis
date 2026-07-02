@@ -19,7 +19,7 @@ from data.repositories.nav import fetch_single_nav, last_nav_date_by_name, save_
 from mutual_funds.display import make_slug
 from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS, FetchOutcome
 
-logger = logging.getLogger("services.sync")
+logger = logging.getLogger(__name__)
 
 
 # ---- progress / result types ------------------------------------------------------------

@@ -17,7 +17,7 @@ from data.fetchers.stock import (
     query_stocks,
 )
 
-logger = logging.getLogger("data.store.stock")
+logger = logging.getLogger(__name__)
 
 # Negative cache for symbols that returned zero rows. Without this, a symbol yfinance can
 # never serve (e.g. the NIFTY_MIDCAP_150.NS index benchmark) keeps `_get_date_range`

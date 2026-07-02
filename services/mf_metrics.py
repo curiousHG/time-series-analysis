@@ -21,7 +21,7 @@ from mutual_funds.display import make_slug  # noqa: F401 — back-compat re-expo
 from services.benchmarks import subcategory_benchmark
 from services.constants import RF_DAILY, TRADING_DAYS
 
-logger = logging.getLogger("services.mf_metrics")
+logger = logging.getLogger(__name__)
 
 
 def nav_series(scheme_name: str) -> pd.Series:

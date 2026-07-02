@@ -18,12 +18,13 @@ LOG_BACKUP_COUNT = 3
 LOG_FORMAT = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 LOG_FILES = {
-    "app": "app.log",  # general app lifecycle
-    "data": "data.log",  # data fetching, storage, API calls
-    "ui": "ui.log",  # UI events, state changes
+    "app": "app.log",  # general app lifecycle (catches everything)
+    "data": "data.log",  # data layer — the `data` logger subtree (fetchers + repositories)
     "perf": "perf.log",  # phase/function timing from core.timing
 }
 # Marker tagged on every handler we attach, so setup is idempotent across module re-imports.
+# Keep the value stable across layout changes: a bump would add a second handler set during
+# a live hot-reload session (old-marked handlers stay); a restart picks up new layouts anyway.
 LOG_HANDLER_MARKER = "_app_logging_v1"
 
 # Timing (core.timing): calls slower than this log at INFO, faster ones at DEBUG.

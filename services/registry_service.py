@@ -39,7 +39,7 @@ from data.repositories.scheme_codes import resolve_or_mint_code
 from mutual_funds.display import make_slug, short_scheme_name
 from services.constants import BackfillSource, SourceStatus
 
-logger = logging.getLogger("services.registry_service")
+logger = logging.getLogger(__name__)
 
 
 # ---- Read ----

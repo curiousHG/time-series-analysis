@@ -21,7 +21,7 @@ from data.repositories.stock import ensure_stock_data
 from services.constants import TRADING_DAYS
 from services.mf_metrics import compute_alpha_beta
 
-logger = logging.getLogger("services.stock_metrics")
+logger = logging.getLogger(__name__)
 
 NIFTY_SYMBOL = "^NSEI"
 _PRICE_FIELDS = ("return_1y", "vol_1y", "beta_1y", "alpha_1y", "r2_1y")

@@ -28,7 +28,7 @@ from ui.charts import theme
 from ui.constants import BUBBLE_SIZE, MODE_ALPHA_BETA, MODE_CAGR_VOL, PORTFOLIO_COLOUR
 from ui.state.loaders import load_benchmark_returns
 
-logger = logging.getLogger("ui.views.portfolio.risk_vs_return")
+logger = logging.getLogger(__name__)
 
 
 def _fund_returns(scheme: str) -> pd.Series:

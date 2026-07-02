@@ -67,16 +67,17 @@ def setup_logging(level: int = logging.INFO):
     app_handler.setFormatter(formatter)
     root.addHandler(_mark(app_handler))
 
-    # data.log — data fetchers and store
+    # data.log — the whole data layer. Attached to the "data" parent logger so every child
+    # (data.fetchers.*, data.repositories.*) reaches it via propagation; records continue
+    # up to the root (console + app.log) as before.
     data_handler = RotatingFileHandler(
         LOGS_DIR / LOG_FILES["data"], maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT
     )
-    data_handler.setLevel(logging.DEBUG)
+    data_handler.setLevel(level)
     data_handler.setFormatter(formatter)
-    for namespace in ("data.fetchers", "data.store"):
-        ns_logger = logging.getLogger(namespace)
-        if not _has_marked_handler(ns_logger):
-            ns_logger.addHandler(_mark(data_handler))
+    data_logger = logging.getLogger("data")
+    if not _has_marked_handler(data_logger):
+        data_logger.addHandler(_mark(data_handler))
 
     # Third-party fetchers — route their loggers into data.log too, but keep them off the
     # console so they don't drown out app messages. propagate=False stops them from also
@@ -88,13 +89,9 @@ def setup_logging(level: int = logging.INFO):
         if not _has_marked_handler(ns_logger):
             ns_logger.addHandler(_mark(data_handler))
 
-    # ui.log — UI components and views
-    ui_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["ui"], maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT)
-    ui_handler.setLevel(logging.DEBUG)
-    ui_handler.setFormatter(formatter)
-    ui_logger = logging.getLogger("ui")
-    if not _has_marked_handler(ui_logger):
-        ui_logger.addHandler(_mark(ui_handler))
+    # httpx logs every request at INFO — pure duplication of the fetchers' own messages
+    # (it was ~25% of app.log). Warnings and errors still get through.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     # perf.log — startup/page timing from core.timing.timed()
     perf_handler = RotatingFileHandler(
@@ -107,8 +104,3 @@ def setup_logging(level: int = logging.INFO):
     perf_logger.propagate = False  # don't double-log into app.log
     if not _has_marked_handler(perf_logger):
         perf_logger.addHandler(_mark(perf_handler))
-
-
-def get_logger(name: str) -> logging.Logger:
-    """Get a logger. Call setup_logging() first."""
-    return logging.getLogger(name)

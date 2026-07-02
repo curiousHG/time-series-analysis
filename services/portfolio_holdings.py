@@ -7,7 +7,7 @@ import polars as pl
 from data.repositories.tradebook import load_tradebook_from_db
 from mutual_funds.tradebook import normalize_transactions
 
-logger = logging.getLogger("services.portfolio_holdings")
+logger = logging.getLogger(__name__)
 
 
 def get_active_portfolio_schemes() -> list[str]:

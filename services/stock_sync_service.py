@@ -11,7 +11,7 @@ import logging
 from data.repositories.stock_fundamentals import ensure_stock_fundamentals
 from services.stock_metrics import recompute_price_metrics
 
-logger = logging.getLogger("services.stock_sync")
+logger = logging.getLogger(__name__)
 
 
 def sync_stocks(symbols: list[str], *, scrape_fundamentals: bool = True) -> int:

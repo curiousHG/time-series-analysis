@@ -88,7 +88,7 @@ def save_nav_df(df: pl.DataFrame) -> None:
     with get_session() as session:
         _upsert_nav_rows(session, df, name_to_code)
         session.commit()
-    logger.info("Saved %d NAV rows to database", df.height)
+    logger.debug("Saved %d NAV rows to database", df.height)
 
 
 def load_nav_df(scheme_names: list[str] | None = None) -> pl.DataFrame:

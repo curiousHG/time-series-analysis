@@ -9,7 +9,7 @@ from sqlmodel import col, select
 from core.database import get_session
 from core.models import AmfiScheme, MfTradebook
 
-logger = logging.getLogger("data.store.tradebook")
+logger = logging.getLogger(__name__)
 
 
 def import_tradebook_csv(csv_path: str) -> tuple[int, int]:

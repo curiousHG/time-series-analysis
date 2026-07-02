@@ -17,7 +17,7 @@ logger = logging.getLogger("data.fetchers.mutual_fund")
 def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
     """Fetch historical NAV from MFAPI → (date, nav, schemeName) DataFrame."""
     url = f"{MFAPI_BASE_URL}/{scheme_code}"
-    logger.info("Fetching NAV from MFAPI: code=%s name=%s", scheme_code, scheme_name)
+    logger.debug("Fetching NAV from MFAPI: code=%s name=%s", scheme_code, scheme_name)
 
     resp = httpx.get(url, timeout=30)
     resp.raise_for_status()

@@ -21,7 +21,7 @@ from core.database import get_session
 from core.models import StockMetrics, StockQuarterly, StockRegistry
 from data.fetchers.screener_in import fetch_company
 
-logger = logging.getLogger("data.store.stock_fundamentals")
+logger = logging.getLogger(__name__)
 
 _MONTHS = {
     m: i for i, m in enumerate(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)

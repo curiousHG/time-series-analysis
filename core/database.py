@@ -7,7 +7,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from core.constants import DATABASE_URL
 from core.timing import timed
 
-logger = logging.getLogger("data.store.database")
+logger = logging.getLogger(__name__)
 
 engine = create_engine(DATABASE_URL, pool_size=5, max_overflow=2, echo=False)
 
@@ -28,4 +28,4 @@ def init_schema() -> None:
 
     with timed("init_schema.create_all"):
         SQLModel.metadata.create_all(engine)
-    logger.info("Database schema initialized (run 'alembic upgrade head' for schema migrations)")
+    logger.debug("Database schema initialized (run 'alembic upgrade head' for schema migrations)")

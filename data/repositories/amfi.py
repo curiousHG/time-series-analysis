@@ -22,7 +22,7 @@ from core.models import AmfiScheme, MfAmc, MfCategory
 from data.fetchers.mutual_fund import fetch_amfi_master
 from data.repositories.holdings import clear_slug_cache
 
-logger = logging.getLogger("data.store.amfi")
+logger = logging.getLogger(__name__)
 
 
 # In-process dim-table cache. AMCs/categories are tiny enums; write-through avoids
