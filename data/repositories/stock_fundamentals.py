@@ -219,3 +219,13 @@ def load_stock_metrics(symbols: list[str] | None = None) -> pl.DataFrame:
     if not rows:
         return pl.DataFrame()
     return pl.DataFrame([r.model_dump() for r in rows])
+
+
+def load_quarterly(symbol: str) -> pl.DataFrame:
+    """Quarterly P&L rows for one symbol, oldest → newest (empty frame when none cached)."""
+    with get_session() as session:
+        stmt = select(StockQuarterly).where(StockQuarterly.symbol == symbol).order_by(col(StockQuarterly.period_end))
+        rows = session.exec(stmt).all()
+    if not rows:
+        return pl.DataFrame()
+    return pl.DataFrame([r.model_dump() for r in rows])

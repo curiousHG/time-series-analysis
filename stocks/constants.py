@@ -60,3 +60,15 @@ NIFTY_50 = (
 # Alpha-categorisation thresholds (annualised Jensen alpha %, CAPM beta).
 ALPHA_POSITIVE = 0.0
 BETA_MARKET = 1.0
+
+
+def to_bare_symbol(symbol: str) -> str:
+    """yfinance `RELIANCE.NS` → bare NSE `RELIANCE` (indices `^…` pass through)."""
+    return symbol.removesuffix(".NS")
+
+
+def to_yf_symbol(symbol: str) -> str:
+    """Bare NSE `RELIANCE` → yfinance `RELIANCE.NS` (indices `^…` pass through)."""
+    if symbol.endswith(".NS") or symbol.startswith("^"):
+        return symbol
+    return f"{symbol}.NS"

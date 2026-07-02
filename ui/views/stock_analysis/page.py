@@ -1,4 +1,4 @@
-"""Stock Analysis page — Streamlit entry. Two tabs: candlestick chart + strategy backtest."""
+"""Stock Analysis page — candlestick chart, fundamentals, and strategy backtest tabs."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from indicators import INDICATOR_REGISTRY, compute_indicators
 from ui.components.stock_picker import stock_picker
 from ui.state.loaders import load_stock_open_close
 from ui.views.stock_analysis import chart as chart_tab
+from ui.views.stock_analysis import fundamentals as fundamentals_tab
 from ui.views.stock_analysis import strategy_backtest as backtest_tab
 
 stock_picker()
@@ -36,7 +37,7 @@ if symbol:
         .to_pandas()
     )
 
-    tab_chart, tab_backtest = st.tabs(["Chart", "Strategy Backtest"])
+    tab_chart, tab_fundamentals, tab_backtest = st.tabs(["Chart", "Fundamentals", "Strategy Backtest"])
 
     with tab_chart:
         interval = st.segmented_control(
@@ -67,6 +68,9 @@ if symbol:
         selected_indicators = selected_overlays + selected_panels
         overlays, panels = compute_indicators(chart_df, selected_indicators)
         chart_tab.render(chart_df, overlays, panels, selected_panels, symbol)
+
+    with tab_fundamentals:
+        fundamentals_tab.render(symbol)
 
     with tab_backtest:
         backtest_tab.render(sdf, symbol)

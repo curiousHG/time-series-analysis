@@ -110,6 +110,7 @@ def render_screener_grid(
     pinned_col: str | None = None,
     link_col: str | None = None,
     height: int = 650,
+    pinned_min_width: int = 300,
 ) -> dict:
     """Render the grid and return the AgGrid response (for click-through + selection echo).
 
@@ -123,6 +124,7 @@ def render_screener_grid(
         text_cols=text_cols,
         pinned_col=pinned_col,
         link_col=link_col,
+        pinned_min_width=pinned_min_width,
     )
     return AgGrid(
         pdf,

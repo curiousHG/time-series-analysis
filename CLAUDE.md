@@ -39,11 +39,13 @@ uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi
 
 ### Pages
 
-1. **Portfolio** — fund allocation, P&L, growth vs Nifty/FD, drawdown, risk metrics (quantstats), risk/return, fund returns
-2. **Mutual Fund Analysis** — single-fund NAV, rolling returns, risk, holdings, calendar returns, metadata
-3. **Stock Analysis** — TradingView candlestick charts, 37 TA-Lib indicators (overlays + panels), strategy backtesting
+1. **Overview** (default) — market pulse, portfolio snapshot (XIRR/TWR), automated alerts (services/insights_service.py), fund movers
+2. **Portfolio** — PM cockpit tabs: Overview (positions + contribution), Positions (look-through exposure, overlap, holdings), Risk (quantstats, drawdown, risk/return, correlation), Flows
+3. **Mutual Fund Analysis** — single-fund deep dive tabs: Performance (incl. rolling consistency), vs Benchmark (excess return, rolling alpha, alerts), Risk, Holdings (incl. portfolio overlap), Calendar, About
 4. **MF Screener** — AMFI universe filters, risk/return metrics, bulk fetch for tracked funds
-5. **Settings** — AMFI sync, tradebook CSV upload, NAV/holdings refresh, metrics cache, DB stats
+5. **Stock Analysis** — TradingView candlestick charts, 37 TA-Lib indicators, Fundamentals (momentum + screener.in percentiles + quarterly trend), strategy backtesting
+6. **Stock Screener** — screener.in fundamentals + CAPM alpha/beta categorisation, AgGrid table
+7. **Settings** — AMFI sync, tradebook CSV upload, NAV/holdings refresh, metrics cache, DB stats
 
 ### Layer Structure
 
@@ -51,13 +53,15 @@ uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi
 main.py → ui/app.py (multi-page router, init_schema, setup_logging)
               ↓
          ui/views/
-           portfolio/page.py           # Portfolio page entry point
-           portfolio/                  # Portfolio sections: allocation, growth, drawdown, risk, returns
-           mutual_fund/page.py         # Single-fund deep dive
-           mutual_fund/                # MF helper tabs retained for shared views
+           overview/                   # Landing desk: snapshot, market pulse, alerts, movers
+           portfolio/page.py           # Portfolio cockpit entry (tabs: overview/positions/risk/flows)
+           portfolio/                  # Tab modules composing section renderers (allocation, growth, …)
+           mutual_fund/page.py         # Single-fund deep dive (slim orchestrator over FundContext)
+           mutual_fund/                # selector + per-tab modules (performance, benchmark, risk, …)
            mf_screener/page.py         # AMFI universe screener
            stock_analysis/page.py      # Stock page entry point
-           stock_analysis/             # Stock chart + strategy backtest
+           stock_analysis/             # Stock chart + fundamentals + strategy backtest
+           stock_screener/             # screener.in fundamentals + alpha/beta screener
            settings/page.py            # Data/source/settings page entry point
            settings/                   # AMFI, tradebook, refresh, metrics cache, DB stats
          ui/components/                # Reusable sidebar widgets

@@ -4,9 +4,12 @@ Streamlit-based platform for analysing Indian mutual funds and stocks. Pulls sch
 
 ## What's in the app
 
-Six pages, accessible from the top navigation:
+Seven pages, accessible from the top navigation:
 
-### 1. Mutual Fund Analysis (default page)
+### 0. Overview (default page)
+The landing desk: market pulse (Nifty 50 / Sensex / Nifty Bank / Next 50 with 1D/1W/1M/YTD moves and 52-week positioning), portfolio snapshot (value, net invested, P&L, XIRR, time-weighted CAGR, distance from peak, 90-day sparkline), an automated alerts panel (benchmark underperformance, alpha decay, portfolio drawdown, look-through concentration, data staleness — thresholds in `services/insights_service.py`), and the week's biggest movers among your funds.
+
+### 1. Mutual Fund Analysis
 Single-fund deep dive. Pick any tracked fund from a sidebar with filters (AMC, category, plan, option, search-by-name, data-availability toggles).
 
 - **Header card** — AMC, category, AUM, TER, plan (Direct/Regular), option (Growth/IDCW/Bonus/ETF/Other), benchmark, launch date.
