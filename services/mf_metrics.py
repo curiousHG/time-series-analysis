@@ -67,6 +67,36 @@ def absolute_return(nav: pd.Series, days_back: int) -> float | None:
     return None if math.isnan(v) else v
 
 
+def rolling_alpha(fund_returns: pd.Series, bench_returns: pd.Series, window: int = 126) -> pd.Series:
+    """Rolling annualised Jensen's alpha of daily fund returns vs benchmark returns.
+
+    beta_t = rolling cov(fund, bench) / rolling var(bench); alpha_t = (mean_f - beta_t *
+    mean_b) * 252. Empty Series when the overlap is shorter than `window`.
+    """
+    aligned = pd.concat([fund_returns.rename("f"), bench_returns.rename("b")], axis=1, join="inner").dropna()
+    if len(aligned) < window + 1:
+        return pd.Series(dtype="float64")
+    f, b = aligned["f"], aligned["b"]
+    beta = f.rolling(window).cov(b) / b.rolling(window).var()
+    alpha = (f.rolling(window).mean() - beta * b.rolling(window).mean()) * TRADING_DAYS
+    return alpha.dropna()
+
+
+def rolling_beat_rate(nav: pd.Series, bench_prices: pd.Series, window_days: int, min_windows: int = 30) -> float | None:
+    """Share of rolling `window_days` windows where the fund's return beat the benchmark's.
+
+    :param bench_prices: benchmark price/level series (any scale — the comparison is
+        scale-invariant); reindexed to the NAV dates with forward-fill.
+    """
+    bench = bench_prices.reindex(nav.index).ffill()
+    fund_rr = nav.pct_change(window_days, fill_method=None)
+    bench_rr = bench.pct_change(window_days, fill_method=None)
+    both = pd.concat([fund_rr.rename("f"), bench_rr.rename("b")], axis=1).dropna()
+    if len(both) < min_windows:
+        return None
+    return float((both["f"] > both["b"]).mean())
+
+
 def _rolling_cagr_stats(nav: pd.Series, window_days: int) -> dict[str, float]:
     """Min/median/mean/max of N-day rolling annualised CAGR over the fund's history."""
     nan = {"min": math.nan, "median": math.nan, "mean": math.nan, "max": math.nan}
