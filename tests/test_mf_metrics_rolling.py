@@ -56,3 +56,24 @@ def test_rolling_beat_rate_always_beats():
     bench = pd.Series(100.0 * (1.0001 ** np.arange(n)), index=idx)
     nav = pd.Series(100.0 * (1.001 ** np.arange(n)), index=idx)
     assert rolling_beat_rate(nav, bench, window_days=w) == pytest.approx(1.0)
+
+
+def test_portfolio_axis_metrics_covers_all_risk_axes():
+    from services.mf_metrics import portfolio_axis_metrics
+
+    rng = np.random.default_rng(7)
+    returns = pd.Series(rng.normal(0.0005, 0.01, 400), index=_dates(400))
+    m = portfolio_axis_metrics(returns)
+    for key in ("cagr_1y", "vol_1y", "downside_vol_1y", "cvar_95_1y", "max_dd_1y", "sharpe_1y"):
+        assert key in m and not np.isnan(m[key]), key
+    assert m["vol_1y"] > 0
+    assert m["downside_vol_1y"] > 0
+    assert m["cvar_95_1y"] < 0
+    assert m["max_dd_1y"] < 0
+
+
+def test_portfolio_axis_metrics_short_series_nan():
+    from services.mf_metrics import portfolio_axis_metrics
+
+    short = pd.Series([0.001] * 100, index=_dates(100))
+    assert all(np.isnan(v) for v in portfolio_axis_metrics(short).values())

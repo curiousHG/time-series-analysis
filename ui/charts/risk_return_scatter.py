@@ -30,6 +30,7 @@ def render_scatter(
     color_col: str | None = None,
     color_discrete_map: dict[str, str] | None = None,
     color_continuous: bool = False,
+    color_range: tuple[float, float] | None = None,
     color_label: str | None = None,
     hover_name_col: str | None = None,
     hover_cols: tuple[str, ...] = (),
@@ -38,15 +39,23 @@ def render_scatter(
     frontier: bool = False,
     frontier_name_col: str | None = None,
     highlight: dict[str, Any] | None = None,
+    overlay_pdf: pd.DataFrame | None = None,
+    overlay_label_col: str | None = None,
+    overlay_name: str = "My holdings",
     height: int = 560,
 ) -> None:
     """Render the scatter.
 
-    :param color_continuous: diverging RdYlGn scale centred at 0 (e.g. Sharpe colouring);
-        otherwise `color_col` is treated as categorical (with optional `color_discrete_map`).
+    :param color_continuous: diverging RdYlGn scale (e.g. Sharpe colouring); otherwise
+        `color_col` is treated as categorical (with optional `color_discrete_map`).
+    :param color_range: explicit (cmin, cmax) for the continuous scale — pass robust
+        quantile bounds so outliers don't stretch the colourbar. Defaults to midpoint 0
+        with autoscaled ends when omitted.
     :param frontier: overlay the Pareto frontier of the (x, y) cloud (max y per running x).
     :param highlight: optional star marker, e.g. the portfolio point:
         `{"x": .., "y": .., "name": "Portfolio"}`.
+    :param overlay_pdf: optional rows (same x/y columns) drawn on top as outlined diamond
+        markers with `overlay_label_col` text — e.g. the user's held funds.
     """
     import plotly.express as px  # noqa: PLC0415 — heavy viz deps; deferred to chart-render time
 
@@ -54,7 +63,11 @@ def render_scatter(
     if color_col is not None:
         color_kwargs["color"] = color_col
         if color_continuous:
-            color_kwargs.update(color_continuous_scale="RdYlGn", color_continuous_midpoint=0)
+            color_kwargs["color_continuous_scale"] = "RdYlGn"
+            if color_range is not None:
+                color_kwargs["range_color"] = color_range
+            else:
+                color_kwargs["color_continuous_midpoint"] = 0
         elif color_discrete_map is not None:
             color_kwargs["color_discrete_map"] = color_discrete_map
         if color_label:
@@ -86,10 +99,40 @@ def render_scatter(
     if frontier:
         _add_pareto_frontier(fig, pdf, x_col=x_col, y_col=y_col, name_col=frontier_name_col)
 
+    if overlay_pdf is not None and not overlay_pdf.empty:
+        _add_overlay(fig, overlay_pdf, x_col=x_col, y_col=y_col, label_col=overlay_label_col, name=overlay_name)
+
     if highlight is not None:
         _add_highlight(fig, highlight)
 
     st.plotly_chart(fig, use_container_width=True, key=key)
+
+
+def _add_overlay(fig, pdf: pd.DataFrame, *, x_col: str, y_col: str, label_col: str | None, name: str) -> None:
+    """Emphasised rows drawn on top of the cloud: outlined diamonds with text labels."""
+    import plotly.graph_objects as go  # noqa: PLC0415 — heavy viz dep; deferred to chart-render time
+
+    labels = pdf[label_col] if label_col and label_col in pdf.columns else [""] * len(pdf)
+    fig.add_trace(
+        go.Scatter(
+            x=pdf[x_col],
+            y=pdf[y_col],
+            mode="markers+text",
+            marker={
+                "color": WARNING,
+                "size": 13,
+                "symbol": "diamond",
+                "line": {"color": GRID_COLOR, "width": 1.5},
+            },
+            text=labels,
+            textposition="top center",
+            textfont={"size": 10, "color": WARNING},
+            hovertext=labels,
+            hovertemplate="<b>%{hovertext}</b><br>(risk=%{x:.2f}, return=%{y:.2f})<extra></extra>",
+            name=name,
+            showlegend=True,
+        )
+    )
 
 
 def _add_pareto_frontier(fig, pdf: pd.DataFrame, *, x_col: str, y_col: str, name_col: str | None) -> None:

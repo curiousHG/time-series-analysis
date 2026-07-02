@@ -406,6 +406,26 @@ def compute_metrics_from_returns(returns: pd.Series) -> dict:
     return out
 
 
+def portfolio_axis_metrics(returns: pd.Series) -> dict:
+    """1Y metrics for an arbitrary daily-returns series, matching the fund-cache formulas.
+
+    Covers every screener risk axis (vol/downside-vol/CVaR/max-DD) plus cagr_1y and
+    sharpe_1y, so a portfolio point can sit on the same axes as the cached fund metrics.
+    All NaN when the series is shorter than TRADING_DAYS.
+    """
+    out = dict.fromkeys(("cagr_1y", "vol_1y", "downside_vol_1y", "cvar_95_1y", "max_dd_1y", "sharpe_1y"), math.nan)
+    if returns is None or returns.empty:
+        return out
+    last_year = returns.iloc[-TRADING_DAYS:]
+    if len(last_year) < TRADING_DAYS:
+        return out
+    out.update(compute_metrics_from_returns(returns))
+    neg = last_year[last_year < 0]
+    out["downside_vol_1y"] = float(neg.std() * math.sqrt(TRADING_DAYS)) if len(neg) > 1 else math.nan
+    out["cvar_95_1y"] = _safe(qs.stats.cvar, last_year)
+    return out
+
+
 def compute_tracking_error(scheme_name: str, benchmark_returns: pd.Series, window: int = TRADING_DAYS) -> float | None:
     """Annualised tracking error: std-dev of (fund - benchmark) daily returns; None if < 60 overlapping days."""
     if benchmark_returns is None or benchmark_returns.empty:
