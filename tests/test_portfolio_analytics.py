@@ -42,9 +42,7 @@ def test_xirr_empty_flows_returns_none():
 
 def test_xirr_ignores_flows_after_valuation_date():
     """A buy after the (stale) valuation date is invisible to terminal_value — excluded."""
-    flows = pd.DataFrame(
-        {"date": [date(2024, 1, 1), date(2025, 6, 1)], "amount": [100.0, 500.0]}
-    )
+    flows = pd.DataFrame({"date": [date(2024, 1, 1), date(2025, 6, 1)], "amount": [100.0, 500.0]})
     xirr = compute_xirr(flows, terminal_value=110.0, terminal_date=date(2025, 1, 1))
     assert xirr == pytest.approx(0.10, abs=2e-3)
 
