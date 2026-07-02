@@ -98,7 +98,7 @@ def apply_filters(
         out = out.filter(pl.col("option").is_in(options))
     if aum_min > 0:
         out = out.filter(pl.col("aum_crores").fill_null(0) >= aum_min)
-    if ter_max < 5.0:
+    if 0 < ter_max < 5.0:  # 0 = no limit (a cleared number_input lands on 0)
         out = out.filter(pl.col("expense_ratio").fill_null(0) <= ter_max)
     if only_tracked:
         out = out.filter(pl.col("nav_status").is_not_null())

@@ -82,7 +82,13 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
                 "Min AUM (₹ Cr)", min_value=0, step=100, key="screener_aum_min", on_change=_persist_filters
             )
             ter_max = n2.number_input(
-                "Max TER %", min_value=0.0, step=0.05, format="%.2f", key="screener_ter_max", on_change=_persist_filters
+                "Max TER %",
+                min_value=0.0,
+                step=0.05,
+                format="%.2f",
+                key="screener_ter_max",
+                on_change=_persist_filters,
+                help="0 = no limit.",
             )
             min_age_years = st.slider(
                 "Min fund age (years)",
