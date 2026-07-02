@@ -125,9 +125,10 @@ def _resolve_return_axis(chart_pdf, return_choice: str) -> tuple[str, str]:
 def _draw_scatter(
     chart_pdf, risk_label: str, return_label: str, color_mode: str, size_mode: str, show_frontier: bool
 ) -> None:
-    """Render the Plotly scatter with optional efficient-frontier overlay."""
+    """Prepare size/colour columns and delegate to the shared risk/return scatter."""
     import numpy as np  # noqa: PLC0415 — heavy viz deps; deferred to chart-render time
-    import plotly.express as px  # noqa: PLC0415 — heavy viz deps; deferred to chart-render time
+
+    from ui.charts.risk_return_scatter import render_scatter  # noqa: PLC0415 — heavy viz deps
 
     # Bubble size: AUM floored + log-scaled so micro-funds stay visible, or uniform.
     if size_mode == "AUM" and "aum_crores" in chart_pdf.columns:
@@ -137,33 +138,33 @@ def _draw_scatter(
         chart_pdf["__size__"] = 12
 
     # Sharpe / Sortino are continuous; Category / Asset class are categorical.
-    color_kwargs: dict = {}
+    color_continuous = False
+    color_label = None
     if color_mode == "Sharpe" and "sharpe_1y" in chart_pdf.columns:
         chart_pdf["__color__"] = chart_pdf["sharpe_1y"]
-        color_kwargs.update(
-            color="__color__",
-            color_continuous_scale="RdYlGn",
-            color_continuous_midpoint=0,
-            labels={"__color__": "Sharpe"},
-        )
+        color_continuous, color_label = True, "Sharpe"
     elif color_mode == "Sortino" and "sortino_1y" in chart_pdf.columns:
         chart_pdf["__color__"] = chart_pdf["sortino_1y"]
-        color_kwargs.update(
-            color="__color__",
-            color_continuous_scale="RdYlGn",
-            color_continuous_midpoint=0,
-            labels={"__color__": "Sortino"},
-        )
+        color_continuous, color_label = True, "Sortino"
     elif color_mode == "Category" and "category" in chart_pdf.columns:
         chart_pdf["__color__"] = chart_pdf["category"].fillna("(uncategorised)")
-        color_kwargs.update(color="__color__", labels={"__color__": "Category"})
+        color_label = "Category"
     elif color_mode == "Asset class" and "asset_class" in chart_pdf.columns:
         chart_pdf["__color__"] = chart_pdf["asset_class"].fillna("(unknown)")
-        color_kwargs.update(color="__color__", labels={"__color__": "Asset class"})
+        color_label = "Asset class"
 
-    hover_cols = [
-        c
-        for c in (
+    render_scatter(
+        chart_pdf,
+        x_col="__risk__",
+        y_col="__return__",
+        x_title=risk_label,
+        y_title=return_label,
+        key="screener-rvr",
+        size_col="__size__",
+        color_col="__color__" if "__color__" in chart_pdf.columns else None,
+        color_continuous=color_continuous,
+        color_label=color_label,
+        hover_cols=(
             "scheme_name",
             "fund_house",
             "category",
@@ -172,70 +173,9 @@ def _draw_scatter(
             "sortino_1y",
             "alpha_1y",
             "beta_1y",
-        )
-        if c in chart_pdf.columns
-    ]
-
-    fig = px.scatter(
-        chart_pdf,
-        x="__risk__",
-        y="__return__",
-        size="__size__",
-        size_max=32,
-        hover_data=hover_cols,
-        **color_kwargs,
-    )
-    fig.update_layout(
-        xaxis_title=risk_label,
-        yaxis_title=return_label,
-        height=560,
-        template="plotly_dark",
-        margin={"l": 60, "r": 20, "t": 40, "b": 50},
-    )
-
-    # Zero reference lines.
-    fig.add_hline(y=0, line_color="#64748b", line_dash="dot", line_width=1)
-    fig.add_vline(x=0, line_color="#64748b", line_dash="dot", line_width=1)
-
-    if show_frontier:
-        _add_efficient_frontier(fig, chart_pdf)
-
-    st.plotly_chart(fig, use_container_width=True, key="screener-rvr")
-
-
-def _add_efficient_frontier(fig, chart_pdf) -> None:
-    """Pareto frontier: walk left-to-right, connecting points that beat the running max-Y."""
-    import plotly.graph_objects as go  # noqa: PLC0415 — heavy viz dep; deferred to chart-render time
-
-    sorted_pts = chart_pdf.sort_values("__risk__").reset_index(drop=True)
-    front_x: list[float] = []
-    front_y: list[float] = []
-    front_names: list[str] = []
-    running_max = -float("inf")
-    for _, r in sorted_pts.iterrows():
-        if r["__return__"] > running_max:
-            running_max = r["__return__"]
-            front_x.append(r["__risk__"])
-            front_y.append(r["__return__"])
-            front_names.append(r.get("scheme_name", ""))
-    if len(front_x) < 2:
-        return
-    fig.add_trace(
-        go.Scatter(
-            x=front_x,
-            y=front_y,
-            mode="lines+markers",
-            line={"color": "#fbbf24", "width": 2, "dash": "dash"},
-            marker={
-                "color": "#fbbf24",
-                "size": 12,
-                "symbol": "diamond",
-                "line": {"color": "#1e293b", "width": 1},
-            },
-            name="Efficient frontier",
-            hovertext=front_names,
-            hovertemplate="<b>%{hovertext}</b><br>(risk=%{x:.2f}, return=%{y:.2f})<extra></extra>",
-        )
+        ),
+        frontier=show_frontier,
+        frontier_name_col="scheme_name",
     )
 
 

@@ -9,6 +9,7 @@ import polars as pl
 import streamlit as st
 
 from services.registry_service import load_registry
+from ui.components.freshness_banner import render_freshness_banner
 from ui.state.loaders import load_holdings_data, load_txn_data
 from ui.views.mutual_fund import holdings, overlap
 from ui.views.portfolio import allocation, drawdown, fund_returns, growth, risk_metrics, risk_vs_return
@@ -37,6 +38,8 @@ def _render(txn_df: pl.DataFrame | None) -> None:
     name_to_slug = dict(zip(registry["schemeName"].to_list(), registry["schemeSlug"].to_list(), strict=False))
     active_slugs = [slug for n in active_names if (slug := name_to_slug.get(n))]
     active_registry = registry.filter(pl.col("schemeName").is_in(active_names))
+
+    render_freshness_banner(active_names, active_slugs)
 
     holdings_df, sectors_df, assets_df = load_holdings_data(active_slugs)
     pv_series = build_portfolio_value_series(mapped, portfolio_nav)

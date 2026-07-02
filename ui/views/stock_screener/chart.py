@@ -10,11 +10,11 @@ from __future__ import annotations
 import math
 
 import numpy as np
-import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
 
 from stocks.metric_catalog import CATEGORY_COLORS
+from ui.charts.risk_return_scatter import render_scatter
 
 
 def render_alpha_chart(df: pl.DataFrame) -> None:
@@ -25,42 +25,25 @@ def render_alpha_chart(df: pl.DataFrame) -> None:
 
     pdf = rated.to_pandas()
     caps = pdf["market_cap"].fillna(0.0)
-    sizes = 8 + 26 * (np.sqrt(caps) / max(math.sqrt(caps.max()), 1.0)) if caps.max() > 0 else 12
+    if caps.max() > 0:
+        pdf["__size__"] = 8 + 26 * (np.sqrt(caps) / max(math.sqrt(caps.max()), 1.0))
+    else:
+        pdf["__size__"] = 12.0
 
-    fig = go.Figure()
-    for cat, color in CATEGORY_COLORS.items():
-        sub = pdf[pdf["alpha_category"] == cat]
-        if sub.empty:
-            continue
-        sub_sizes = sizes[sub.index] if hasattr(sizes, "__getitem__") and not isinstance(sizes, int) else 12
-        fig.add_trace(
-            go.Scatter(
-                x=sub["beta_1y"],
-                y=sub["alpha_1y"],
-                mode="markers",
-                name=cat,
-                marker={"color": color, "size": sub_sizes, "line": {"width": 0.5, "color": "#0f1117"}, "opacity": 0.85},
-                customdata=sub[["stock_name", "return_1y", "stock_pe", "roe"]],
-                text=sub["symbol"],
-                hovertemplate=(
-                    "<b>%{text}</b> — %{customdata[0]}<br>"
-                    "Alpha: %{y:.1f}%  ·  Beta: %{x:.2f}<br>"
-                    "1Y Return: %{customdata[1]:.1f}%  ·  P/E: %{customdata[2]:.1f}  ·  ROE: %{customdata[3]:.1f}%"
-                    "<extra></extra>"
-                ),
-            )
-        )
-
-    fig.add_hline(y=0, line_dash="dash", line_color="#475569")
-    fig.add_vline(x=1, line_dash="dash", line_color="#475569")
-    fig.update_layout(
+    render_scatter(
+        pdf,
+        x_col="beta_1y",
+        y_col="alpha_1y",
+        x_title="Beta (CAPM vs Nifty 50)",
+        y_title="Alpha % (annualised)",
+        key="stock_alpha_scatter",
+        size_col="__size__",
+        color_col="alpha_category",
+        color_discrete_map=dict(CATEGORY_COLORS),
+        color_label="Category",
+        hover_name_col="symbol",
+        hover_cols=("stock_name", "return_1y", "stock_pe", "roe"),
+        hline=0.0,
+        vline=1.0,
         height=520,
-        margin={"l": 50, "r": 20, "t": 20, "b": 40},
-        paper_bgcolor="#0f1117",
-        plot_bgcolor="#0f1117",
-        font={"color": "#e2e8f0"},
-        xaxis={"title": "Beta (CAPM vs Nifty 50)", "gridcolor": "#1e293b", "zeroline": False},
-        yaxis={"title": "Alpha % (annualised)", "gridcolor": "#1e293b", "zeroline": False},
-        legend={"orientation": "h", "y": 1.02, "yanchor": "bottom"},
     )
-    st.plotly_chart(fig, use_container_width=True, key="stock_alpha_scatter")

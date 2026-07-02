@@ -15,16 +15,19 @@ from data.repositories.holdings import load_assets, load_holdings, load_sectors
 from data.repositories.metadata import load_metadata
 from data.repositories.nav import load_nav_df
 from data.repositories.scheme_metrics import load_metrics
-from data.repositories.stock import ensure_stock_data
 from mutual_funds.display import detect_option, detect_plan, make_slug, short_scheme_name
 from mutual_funds.holdings_stats import quick_stats
 from services.benchmarks import resolve_benchmark_symbol
-from services.mf_metrics import compute_tracking_error
+from services.mf_metrics import absolute_return, compute_tracking_error, windowed_cagr
 from services.registry_service import backfill_missing, list_tracked
 from services.screener_service import apply_name_filter
+from ui.charts import theme
+from ui.components.freshness_banner import render_freshness_banner
+from ui.components.metric_tiles import Kpi, render_kpi_row
 from ui.components.mutual_fund_holdings import render_holdings_table
 from ui.constants import RF_DAILY
-from ui.persistence.selections import load_selection, save_selection
+from ui.state.filter_persistence import cascade_subcategory_options, hydrate_filters, make_persist_callback
+from ui.state.loaders import load_benchmark_returns
 
 # Filter + selected-fund state persisted to selections.json so it survives page nav/refresh.
 _MF_PERSIST_KEY = "mf_analysis_filters"
@@ -40,22 +43,7 @@ _MF_FILTER_DEFAULTS = {
     "mf_analysis_min_age": 0.0,
     "mf_analysis_fund": None,
 }
-
-
-def _hydrate_mf_filters() -> None:
-    """Seed missing filter keys from disk; never clobbers in-session edits."""
-    saved = load_selection(_MF_PERSIST_KEY, {})
-    for key, default in _MF_FILTER_DEFAULTS.items():
-        if key in st.session_state:
-            continue
-        value = saved.get(key, default)
-        if value is not None:  # don't pre-seed the fund selectbox with None
-            st.session_state[key] = value
-
-
-def _persist_mf_filters() -> None:
-    """Snapshot all mf_analysis_* filter values to selections.json."""
-    save_selection(_MF_PERSIST_KEY, {k: st.session_state[k] for k in _MF_FILTER_DEFAULTS if k in st.session_state})
+_persist_mf_filters = make_persist_callback(_MF_PERSIST_KEY, _MF_FILTER_DEFAULTS)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -105,17 +93,12 @@ def _load_tracked_enriched(names: tuple[str, ...]) -> pl.DataFrame:
     )
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def _load_index_returns(symbol: str, start: datetime, end: datetime) -> pd.Series:
-    """Daily pct-change series for an index symbol; empty Series on failure."""
+    """Daily pct-change series via the shared cached loader; empty Series on failure."""
     try:
-        df = ensure_stock_data(symbol, start, end)
+        return load_benchmark_returns(symbol, start, end)
     except Exception:
         return pd.Series(dtype="float64")
-    if df.is_empty():
-        return pd.Series(dtype="float64")
-    pdf = df.select(["Date", "Close"]).to_pandas().set_index("Date").sort_index()
-    return pdf["Close"].pct_change().dropna()
 
 
 def _rebased_index(returns: pd.Series, dates: pd.DatetimeIndex) -> pd.Series:
@@ -141,7 +124,7 @@ if tracked.is_empty():
 all_tracked_names = tracked["schemeName"].to_list()
 enriched = _load_tracked_enriched(tuple(all_tracked_names))
 
-_hydrate_mf_filters()  # seed from disk before any filter widget is built
+hydrate_filters(_MF_PERSIST_KEY, _MF_FILTER_DEFAULTS)  # seed from disk before any filter widget is built
 
 with st.sidebar:
     st.header("Filter funds")
@@ -154,14 +137,10 @@ with st.sidebar:
     )
     amc_options = sorted(enriched["fund_house"].drop_nulls().unique().to_list())
     cat_options = sorted(enriched["category"].drop_nulls().unique().to_list())
-    # Sub-category cascades off the selected category; prune stale persisted values.
-    _sel_cats = st.session_state.get("mf_analysis_cat") or []
-    _sub_src = enriched.filter(pl.col("category").is_in(_sel_cats)) if _sel_cats else enriched
-    sub_cat_options = sorted(_sub_src["sub_category"].drop_nulls().unique().to_list())
-    if "mf_analysis_sub_cat" in st.session_state:
-        st.session_state["mf_analysis_sub_cat"] = [
-            s for s in st.session_state["mf_analysis_sub_cat"] if s in sub_cat_options
-        ]
+    # Sub-category cascades off the selected category; stale persisted values pruned.
+    sub_cat_options = cascade_subcategory_options(
+        enriched, cat_key="mf_analysis_cat", sub_cat_key="mf_analysis_sub_cat"
+    )
 
     amc_filter = st.multiselect("AMC", amc_options, key="mf_analysis_amc", on_change=_persist_mf_filters)
     cat_filter = st.multiselect("Category", cat_options, key="mf_analysis_cat", on_change=_persist_mf_filters)
@@ -270,6 +249,9 @@ if nav_status == "unavailable":
 if metadata_status == "unavailable":
     st.warning("Metadata not available for this fund — header AMC/AUM/TER/benchmark fields will be partial.")
 
+# ---- Data-freshness banner for the selected fund
+render_freshness_banner([selected], [make_slug(selected)])
+
 # ---- Header — AMFI + metadata at a glance
 amfi_row = get_scheme_details_by_name(selected)
 
@@ -286,17 +268,22 @@ ter = meta.get("expenseRatio")
 benchmark = meta.get("benchmark") or "—"
 launch = meta.get("launchDate")
 
-mc1, mc2, mc3, mc4 = st.columns(4)
-mc1.metric("AMC", amc)
-mc2.metric("Category", category)
-mc3.metric("AUM (₹ Cr)", f"{aum:,.0f}" if aum else "—")
-mc4.metric("TER %", f"{ter:.2f}" if ter else "—")
-
-mc5, mc6, mc7, mc8 = st.columns(4)
-mc5.metric("Plan", detect_plan(selected) or "—")
-mc6.metric("Option", detect_option(selected))
-mc7.metric("Benchmark", benchmark)
-mc8.metric("Launched", str(launch) if launch else "—")
+render_kpi_row(
+    [
+        Kpi("AMC", amc),
+        Kpi("Category", category),
+        Kpi("AUM (₹ Cr)", aum or None, fmt="inr"),
+        Kpi("TER %", ter or None, fmt="ratio"),
+    ]
+)
+render_kpi_row(
+    [
+        Kpi("Plan", detect_plan(selected) or "—"),
+        Kpi("Option", detect_option(selected)),
+        Kpi("Benchmark", benchmark),
+        Kpi("Launched", str(launch) if launch else None),
+    ]
+)
 
 
 # ---- Load NAV
@@ -308,26 +295,6 @@ if nav_df.is_empty():
 nav_pd = nav_df.to_pandas().set_index("date")["nav"].astype(float).sort_index()
 returns = nav_pd.pct_change().dropna()
 
-
-def _period_return(s: pd.Series, days: int) -> float | None:
-    if len(s) < days + 1:
-        return None
-    end, start = s.iloc[-1], s.iloc[-(days + 1)]
-    if start <= 0:
-        return None
-    return float(end / start - 1)
-
-
-def _cagr(s: pd.Series, days: int) -> float | None:
-    if len(s) < days + 1:
-        return None
-    end, start = s.iloc[-1], s.iloc[-(days + 1)]
-    if start <= 0:
-        return None
-    n = days
-    return float((end / start) ** (252 / n) - 1)
-
-
 # ---- Tabs
 tab_growth, tab_risk, tab_holdings, tab_calendar, tab_about = st.tabs(
     ["NAV & Returns", "Risk", "Holdings", "Calendar Returns", "About"]
@@ -335,23 +302,16 @@ tab_growth, tab_risk, tab_holdings, tab_calendar, tab_about = st.tabs(
 
 # ===== NAV & Returns =====
 with tab_growth:
-    pr_1m = _period_return(nav_pd, 21)
-    pr_3m = _period_return(nav_pd, 63)
-    pr_6m = _period_return(nav_pd, 126)
-    pr_1y = _period_return(nav_pd, 252)
-    pr_3y = _cagr(nav_pd, 252 * 3)
-    pr_5y = _cagr(nav_pd, 252 * 5)
-
-    cols = st.columns(6)
-    for col, label, val in [
-        (cols[0], "1M", pr_1m),
-        (cols[1], "3M", pr_3m),
-        (cols[2], "6M", pr_6m),
-        (cols[3], "1Y", pr_1y),
-        (cols[4], "3Y CAGR", pr_3y),
-        (cols[5], "5Y CAGR", pr_5y),
-    ]:
-        col.metric(label, f"{val * 100:+.1f}%" if val is not None else "—")
+    render_kpi_row(
+        [
+            Kpi("1M", absolute_return(nav_pd, 21), fmt="pct"),
+            Kpi("3M", absolute_return(nav_pd, 63), fmt="pct"),
+            Kpi("6M", absolute_return(nav_pd, 126), fmt="pct"),
+            Kpi("1Y", absolute_return(nav_pd, 252), fmt="pct"),
+            Kpi("3Y CAGR", windowed_cagr(nav_pd, 252 * 3), fmt="pct"),
+            Kpi("5Y CAGR", windowed_cagr(nav_pd, 252 * 5), fmt="pct"),
+        ]
+    )
 
     st.subheader("NAV growth (rebased to 100, vs benchmarks)")
 
@@ -381,7 +341,7 @@ with tab_growth:
                 y=nifty_idx.values,
                 name="Nifty 50",
                 mode="lines",
-                line={"dash": "dot", "color": "#94a3b8"},
+                line={"dash": "dot", "color": theme.BENCHMARK_LINE},
             )
         )
     else:
@@ -398,7 +358,7 @@ with tab_growth:
                     y=bench_idx.values,
                     name=meta.get("benchmark") or bench_symbol,
                     mode="lines",
-                    line={"dash": "dash", "color": "#fbbf24"},
+                    line={"dash": "dash", "color": theme.WARNING},
                 )
             )
         else:
@@ -446,20 +406,23 @@ with tab_growth:
             ylabel = f"{win_label} return %"
         rr_pct = rr * 100
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Mean", f"{rr_pct.mean():+.1f}%")
-        m2.metric("Min", f"{rr_pct.min():+.1f}%")
-        m3.metric("Max", f"{rr_pct.max():+.1f}%")
-        m4.metric("Latest", f"{rr_pct.iloc[-1]:+.1f}%")
+        render_kpi_row(
+            [
+                Kpi("Mean", rr.mean(), fmt="pct"),
+                Kpi("Min", rr.min(), fmt="pct"),
+                Kpi("Max", rr.max(), fmt="pct"),
+                Kpi("Latest", rr.iloc[-1], fmt="pct"),
+            ]
+        )
 
         fig_rr = go.Figure()
-        fig_rr.add_trace(go.Scatter(x=rr_pct.index, y=rr_pct.values, mode="lines", line={"color": "#60a5fa"}))
-        fig_rr.add_hline(y=0, line={"color": "#64748b", "width": 1, "dash": "dot"})
+        fig_rr.add_trace(go.Scatter(x=rr_pct.index, y=rr_pct.values, mode="lines", line={"color": theme.INFO}))
+        fig_rr.add_hline(y=0, line={"color": theme.NEUTRAL, "width": 1, "dash": "dot"})
         fig_rr.update_layout(height=320, yaxis_title=ylabel, hovermode="x")
         st.plotly_chart(fig_rr, use_container_width=True, key="mf-detail-rolling")
 
     st.subheader("NAV (raw)")
-    fig_nav = go.Figure(go.Scatter(x=nav_pd.index, y=nav_pd.values, mode="lines", line={"color": "#86efac"}))
+    fig_nav = go.Figure(go.Scatter(x=nav_pd.index, y=nav_pd.values, mode="lines", line={"color": theme.POSITIVE_SOFT}))
     fig_nav.update_layout(height=300, yaxis_title="NAV (₹)", hovermode="x")
     st.plotly_chart(fig_nav, use_container_width=True, key="mf-detail-nav")
 
@@ -504,18 +467,24 @@ with tab_risk:
                 r2 = common["fund"].corr(common["nifty"]) ** 2
 
         st.subheader("1-year metrics")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Sharpe", f"{sharpe_1y:.2f}" if not np.isnan(sharpe_1y) else "—")
-        c2.metric("Sortino", f"{sortino_1y:.2f}" if not np.isnan(sortino_1y) else "—")
-        c3.metric("Volatility", f"{vol_1y * 100:.1f}%" if not np.isnan(vol_1y) else "—")
-        c4.metric("Max drawdown", f"{max_dd_1y * 100:+.1f}%" if not np.isnan(max_dd_1y) else "—")
+        render_kpi_row(
+            [
+                Kpi("Sharpe", sharpe_1y, fmt="ratio"),
+                Kpi("Sortino", sortino_1y, fmt="ratio"),
+                Kpi("Volatility", vol_1y, fmt="pct_unsigned"),
+                Kpi("Max drawdown", max_dd_1y, fmt="pct"),
+            ]
+        )
 
         st.subheader("3-year metrics")
-        c5, c6, c7, c8 = st.columns(4)
-        c5.metric("Sharpe", f"{sharpe_3y:.2f}" if not np.isnan(sharpe_3y) else "—")
-        c6.metric("Sortino", f"{sortino_3y:.2f}" if not np.isnan(sortino_3y) else "—")
-        c7.metric("Volatility", f"{vol_3y * 100:.1f}%" if not np.isnan(vol_3y) else "—")
-        c8.metric("Max DD (all-time)", f"{max_dd_all * 100:+.1f}%" if not np.isnan(max_dd_all) else "—")
+        render_kpi_row(
+            [
+                Kpi("Sharpe", sharpe_3y, fmt="ratio"),
+                Kpi("Sortino", sortino_3y, fmt="ratio"),
+                Kpi("Volatility", vol_3y, fmt="pct_unsigned"),
+                Kpi("Max DD (all-time)", max_dd_all, fmt="pct"),
+            ]
+        )
 
         st.subheader("vs Nifty 50 (1Y)")
         # Tracking error vs the fund's benchmark; falls back to Nifty if unmappable.
@@ -532,22 +501,24 @@ with tab_risk:
         ath = float(nav_pd.max())
         pct_from_ath = (float(nav_pd.iloc[-1]) / ath - 1) if ath > 0 else float("nan")
 
-        b1, b2, b3, b4, b5 = st.columns(5)
-        b1.metric("Beta", f"{beta:.2f}" if not np.isnan(beta) else "—")
-        b2.metric("Alpha (annualised)", f"{alpha * 100:+.2f}%" if not np.isnan(alpha) else "—")
-        b3.metric("R²", f"{r2:.2f}" if not np.isnan(r2) else "—")
-        b4.metric(
-            f"Tracking error vs {bench_label_for_te}",
-            f"{te * 100:.2f}%" if te is not None else "—",
+        render_kpi_row(
+            [
+                Kpi("Beta", beta, fmt="ratio"),
+                Kpi("Alpha (annualised)", f"{alpha * 100:+.2f}%" if not np.isnan(alpha) else None),
+                Kpi("R²", r2, fmt="ratio"),
+                Kpi(f"Tracking error vs {bench_label_for_te}", f"{te * 100:.2f}%" if te is not None else None),
+                Kpi("% from ATH", f"{pct_from_ath * 100:+.2f}%" if not np.isnan(pct_from_ath) else None),
+            ]
         )
-        b5.metric("% from ATH", f"{pct_from_ath * 100:+.2f}%" if not np.isnan(pct_from_ath) else "—")
 
         st.subheader("Drawdown")
         cumulative = (1 + returns).cumprod()
         peak = cumulative.cummax()
         drawdown = (cumulative - peak) / peak * 100
         fig_dd = go.Figure(
-            go.Scatter(x=drawdown.index, y=drawdown.values, fill="tozeroy", mode="lines", line={"color": "#fca5a5"})
+            go.Scatter(
+                x=drawdown.index, y=drawdown.values, fill="tozeroy", mode="lines", line={"color": theme.NEGATIVE_SOFT}
+            )
         )
         fig_dd.update_layout(height=320, yaxis_title="Drawdown %", hovermode="x")
         st.plotly_chart(fig_dd, use_container_width=True, key="mf-detail-dd")

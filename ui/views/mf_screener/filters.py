@@ -3,34 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import polars as pl
 import streamlit as st
+
+if TYPE_CHECKING:
+    import polars as pl
 
 from mutual_funds.metric_catalog import ALL_METRIC_COLS
 from ui.components.aggrid_theme import streamlit_dark_aggrid_theme
 from ui.constants import FILTER_DEFAULTS, SCREENER_PERSIST_KEY, SLIDER_DEFAULTS
-from ui.persistence.selections import load_selection, save_selection
+from ui.state.filter_persistence import cascade_subcategory_options, hydrate_filters, make_persist_callback
 
-
-def _hydrate_filters() -> None:
-    """Seed missing screener_* keys from selections.json before their widgets render.
-
-    Idempotent so live edits aren't clobbered; re-seeds each run since Streamlit GCs the
-    keys on page nav. Widgets that read a seeded key must omit `default=`/`value=`.
-    """
-    saved = load_selection(SCREENER_PERSIST_KEY, {})
-    for key, default in {**FILTER_DEFAULTS, **SLIDER_DEFAULTS}.items():
-        if key not in st.session_state:
-            st.session_state[key] = saved.get(key, default)
-
-
-def _persist_filters() -> None:
-    """on_change callback: snapshot all screener_* filter values to selections.json."""
-    keys = list(FILTER_DEFAULTS) + list(SLIDER_DEFAULTS)
-    snapshot = {k: st.session_state[k] for k in keys if k in st.session_state}
-    save_selection(SCREENER_PERSIST_KEY, snapshot)
+_ALL_DEFAULTS = {**FILTER_DEFAULTS, **SLIDER_DEFAULTS}
+_persist_filters = make_persist_callback(SCREENER_PERSIST_KEY, _ALL_DEFAULTS)
 
 
 @dataclass
@@ -57,20 +43,12 @@ class FilterState:
 
 def render_sidebar(df: pl.DataFrame) -> FilterState:
     """Render the sidebar (heavy filters) + the inline column-visibility multiselect."""
-    _hydrate_filters()  # seed session_state from selections.json before any widget renders
+    hydrate_filters(SCREENER_PERSIST_KEY, _ALL_DEFAULTS)  # seed session_state before any widget renders
 
     amc_options = sorted(df["fund_house"].drop_nulls().unique().to_list())
     cat_options = sorted(df["category"].drop_nulls().unique().to_list())
-    # Sub-category options cascade off the selected asset class(es).
-    _sel_cats = st.session_state.get("screener_cats") or []
-    _sub_source = df.filter(pl.col("category").is_in(_sel_cats)) if _sel_cats else df
-    sub_cat_options = sorted(_sub_source["sub_category"].drop_nulls().unique().to_list())
-    # Prune any persisted sub-category that the current class selection no longer offers,
-    # so the keyed multiselect never gets a value outside its options.
-    if "screener_sub_cats" in st.session_state:
-        st.session_state["screener_sub_cats"] = [
-            s for s in st.session_state["screener_sub_cats"] if s in sub_cat_options
-        ]
+    # Sub-category options cascade off the selected asset class(es); stale values pruned.
+    sub_cat_options = cascade_subcategory_options(df, cat_key="screener_cats", sub_cat_key="screener_sub_cats")
 
     with st.sidebar:
         st.header("Filters")

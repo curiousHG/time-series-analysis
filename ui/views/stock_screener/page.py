@@ -11,24 +11,13 @@ import streamlit as st
 from services.stock_screener_service import apply_stock_filters
 from stocks.constants import NIFTY_50
 from stocks.metric_catalog import CATEGORY_COLORS, DEFAULT_VISIBLE_COLS, STOCK_METRIC_RENAME
-from ui.persistence.selections import save_selection
 from ui.state.loaders import load_stock_screener_df_cached
+from ui.state.navigation import open_stock_in_analysis
 from ui.views.stock_screener import chart as chart_view
 
 
 def _none_if_zero(x: float) -> float | None:
     return x if x else None
-
-
-def _open_in_analysis(symbol: str) -> None:
-    """Add the stock to the analysis watchlist (yfinance `.NS` form) and switch pages."""
-    yf_sym = symbol if symbol.endswith(".NS") or symbol.startswith("^") else f"{symbol}.NS"
-    selected = sorted({*st.session_state.get("selected_stocks", []), yf_sym})
-    st.session_state.selected_stocks = selected
-    st.session_state.selected_stocks_widget = selected
-    save_selection("selected_stocks", selected)
-    st.session_state.stock_analysis_symbol = yf_sym
-    st.switch_page("ui/views/stock_analysis/page.py")
 
 
 def _populate(symbols: list[str]) -> None:
@@ -100,4 +89,4 @@ event = st.dataframe(
 )
 _rows = event.selection.rows if event and event.selection else []
 if _rows and ordered_symbols:
-    _open_in_analysis(ordered_symbols[_rows[0]])
+    open_stock_in_analysis(ordered_symbols[_rows[0]])

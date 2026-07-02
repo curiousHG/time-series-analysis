@@ -43,7 +43,8 @@ def nav_series(scheme_name: str) -> pd.Series:
 _nav_series = nav_series
 
 
-def _windowed_cagr(nav: pd.Series, days: int) -> float | None:
+def windowed_cagr(nav: pd.Series, days: int) -> float | None:
+    """Annualised CAGR over the trailing `days` NAV rows; None if insufficient history."""
     if len(nav) < days + 1:
         return None
     end = nav.iloc[-1]
@@ -54,6 +55,16 @@ def _windowed_cagr(nav: pd.Series, days: int) -> float | None:
     if n <= 0:
         return None
     return float((end / start) ** (TRADING_DAYS / n) - 1)
+
+
+# Back-compat alias for the old underscored name.
+_windowed_cagr = windowed_cagr
+
+
+def absolute_return(nav: pd.Series, days_back: int) -> float | None:
+    """Cumulative return from `days_back` NAV rows ago to today; None if insufficient history."""
+    v = _absolute_return(nav, days_back)
+    return None if math.isnan(v) else v
 
 
 def _rolling_cagr_stats(nav: pd.Series, window_days: int) -> dict[str, float]:

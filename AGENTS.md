@@ -18,7 +18,7 @@ This file orients **automated and human-assisted edits** so they stay consistent
 | MF-specific analytics | `mutual_funds/` |
 | DB models / engine | `core/models/`, `core/database.py` |
 | New or changed external data flow | `data/repositories/` + `data/fetchers/` |
-| Indicators / strategies | `core/indicators/`, `core/strategies/` |
+| Indicators / strategies | `indicators/`, `strategies/` |
 
 ## Definition of done
 

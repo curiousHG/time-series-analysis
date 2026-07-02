@@ -21,6 +21,19 @@ GRID_COLOR = "#1e293b"
 TEXT_COLOR = "#e2e8f0"
 FONT_FAMILY = "Inter, system-ui, sans-serif"
 
+# Semantic colours — import these instead of hard-coding hex in views/charts.
+POSITIVE = "#10b981"  # emerald — gains, good deltas
+POSITIVE_SOFT = "#86efac"  # light green — raw NAV / price lines
+NEGATIVE = "#ef4444"  # red — losses, bad deltas
+NEGATIVE_SOFT = "#fca5a5"  # light red — drawdown fills
+NEUTRAL = "#64748b"  # slate — zero/reference lines
+QUADRANT_LINE = "#475569"  # darker slate — quadrant split lines
+ACCENT = "#6366f1"  # indigo — primary series
+INFO = "#60a5fa"  # blue — secondary series (rolling returns etc.)
+BENCHMARK_LINE = "#94a3b8"  # grey — benchmark index overlays
+WARNING = "#fbbf24"  # amber — highlights, frontier, portfolio marker
+LINK = "#5aa9ff"  # clickable cell/link styling
+
 DASHBOARD_TEMPLATE = go.layout.Template(
     layout=go.Layout(
         font=dict(family=FONT_FAMILY, color=TEXT_COLOR, size=13),

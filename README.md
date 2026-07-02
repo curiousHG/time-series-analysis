@@ -4,7 +4,7 @@ Streamlit-based platform for analysing Indian mutual funds and stocks. Pulls sch
 
 ## What's in the app
 
-Five pages, accessible from the top navigation:
+Six pages, accessible from the top navigation:
 
 ### 1. Mutual Fund Analysis (default page)
 Single-fund deep dive. Pick any tracked fund from a sidebar with filters (AMC, category, plan, option, search-by-name, data-availability toggles).
@@ -38,7 +38,10 @@ Browse the AMFI universe (~14,400 schemes). Sidebar filters: search-by-name (pg_
 
 The data table includes computed risk metrics (CAGR 1Y/3Y/5Y/10Y, vol, Sharpe, Max DD, % from ATH) and derived holdings stats (% Equity / Debt / Cash / Top-10) for funds with data. Below the table, a throttled bulk-fetch (2 concurrent · 0.4 s submission delay) pulls NAV + metadata for the top-N rows of the current filter.
 
-### 5. Settings
+### 5. Stock Screener
+Filter NSE stocks on screener.in fundamentals (market cap, P/E, ROE) and price-derived CAPM alpha/beta vs the Nifty 50. Headline alpha-categorisation scatter (alpha vs beta quadrants) with a filterable table beneath; clicking a row opens the stock in Stock Analysis.
+
+### 6. Settings
 - **Tradebook upload** — Kite/Zerodha CSV with live ISIN-resolution preview.
 - **AMFI Master sync** — bulk-downloads `NAVAll.txt` (14K+ schemes with ISIN, AMC, category).
 - **Refresh tracked-fund data** — per-tracked-fund NAV / holdings status tables (Fresh / Stale / Missing colour-coded), Update All NAV / Holdings / Everything buttons with live progress bar + counter + rolling 8-line log, retry-unavailable per fund.
@@ -49,7 +52,7 @@ The data table includes computed risk metrics (CAGR 1Y/3Y/5Y/10Y, vol, Sharpe, M
 
 ```
 ui/views/                         page folders: portfolio/ mutual_fund/ stock_analysis/
-                                  mf_screener/ settings/
+                                  mf_screener/ stock_screener/ settings/
 ui/views/portfolio/               portfolio sections (allocation, growth, drawdown, risk_metrics,
                                   risk_vs_return, fund_returns)
 ui/views/mutual_fund/             single-fund deep dive + reusable MF views
@@ -115,7 +118,7 @@ Connection string: `DATABASE_URL` env var (default `postgresql://harshit@localho
 | `scheme_code_map` | scheme_name → MFAPI code cache | `scheme_name` |
 | `stock_ohlcv` | Daily OHLCV | `(date, symbol)` |
 | `stock_registry` | Stock metadata | `symbol` |
-| `bots`, `trades`, `orders` | Trading-bot framework (state machine + orders) | `id` |
+| `stock_quarterly` / `stock_metrics` | screener.in quarterly results + fundamentals snapshot | `symbol` |
 
 The `pg_trgm` Postgres extension is enabled on first app start for fuzzy AMFI search.
 
