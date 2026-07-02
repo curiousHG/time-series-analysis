@@ -34,14 +34,20 @@ def compute_xirr(flows: pd.DataFrame, terminal_value: float, terminal_date: date
     dates = pd.to_datetime(flows["date"]).dt.normalize()
     t_end = pd.Timestamp(terminal_date)
     years = (t_end - dates).dt.days / 365.25
-    if (years < 0).any():  # flows after the valuation date make the equation ill-posed
+    # Flows after the valuation date aren't in `terminal_value` (stale NAV) — exclude them.
+    in_range = years >= 0
+    if not in_range.any():
         return None
+    years = years[in_range]
+    flows = flows.loc[in_range]
 
-    # Investor-perspective cashflows: buys are outflows (−), terminal value an inflow (+).
+    # Investor-perspective cashflows: buys are outflows (-), terminal value an inflow (+).
+    # `years` measures flow date → valuation date, so flows are compounded forward to the
+    # valuation date (future-value form of the XIRR equation).
     amounts = -flows["amount"].astype(float)
 
     def npv(rate: float) -> float:
-        return float((amounts / (1 + rate) ** years).sum()) + terminal_value
+        return float((amounts * (1 + rate) ** years).sum()) + terminal_value
 
     lo, hi = npv(_XIRR_LO), npv(_XIRR_HI)
     if lo * hi > 0:  # no sign change → no root in the bracket
@@ -50,17 +56,9 @@ def compute_xirr(flows: pd.DataFrame, terminal_value: float, terminal_date: date
 
 
 def fund_values_from_nav(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame) -> dict[str, float]:
-    """Current value per held fund: net units × latest NAV. Funds with ≤ 0 units drop out."""
-    units = (
-        mapped.group_by("schemeName")
-        .agg(pl.col("signed_qty").sum().alias("units"))
-        .filter(pl.col("units") > 1e-9)
-    )
-    latest_nav = (
-        portfolio_nav.sort("date")
-        .group_by("schemeName")
-        .agg(pl.col("nav").last().alias("latest_nav"))
-    )
+    """Current value per held fund: net units x latest NAV. Funds with ≤ 0 units drop out."""
+    units = mapped.group_by("schemeName").agg(pl.col("signed_qty").sum().alias("units")).filter(pl.col("units") > 1e-9)
+    latest_nav = portfolio_nav.sort("date").group_by("schemeName").agg(pl.col("nav").last().alias("latest_nav"))
     joined = units.join(latest_nav, on="schemeName", how="inner").with_columns(
         (pl.col("units") * pl.col("latest_nav")).alias("value")
     )
@@ -70,7 +68,7 @@ def fund_values_from_nav(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame) -> d
 def lookthrough_exposure(holdings_df: pl.DataFrame, fund_values: dict[str, float]) -> pl.DataFrame:
     """Portfolio-level look-through: what the user actually owns across all funds.
 
-    exposure_pct (of portfolio) = Σ over funds of (fund weight in portfolio) × (instrument
+    exposure_pct (of portfolio) = Σ over funds of (fund weight in portfolio) x (instrument
     weight in fund, %). Instruments keyed on ISIN when present, else normalised name.
 
     :param holdings_df: `load_holdings` frame (schemeName, instrumentName, isin, weight %,
@@ -94,9 +92,7 @@ def lookthrough_exposure(holdings_df: pl.DataFrame, fund_values: dict[str, float
             }
         )
 
-    weights = pl.DataFrame(
-        {"schemeName": list(fund_values), "fund_weight": [v / total for v in fund_values.values()]}
-    )
+    weights = pl.DataFrame({"schemeName": list(fund_values), "fund_weight": [v / total for v in fund_values.values()]})
     h = (
         holdings_df.filter(pl.col("schemeName").is_in(list(fund_values)) & pl.col("weight").is_not_null())
         .join(weights, on="schemeName", how="inner")

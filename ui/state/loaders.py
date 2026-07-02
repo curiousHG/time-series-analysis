@@ -136,6 +136,28 @@ def load_stock_screener_df_cached() -> pl.DataFrame:
     return build_stock_screener_df()
 
 
+@st.cache_data(ttl=900, show_spinner="Scanning for alerts…")
+def load_overview_alerts_cached():
+    """Cached alert scan for the Overview page (underperformance, concentration, staleness…)."""
+    from services.insights_service import build_alerts  # noqa: PLC0415 — defer heavy import off boot
+
+    return build_alerts()
+
+
+@st.cache_data(ttl=900, show_spinner="Loading market data…")
+def load_market_pulse_cached() -> pl.DataFrame:
+    from services.insights_service import market_pulse  # noqa: PLC0415 — defer heavy import off boot
+
+    return market_pulse()
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def load_fund_movers_cached() -> pl.DataFrame:
+    from services.insights_service import fund_movers  # noqa: PLC0415 — defer heavy import off boot
+
+    return fund_movers()
+
+
 def get_trade_symbols(trades_df: pl.DataFrame) -> list[str]:
     return trades_df.select(["symbol"]).unique().sort("symbol").to_series().to_list()
 

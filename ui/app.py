@@ -15,8 +15,9 @@ def run():
     with timed("page.run"):
         st.set_page_config(layout="wide")
         pages = [
+            st.Page("ui/views/overview/page.py", title="Overview", url_path="overview", default=True),
             st.Page("ui/views/portfolio/page.py", title="Portfolio", url_path="portfolio"),
-            st.Page("ui/views/mutual_fund/page.py", title="Mutual Fund Analysis"),
+            st.Page("ui/views/mutual_fund/page.py", title="Mutual Fund Analysis", url_path="mutual-fund"),
             st.Page("ui/views/mf_screener/page.py", title="MF Screener", url_path="screener"),
             st.Page("ui/views/stock_analysis/page.py", title="Stock Analysis", url_path="stock"),
             st.Page("ui/views/stock_screener/page.py", title="Stock Screener", url_path="stock-screener"),
