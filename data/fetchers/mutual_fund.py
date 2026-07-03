@@ -240,7 +240,13 @@ def fetch_fund_metadata(scheme_name: str) -> dict:
 
 
 def fetch_fund_overview_html(scheme_name: str) -> str:
-    """Fetch raw overview HTML. scheme_name e.g. 'SBI ELSS Tax Saver FUND - REGULAR PLAN-GROWTH'."""
+    """Fetch raw overview HTML. scheme_name e.g. 'SBI ELSS Tax Saver FUND - REGULAR PLAN-GROWTH'.
+
+    Whitespace is collapsed first: AMFI names sometimes carry double spaces, and
+    AdvisorKhoj's redirect to its canonical slug URL corrupts on them (the Location header
+    splices the base URL into the middle of the slug → guaranteed 404).
+    """
+    scheme_name = re.sub(r"\s+", " ", scheme_name).strip()
     url = BASE_OVERVIEW_URL.format(scheme_name=quote(scheme_name))
 
     resp = httpx.get(url, headers=HEADERS, timeout=20, follow_redirects=True)

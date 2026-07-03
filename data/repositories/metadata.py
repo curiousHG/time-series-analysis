@@ -10,8 +10,9 @@ from sqlmodel import col, func, select
 
 from core.database import get_session
 from core.models import AmfiScheme, MfAmc, MfCategory, MfMetadata
+from data.fetchers.kuvera import fetch_fund_metadata_kuvera
 from data.fetchers.mutual_fund import fetch_fund_metadata
-from data.repositories.amfi import upsert_amc, upsert_category
+from data.repositories.amfi import get_scheme_details_by_name, upsert_amc, upsert_category
 from data.repositories.holdings import clear_slug_cache
 from data.repositories.scheme_codes import mint_synthetic_codes
 
@@ -129,8 +130,30 @@ def load_metadata(scheme_names: list[str] | None = None) -> pl.DataFrame:
 
 
 def fetch_and_save(scheme_name: str) -> dict:
-    """Fetch metadata for one scheme and persist it. Returns the saved dict."""
-    meta = fetch_fund_metadata(scheme_name)
+    """Fetch metadata for one scheme and persist it. Returns the saved dict.
+
+    AdvisorKhoj first; when it 404s (fund not covered) or yields an empty shell, fall back
+    to Kuvera's public API — candidates are ISIN-verified against amfi_schemes, so a fuzzy
+    name match can never store another fund's numbers.
+    """
+    meta: dict | None = None
+    adv_error: Exception | None = None
+    try:
+        meta = fetch_fund_metadata(scheme_name)
+        if not any(meta.get(k) is not None for k in ("aum_crores", "expense_ratio", "launch_date")):
+            meta = None  # page existed but carried nothing useful — try the fallback
+    except Exception as e:
+        adv_error = e
+
+    if meta is None:
+        amfi_row = get_scheme_details_by_name(scheme_name)
+        isins = (amfi_row.get("isin_growth"), amfi_row.get("isin_reinvestment")) if amfi_row else ()
+        meta = fetch_fund_metadata_kuvera(scheme_name, tuple(isins))
+        if meta is not None:
+            logger.info("Metadata for %s via Kuvera fallback", scheme_name)
+
+    if meta is None:
+        raise adv_error or ValueError(f"No metadata found on any source for {scheme_name}")
     save_metadata(meta)
     return meta
 
