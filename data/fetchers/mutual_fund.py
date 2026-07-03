@@ -160,9 +160,28 @@ def fetch_fund_metadata(scheme_name: str) -> dict:
         "min_topup": None,
         "turnover_ratio": None,
         "exit_load": None,
+        "investment_objective": None,
+        "risk_level": None,
         "fund_house": None,
         "source_url": url,
     }
+
+    # SEBI riskometer: the level is encoded in the image filename
+    # (e.g. /resources/images/common/Riskometer-Very-High.png → "Very High").
+    for img in soup.find_all("img", alt="riskometer"):
+        m = re.search(r"Riskometer-([\w-]+)\.png", img.get("src") or "")
+        if m:
+            out["risk_level"] = m.group(1).replace("-", " ")
+            break
+
+    # Investment objective: the paragraph under its section heading.
+    for h in soup.select("h1, h2, h3, h4"):
+        if "investment objective" in h.get_text(strip=True).lower():
+            para = h.find_next("p")
+            if para:
+                text = re.sub(r"\s+", " ", para.get_text(" ", strip=True)).strip()
+                out["investment_objective"] = text[:2000] or None
+            break
 
     # Pull all label/value cells from the overview tables.
     cells: list[str] = []

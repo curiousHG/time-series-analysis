@@ -126,6 +126,10 @@ launch = meta.get("launchDate")
 
 held = _held_position(selected)
 chips = [f":violet-background[**{_sub_category or meta.get('category') or 'Uncategorised'}**]"]
+_RISK_CHIP_COLOR = {"Very High": "red", "High": "orange", "Moderately High": "orange", "Moderate": "blue"}
+if meta.get("riskLevel"):
+    _rc = _RISK_CHIP_COLOR.get(meta["riskLevel"], "green")
+    chips.append(f":{_rc}-background[**{meta['riskLevel']} risk**]")
 if held:
     chips.append(f":green-background[**Held · {held['weight_pct']:.1f}% of portfolio**]")
 

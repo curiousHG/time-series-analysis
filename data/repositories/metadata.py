@@ -119,6 +119,8 @@ def load_metadata(scheme_names: list[str] | None = None) -> pl.DataFrame:
                 "minTopup": r[1].min_topup,
                 "turnoverRatio": r[1].turnover_ratio,
                 "exitLoad": r[1].exit_load,
+                "investmentObjective": r[1].investment_objective,
+                "riskLevel": r[1].risk_level,
                 "fundHouse": r[2],  # JOIN'd from mf_amc
                 "fundManager": r[1].fund_manager,
                 "sourceUrl": r[1].source_url,
@@ -145,12 +147,21 @@ def fetch_and_save(scheme_name: str) -> dict:
     except Exception as e:
         adv_error = e
 
+    amfi_row = get_scheme_details_by_name(scheme_name)
+    isins = tuple((amfi_row.get("isin_growth"), amfi_row.get("isin_reinvestment")) if amfi_row else ())
+
     if meta is None:
-        amfi_row = get_scheme_details_by_name(scheme_name)
-        isins = (amfi_row.get("isin_growth"), amfi_row.get("isin_reinvestment")) if amfi_row else ()
-        meta = fetch_fund_metadata_kuvera(scheme_name, tuple(isins))
+        meta = fetch_fund_metadata_kuvera(scheme_name, isins)
         if meta is not None:
             logger.info("Metadata for %s via Kuvera fallback", scheme_name)
+    elif any(meta.get(k) is None for k in ("fund_manager", "risk_level", "investment_objective")):
+        # AdvisorKhoj lacks the manager entirely and sometimes the objective/riskometer —
+        # supplement just the gaps from Kuvera (still ISIN-verified).
+        extra = fetch_fund_metadata_kuvera(scheme_name, isins)
+        if extra:
+            for k in ("fund_manager", "risk_level", "investment_objective"):
+                if meta.get(k) is None and extra.get(k) is not None:
+                    meta[k] = extra[k]
 
     if meta is None:
         raise adv_error or ValueError(f"No metadata found on any source for {scheme_name}")

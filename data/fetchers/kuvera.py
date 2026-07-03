@@ -108,6 +108,9 @@ def fetch_fund_metadata_kuvera(scheme_name: str, isins: tuple[str | None, ...]) 
             "min_topup": _num(d.get("lump_min_additional")),
             "turnover_ratio": _num(d.get("portfolio_turnover")),
             "exit_load": None,
+            "investment_objective": (d.get("investment_objective") or "")[:2000] or None,
+            "risk_level": (d.get("crisil_rating") or "").removesuffix(" Risk") or None,
+            "fund_manager": d.get("fund_manager"),
             "fund_house": None,  # repository fills from amfi_schemes, same as AdvisorKhoj path
             "source_url": _FUND_URL.format(slug=d.get("slug", code)),
         }

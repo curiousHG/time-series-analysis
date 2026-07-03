@@ -143,6 +143,8 @@ class MfMetadata(SQLModel, table=True):
     min_investment: float | None = None
     min_topup: float | None = None
     turnover_ratio: float | None = None  # %
+    investment_objective: str | None = None  # scheme objective prose
+    risk_level: str | None = None  # SEBI riskometer, e.g. "Very High"
     source_url: str | None = None
     fetched_at: datetime.datetime | None = None
     # FKs into mf_amc / mf_category — replaced legacy fund_house / category text columns.

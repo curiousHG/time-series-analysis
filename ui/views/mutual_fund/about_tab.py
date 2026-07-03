@@ -36,6 +36,10 @@ def _age_years(launch) -> float | None:
 def render(ctx: FundContext) -> None:
     meta, amfi_row, nav_pd = ctx.meta, ctx.amfi_row, ctx.nav_pd
 
+    if meta.get("investmentObjective"):
+        st.markdown(f"*{meta['investmentObjective']}*")
+        st.divider()
+
     st.subheader("Costs & size")
     age = _age_years(meta.get("launchDate"))
     render_kpi_row(
