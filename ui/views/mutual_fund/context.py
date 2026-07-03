@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,8 @@ from ui.state.loaders import load_benchmark_returns
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -29,11 +32,19 @@ class FundContext:
 
 
 def load_index_returns(symbol: str, start: datetime, end: datetime) -> pd.Series:
-    """Daily pct-change series via the shared cached loader; empty Series on failure."""
+    """Daily pct-change series via the shared cached loader; empty Series on failure.
+
+    Failures degrade gracefully in the UI (a caption instead of a chart) but are logged
+    with a full trace here — a silent `except` made benchmark problems undiagnosable.
+    """
     try:
-        return load_benchmark_returns(symbol, start, end)
+        series = load_benchmark_returns(symbol, start, end)
     except Exception:
+        logger.exception("Benchmark load failed for %s (%s → %s)", symbol, start.date(), end.date())
         return pd.Series(dtype="float64")
+    if series.empty:
+        logger.warning("Benchmark %s returned no rows for %s → %s", symbol, start.date(), end.date())
+    return series
 
 
 def rebased_index(returns: pd.Series, dates: pd.DatetimeIndex) -> pd.Series:

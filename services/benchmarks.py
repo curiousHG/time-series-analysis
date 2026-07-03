@@ -19,9 +19,11 @@ BENCHMARK_SYMBOL_MAP: dict[str, str] = {
     "nifty next 50": "^NSMIDCP",
     "nifty midcap 50": "^NSEMDCP50",
     "nifty midcap 100": "NIFTY_MIDCAP_100.NS",
-    "nifty midcap 150": "NIFTY_MIDCAP_150.NS",
+    # yfinance delisted NIFTY_MIDCAP_150.NS / NIFTY_SMLCAP_250.NS (0 rows since 2025) —
+    # use the niftyindices source (space-form symbols route there in ensure_stock_data).
+    "nifty midcap 150": "NIFTY MIDCAP 150",
     "nifty smallcap 100": "^CNXSC",
-    "nifty smallcap 250": "NIFTY_SMLCAP_250.NS",
+    "nifty smallcap 250": "NIFTY SMALLCAP 250",
     "nifty bank": "^NSEBANK",
     "bank nifty": "^NSEBANK",
     "s&p bse sensex": "^BSESN",

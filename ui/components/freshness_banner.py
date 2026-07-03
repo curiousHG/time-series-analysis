@@ -1,5 +1,7 @@
 """Top-of-page banner that warns when NAV / holdings data is stale."""
 
+import logging
+
 import streamlit as st
 
 from services.data_freshness import (
@@ -7,6 +9,8 @@ from services.data_freshness import (
     compute_holdings_freshness,
     compute_nav_freshness,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -56,6 +60,9 @@ def render_freshness_banner(scheme_names: list[str], scheme_slugs: list[str]) ->
         lines.append(_nav_line(nav_report))
     if holdings_report.has_stale:
         lines.append(_holdings_line(holdings_report))
+
+    # Mirror the banner into the logs so stale-data states are greppable, not UI-only.
+    logger.warning("Data freshness: %s", " | ".join(line.replace("**", "") for line in lines))
 
     st.warning("\n\n".join(lines))
     st.page_link("ui/views/settings/page.py", label="Open Settings to refresh", icon="🛠")
