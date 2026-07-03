@@ -1,5 +1,6 @@
-"""Add-to-tracked + fetch-data controls for the MF Screener. Picks the top-N filtered
-rows, upserts to mf_registry, fetches NAV + metadata, then clears caches on success."""
+"""Add-to-tracked + fetch-data controls for the MF Screener. Picks the top-N rows *as
+displayed in the grid* (client-side sort + header filters), upserts to mf_registry,
+fetches NAV + metadata, then clears caches on success."""
 
 from __future__ import annotations
 
@@ -9,6 +10,25 @@ import streamlit as st
 from services.registry_service import backfill_missing
 from ui.constants import BACKFILL_HELP_TEXT
 from ui.state.loaders import load_metrics_cached, load_screener_df_cached
+
+# Set by the page after the grid renders: scheme names in the order the user actually sees
+# (AgGrid client-side sort + floating filters applied). Survives to the next rerun, so when
+# the Fetch button (rendered above the grid) fires, we pick what the user was looking at.
+DISPLAY_ORDER_KEY = "screener_display_order"
+
+
+def pick_backfill_names(filtered: pl.DataFrame, displayed: list[str] | None, n: int) -> list[str]:
+    """Top-N scheme names to fetch: displayed grid order first, server frame as fallback.
+
+    Displayed names are intersected with the current filtered frame so a stale grid order
+    (sidebar filters changed since last render) can't pick rows that are no longer shown.
+    """
+    valid = set(filtered["scheme_name"].to_list())
+    if displayed:
+        picked = [s for s in displayed if s in valid][:n]
+        if picked:
+            return picked
+    return filtered["scheme_name"].head(n).to_list()
 
 
 def render_inline_backfill(filtered: pl.DataFrame, n_col, btn_col) -> None:
@@ -41,7 +61,7 @@ def render_inline_backfill(filtered: pl.DataFrame, n_col, btn_col) -> None:
     if not run_clicked:
         return
 
-    picked_names = filtered["scheme_name"].head(int(batch)).to_list()
+    picked_names = pick_backfill_names(filtered, st.session_state.get(DISPLAY_ORDER_KEY), int(batch))
     total_items = int(batch) * 2  # nav + metadata per fund
     progress = st.progress(0.0, text="Starting…")
 

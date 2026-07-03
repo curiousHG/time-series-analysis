@@ -10,7 +10,7 @@ from data.repositories.amfi import get_scheme_count
 from services.registry_service import list_tracked
 from services.screener_service import apply_filters
 from ui.state.loaders import load_screener_df_cached
-from ui.views.mf_screener.backfill import render_inline_backfill
+from ui.views.mf_screener.backfill import DISPLAY_ORDER_KEY, render_inline_backfill
 from ui.views.mf_screener.chart import render_risk_return_chart
 from ui.views.mf_screener.filters import render_sidebar
 from ui.views.mf_screener.table import render_open_action, render_selection_echo, render_table
@@ -82,6 +82,12 @@ st.caption(f"{_filtered.height:,} of {_df.height:,} schemes match · click a fun
 _, _grid_response = render_table(_filtered, _state.visible_metrics, _state.aggrid_theme)
 render_open_action(_grid_response)
 render_selection_echo(_grid_response)
+
+# Remember the displayed order (grid sort + header filters) so the next "Fetch top N"
+# click picks exactly what the user is looking at, not the server frame's order.
+_grid_data = _grid_response.get("data")
+if _grid_data is not None and len(_grid_data) and "Scheme" in _grid_data.columns:
+    st.session_state[DISPLAY_ORDER_KEY] = _grid_data["Scheme"].tolist()
 
 # Risk-vs-return scatter for the filtered universe.
 render_risk_return_chart(_filtered)

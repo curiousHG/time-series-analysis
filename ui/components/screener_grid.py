@@ -134,6 +134,9 @@ def render_screener_grid(
         allow_unsafe_jscode=True,  # required for the sizeColumnsToFit callbacks
         # `cellClicked` drives open-on-click; the rest keep selection / filter / sort in sync.
         update_on=["cellClicked", "selectionChanged", "filterChanged", "sortChanged"],
+        # Return rows in the order the user actually sees (client-side sort + header filters
+        # applied) so callers like the screener's "Fetch top N" can be WYSIWYG.
+        data_return_mode="FILTERED_AND_SORTED",
     )
 
 
