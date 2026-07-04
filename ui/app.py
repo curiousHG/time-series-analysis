@@ -11,9 +11,29 @@ with timed("boot.init_schema"):
     init_schema()
 
 
+@st.cache_resource(show_spinner=False)
+def _kickoff_nifty500_seed() -> bool:
+    """Start a one-time background thread that seeds the Nifty 500 into the DB (OHLCV + CAPM
+    metrics). DB-first + resumable, so it's a quick no-op once populated. Never blocks the UI."""
+    import logging  # noqa: PLC0415 — keep boot imports minimal
+    import threading  # noqa: PLC0415
+
+    def _worker() -> None:
+        try:
+            from services.stock_sync_service import seed_nifty500  # noqa: PLC0415 — defer heavy import off boot
+
+            seed_nifty500()
+        except Exception:
+            logging.getLogger("boot").exception("nifty500 background seed failed")
+
+    threading.Thread(target=_worker, name="nifty500-seed", daemon=True).start()
+    return True
+
+
 def run():
     with timed("page.run"):
         st.set_page_config(layout="wide")
+        _kickoff_nifty500_seed()  # background Nifty 500 seed (cached → starts once per process)
         pages = [
             st.Page("ui/views/overview/page.py", title="Overview", url_path="overview", default=True),
             st.Page("ui/views/portfolio/page.py", title="Portfolio", url_path="portfolio"),

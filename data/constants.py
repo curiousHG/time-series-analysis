@@ -18,6 +18,8 @@ HEADERS = {
 
 # NSE equity master — the listed-stock universe (data.fetchers.stock.fetch_nse_equity_list).
 NSE_EQUITY_LIST_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
+# Nifty 500 constituents (data.fetchers.stock.fetch_nifty500_symbols) — the default seed universe.
+NIFTY500_LIST_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv"
 NSE_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"}
 
 # niftyindices.com — authoritative source for Nifty index history (incl. Smallcap 250 /

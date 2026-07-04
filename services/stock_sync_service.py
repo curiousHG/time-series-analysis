@@ -23,6 +23,32 @@ def sync_stocks(symbols: list[str], *, scrape_fundamentals: bool = True) -> int:
     return n
 
 
+def seed_nifty500(*, force_fundamentals: bool = False) -> int:
+    """Populate the Nifty 500 constituents not yet in the universe. DB-first + resumable:
+    only symbols without computed price metrics are synced. Fundamentals-off by default (just
+    OHLCV + CAPM alpha/beta) so it's fast and polite for a background run. Returns #synced."""
+    from data.fetchers.stock import fetch_nifty500_symbols  # noqa: PLC0415 — defer off boot
+    from data.repositories.stock_fundamentals import load_stock_metrics  # noqa: PLC0415
+
+    try:
+        symbols = fetch_nifty500_symbols()
+    except Exception:
+        logger.exception("nifty500 constituent list fetch failed")
+        return 0
+    if not symbols:
+        return 0
+
+    have = load_stock_metrics(symbols)
+    done = set(have["symbol"].to_list()) if not have.is_empty() and "symbol" in have.columns else set()
+    todo = [s for s in symbols if s not in done]
+    if not todo:
+        logger.info("nifty500 seed: all %d constituents already have metrics", len(symbols))
+        return 0
+
+    logger.info("nifty500 seed: syncing %d of %d constituents", len(todo), len(symbols))
+    return sync_stocks(todo, scrape_fundamentals=force_fundamentals)
+
+
 def list_unavailable_stocks() -> list[str]:
     """Bare symbols whose price history was confirmed unavailable (for the Settings retry list)."""
     from data.repositories.stock import list_unavailable_stock_symbols  # noqa: PLC0415 — defer off boot
