@@ -8,6 +8,8 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from ui.charts import theme
+
 if TYPE_CHECKING:
     from ui.views.mutual_fund.context import FundContext
 
@@ -30,7 +32,12 @@ def render(ctx: FundContext) -> None:
         color_continuous_midpoint=0,
     )
     fig_month.update_layout(
-        height=340, showlegend=False, coloraxis_showscale=False, xaxis_title=None, yaxis_title="Return %"
+        height=280,
+        showlegend=False,
+        coloraxis_showscale=False,
+        xaxis_title=None,
+        yaxis_title="Return %",
+        margin=theme.COMPACT_MARGIN,
     )
     st.plotly_chart(fig_month, use_container_width=True, key="mf-detail-month")
 
@@ -47,5 +54,5 @@ def render(ctx: FundContext) -> None:
             color_continuous_midpoint=0,
             text_auto=".1f",
         )
-        fig_year.update_layout(height=320, showlegend=False, yaxis_title="Return %")
+        fig_year.update_layout(height=260, showlegend=False, yaxis_title="Return %", margin=theme.COMPACT_MARGIN)
         st.plotly_chart(fig_year, use_container_width=True, key="mf-detail-year")

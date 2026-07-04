@@ -59,8 +59,11 @@ def render(ctx: FundContext) -> None:
         return
 
     _render_capm_kpis(ctx)
-    _render_excess_return(ctx, bench_returns, label)
-    _render_alpha_decay(ctx, bench_returns, label)
+    _excess_col, _alpha_col = st.columns(2)
+    with _excess_col:
+        _render_excess_return(ctx, bench_returns, label)
+    with _alpha_col:
+        _render_alpha_decay(ctx, bench_returns, label)
     _render_fund_alerts(ctx)
 
 
@@ -97,7 +100,7 @@ def _render_excess_return(ctx: FundContext, bench_returns: pd.Series, label: str
         )
     )
     fig.add_hline(y=0, line={"color": theme.NEUTRAL, "width": 1, "dash": "dot"})
-    fig.update_layout(height=360, yaxis_title="Excess return %", hovermode="x")
+    fig.update_layout(height=300, yaxis_title="Excess return %", hovermode="x", margin=theme.COMPACT_MARGIN)
     st.plotly_chart(fig, use_container_width=True, key="mf-bench-excess")
     st.caption("Above zero: ₹1 in the fund has outgrown ₹1 in the benchmark since the overlap start.")
 
@@ -111,7 +114,9 @@ def _render_alpha_decay(ctx: FundContext, bench_returns: pd.Series, label: str) 
     alpha_pct = alpha * 100
     fig = go.Figure(go.Scatter(x=alpha_pct.index, y=alpha_pct.values, mode="lines", line={"color": theme.INFO}))
     fig.add_hline(y=0, line={"color": theme.NEUTRAL, "width": 1, "dash": "dot"})
-    fig.update_layout(height=300, yaxis_title=f"{_ALPHA_WINDOW}d Jensen's alpha (ann., %)", hovermode="x")
+    fig.update_layout(
+        height=260, yaxis_title=f"{_ALPHA_WINDOW}d Jensen's alpha (ann., %)", hovermode="x", margin=theme.COMPACT_MARGIN
+    )
     st.plotly_chart(fig, use_container_width=True, key="mf-bench-alpha")
     latest = float(alpha_pct.iloc[-1])
     trend = "positive" if latest > 0 else "negative"

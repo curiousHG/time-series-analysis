@@ -47,7 +47,7 @@ def render(ctx: FundContext) -> None:
 
     st.subheader("NAV (raw)")
     fig_nav = go.Figure(go.Scatter(x=nav_pd.index, y=nav_pd.values, mode="lines", line={"color": theme.POSITIVE_SOFT}))
-    fig_nav.update_layout(height=300, yaxis_title="NAV (₹)", hovermode="x")
+    fig_nav.update_layout(height=240, yaxis_title="NAV (₹)", hovermode="x", margin=theme.COMPACT_MARGIN)
     st.plotly_chart(fig_nav, use_container_width=True, key="mf-detail-nav")
 
 
@@ -102,10 +102,11 @@ def _render_growth_chart(ctx: FundContext) -> None:
         st.caption(f"Benchmark `{ctx.meta.get('benchmark')}` has no fetchable symbol mapping. Showing Nifty 50 only.")
 
     fig.update_layout(
-        height=480,
+        height=380,
         hovermode="x unified",
         yaxis_title="Index (start = 100)",
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
+        margin={"l": 48, "r": 16, "t": 36, "b": 36},  # extra top for the horizontal legend
     )
     st.plotly_chart(fig, use_container_width=True, key="mf-detail-growth")
 
@@ -147,7 +148,7 @@ def _render_rolling_returns(ctx: FundContext) -> None:
     fig_rr = go.Figure()
     fig_rr.add_trace(go.Scatter(x=rr_pct.index, y=rr_pct.values, mode="lines", line={"color": theme.INFO}))
     fig_rr.add_hline(y=0, line={"color": theme.NEUTRAL, "width": 1, "dash": "dot"})
-    fig_rr.update_layout(height=320, yaxis_title=ylabel, hovermode="x")
+    fig_rr.update_layout(height=280, yaxis_title=ylabel, hovermode="x", margin=theme.COMPACT_MARGIN)
     st.plotly_chart(fig_rr, use_container_width=True, key="mf-detail-rolling")
 
 

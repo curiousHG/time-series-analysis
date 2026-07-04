@@ -65,7 +65,9 @@ BETA_MARKET = 1.0
 # Index tickers that aren't caught by the `^…` / `NIFTY …` (space) rules — the underscore/.NS
 # benchmark forms from services.benchmarks. Kept here (not imported from services) to avoid a
 # domain→services dependency.
-_EXTRA_INDEX_SYMBOLS = frozenset({"NIFTY_MIDCAP_100.NS", "NIFTY_MIDCAP_150.NS", "NIFTY_SMLCAP_250.NS"})
+_EXTRA_INDEX_SYMBOLS = frozenset(
+    {"NIFTY_MIDCAP_100.NS", "NIFTY_MIDCAP_150.NS", "NIFTY_SMLCAP_250.NS", "URTH", "ACWI"}  # incl. MSCI ETF proxies
+)
 
 
 def is_index_symbol(symbol: str) -> bool:

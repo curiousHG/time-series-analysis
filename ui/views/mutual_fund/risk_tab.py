@@ -109,19 +109,21 @@ def render(ctx: FundContext) -> None:
         ]
     )
 
-    st.subheader("Drawdown")
-    cumulative = (1 + returns).cumprod()
-    peak = cumulative.cummax()
-    drawdown = (cumulative - peak) / peak * 100
-    fig_dd = go.Figure(
-        go.Scatter(
-            x=drawdown.index, y=drawdown.values, fill="tozeroy", mode="lines", line={"color": theme.NEGATIVE_SOFT}
+    _dd_col, _dist_col = st.columns(2)
+    with _dd_col:
+        st.subheader("Drawdown")
+        cumulative = (1 + returns).cumprod()
+        peak = cumulative.cummax()
+        drawdown = (cumulative - peak) / peak * 100
+        fig_dd = go.Figure(
+            go.Scatter(
+                x=drawdown.index, y=drawdown.values, fill="tozeroy", mode="lines", line={"color": theme.NEGATIVE_SOFT}
+            )
         )
-    )
-    fig_dd.update_layout(height=320, yaxis_title="Drawdown %", hovermode="x")
-    st.plotly_chart(fig_dd, use_container_width=True, key="mf-detail-dd")
-
-    st.subheader("Daily-return distribution")
-    fig_dist = px.histogram(returns * 100, nbins=80, marginal="rug")
-    fig_dist.update_layout(showlegend=False, height=320, xaxis_title="Daily return %")
-    st.plotly_chart(fig_dist, use_container_width=True, key="mf-detail-dist")
+        fig_dd.update_layout(height=280, yaxis_title="Drawdown %", hovermode="x", margin=theme.COMPACT_MARGIN)
+        st.plotly_chart(fig_dd, use_container_width=True, key="mf-detail-dd")
+    with _dist_col:
+        st.subheader("Daily-return distribution")
+        fig_dist = px.histogram(returns * 100, nbins=80, marginal="rug")
+        fig_dist.update_layout(showlegend=False, height=280, xaxis_title="Daily return %", margin=theme.COMPACT_MARGIN)
+        st.plotly_chart(fig_dist, use_container_width=True, key="mf-detail-dist")

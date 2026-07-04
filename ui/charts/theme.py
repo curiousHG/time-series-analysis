@@ -34,6 +34,10 @@ BENCHMARK_LINE = "#94a3b8"  # grey — benchmark index overlays
 WARNING = "#fbbf24"  # amber — highlights, frontier, portfolio marker
 LINK = "#5aa9ff"  # clickable cell/link styling
 
+# Tight margins for dense views (e.g. MF Analysis) where charts sit under an st.subheader
+# (no Plotly title) — trims the default whitespace so more fits on screen without scrolling.
+COMPACT_MARGIN = {"l": 48, "r": 16, "t": 24, "b": 36}
+
 DASHBOARD_TEMPLATE = go.layout.Template(
     layout=go.Layout(
         font=dict(family=FONT_FAMILY, color=TEXT_COLOR, size=13),
