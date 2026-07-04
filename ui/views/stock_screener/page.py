@@ -41,25 +41,40 @@ def _populate(symbols: list[str]) -> None:
     load_stock_screener_df_cached.clear()
 
 
-def _add_stocks(yf_symbols: list[str]) -> None:
-    """Add stocks to the universe from a yfinance search: pull full OHLCV history into the DB,
-    scrape fundamentals + compute CAPM metrics, and add them to the Stock Analysis watchlist."""
-    from data.repositories.stock import ensure_stock_data  # noqa: PLC0415 — defer heavy import off boot
+_NSE_EXCHANGES = {"NSE", "NSI", "BSE", "BO"}
+
+
+def _add_stocks(picks: list[tuple[str, str, str]]) -> None:
+    """Add stocks from a yfinance search (each pick = (symbol, name, exchange)). NSE stocks get
+    the full flow (OHLCV + screener.in fundamentals + CAPM). Global stocks (US, etc.) get OHLCV
+    only — screener.in / CAPM-vs-Nifty are India-specific — but are chartable in Stock Analysis."""
+    from data.repositories.stock import ensure_stock_data, register_stock  # noqa: PLC0415 — defer off boot
     from services.stock_sync_service import sync_stocks  # noqa: PLC0415
 
     wide_start = pd.to_datetime("2000-01-01")
-    today = pd.Timestamp.today()
-    bare = [to_bare_symbol(s) for s in yf_symbols]  # canonical NSE symbol — the key everywhere now
-    with st.spinner(f"Pulling full history + computing metrics for {len(bare)} stock(s)…"):
-        for sym in bare:
-            ensure_stock_data(sym, wide_start, today)  # whole-range OHLCV → stock_ohlcv (DB-first, fetches the gap)
-        sync_stocks(bare)  # screener.in fundamentals + CAPM alpha/beta → stock_metrics
+    today = pd.Timestamp.today().normalize()
+    nse_bare: list[str] = []
+    global_syms: list[str] = []
+    for sym, name, exch in picks:
+        if sym.endswith(".NS") or (exch or "").upper() in _NSE_EXCHANGES:
+            nse_bare.append(to_bare_symbol(sym))
+        else:
+            register_stock(sym, name=name, exchange=exch or "GLOBAL", quote_type="equity")  # so it fetches as-is
+            global_syms.append(sym)
 
-    watchlist = sorted({to_bare_symbol(s) for s in load_selection("selected_stocks", [])} | set(bare))
+    with st.spinner(f"Pulling full history for {len(nse_bare) + len(global_syms)} stock(s)…"):
+        for sym in nse_bare + global_syms:
+            ensure_stock_data(sym, wide_start, today)  # whole-range OHLCV → stock_ohlcv (DB-first)
+        if nse_bare:
+            sync_stocks(nse_bare)  # screener.in fundamentals + CAPM alpha/beta → stock_metrics (NSE only)
+
+    existing = {to_bare_symbol(s) for s in load_selection("selected_stocks", [])}
+    watchlist = sorted(existing | set(nse_bare) | set(global_syms))
     save_selection("selected_stocks", watchlist)
     st.session_state.selected_stocks = watchlist
-    load_stock_screener_df_cached.clear()  # new rows appear in the table
+    load_stock_screener_df_cached.clear()  # new NSE rows appear in the table
     load_stock_open_close.clear()  # Stock Analysis picks up the freshly pulled history
+    st.toast(f"Added {len(picks)} stock(s).", icon="✅")
 
 
 def _add_index(symbol: str, label: str) -> None:
@@ -79,22 +94,29 @@ with st.expander("Add ticker (stock or index)", expanded=False, icon=":material/
     _kind = st.radio("Type", ["Stock", "Index"], horizontal=True, key="add_ticker_kind")
     if _kind == "Stock":
         st.caption(
-            "Search Yahoo Finance for NSE stocks. Adding pulls full price history, scrapes "
-            "fundamentals, and computes CAPM alpha/beta — it shows up in the table below and in "
-            "the Stock Analysis ticker picker."
+            "Search Yahoo Finance (Indian **or** global stocks). Selections persist across "
+            "searches — search, pick, search again, then add all at once. NSE stocks get "
+            "fundamentals + CAPM; global stocks are OHLCV-only (chartable in Stock Analysis)."
         )
-        _q = st.text_input("Search by name or symbol", placeholder="e.g. tata motors", key="stock_scr_add_query")
-        _opts: list[tuple[str, str]] = []
-        if _q and len(_q) >= 3:
+        _q = st.text_input("Search by name or symbol", placeholder="e.g. reliance, apple, tesla", key="stock_scr_add_query")
+        _opts: list[tuple[str, str, str]] = []
+        if _q and len(_q) >= 2:
             with st.spinner("Searching…"):
                 _res = cached_search_stock(_q).reset_index()
             if not _res.empty:
-                _opts = list(zip(_res["symbol"], _res["shortName"], strict=False))
+                _ex = _res["exchange"] if "exchange" in _res.columns else pd.Series([""] * len(_res))
+                _opts = list(zip(_res["symbol"], _res["shortName"], _ex, strict=False))
+        # Keep already-selected options so picks survive query changes (accumulate across searches).
+        _prev = st.session_state.get("stock_scr_add_picked", [])
+        _merged = _opts + [o for o in _prev if o not in _opts]
         _picked = st.multiselect(
-            "Results", options=_opts, format_func=lambda t: f"{t[0]} — {t[1]}", key="stock_scr_add_picked"
+            "Selected to add",
+            options=_merged,
+            format_func=lambda t: f"{t[0]} — {t[1]}" + (f"  ·  {t[2]}" if t[2] else ""),
+            key="stock_scr_add_picked",
         )
-        if st.button("Add stock(s)", type="primary", disabled=not _picked):
-            _add_stocks([sym for sym, _ in _picked])
+        if st.button(f"Add {len(_picked)} stock(s)", type="primary", disabled=not _picked):
+            _add_stocks(_picked)
             st.rerun()
     else:
         st.caption("Pull a market index (Indian or US) into the database so it's chartable in Stock Analysis.")

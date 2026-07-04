@@ -18,7 +18,7 @@ from data.fetchers.stock import (
     fetch_symbol_data_jugaad,
     query_stocks,
 )
-from stocks.constants import is_index_symbol, to_bare_symbol, to_yf_symbol
+from stocks.constants import is_index_symbol, to_bare_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -67,16 +67,51 @@ def _to_date(d: datetime | date) -> date:
     return d.date() if isinstance(d, datetime) else d
 
 
+_NSE_EXCHANGES = {"NSE", "NSI", "BSE", "BO"}
+
+
+def _yf_fetch_symbol(symbol: str) -> str:
+    """yfinance symbol to fetch for a stored stock symbol. NSE bare symbols get `.NS`; symbols
+    that already carry an exchange qualifier (`.` / `^`) or are registered on a non-NSE exchange
+    (global tickers like AAPL) are fetched as-is."""
+    if "." in symbol or symbol.startswith("^"):
+        return symbol
+    with get_session() as session:
+        exchange = session.exec(select(StockRegistry.exchange).where(StockRegistry.symbol == symbol)).first()
+    if exchange and exchange.upper() not in _NSE_EXCHANGES:
+        return symbol  # global (e.g. US) — no .NS suffix
+    return f"{symbol}.NS"
+
+
 def _fetch_and_save_stock(symbol: str, start: date, end: date) -> None:
-    """Fetch an NSE equity (bare canonical symbol) — jugaad-data first, then yfinance — and
-    upsert into stock_ohlcv keyed by the bare symbol."""
-    data = fetch_symbol_data_jugaad(symbol, start, end)  # strips .NS internally; bare is fine
+    """Fetch an equity and upsert into stock_ohlcv keyed by `symbol`. NSE symbols try jugaad-data
+    first then yfinance; global symbols go straight to yfinance (fetched as-is)."""
+    yf_sym = _yf_fetch_symbol(symbol)
+    if yf_sym.endswith(".NS"):
+        data = fetch_symbol_data_jugaad(symbol, start, end)  # NSE only; strips .NS internally
+        if data is not None and not data.empty:
+            _upsert_ohlcv(StockOhlcv, symbol, pl.from_pandas(data.reset_index()))
+            return
+    data = fetch_symbol_data(yf_sym, start=start, end=end)
     if data is not None and not data.empty:
         _upsert_ohlcv(StockOhlcv, symbol, pl.from_pandas(data.reset_index()))
-        return
-    data = fetch_symbol_data(to_yf_symbol(symbol), start=start, end=end)
-    if data is not None and not data.empty:
-        _upsert_ohlcv(StockOhlcv, symbol, pl.from_pandas(data.reset_index()))
+
+
+def register_stock(symbol: str, *, name: str | None = None, exchange: str | None = None, quote_type: str | None = None) -> None:
+    """Upsert a stock_registry row — for stocks added outside the NSE master (e.g. global tickers),
+    so `_yf_fetch_symbol` knows to fetch them as-is."""
+    with get_session() as session:
+        row = session.get(StockRegistry, symbol)
+        if row is None:
+            row = StockRegistry(symbol=symbol)
+            session.add(row)
+        if name:
+            row.stock_name = name
+        if exchange:
+            row.exchange = exchange
+        if quote_type:
+            row.quote_type = quote_type
+        session.commit()
 
 
 def _fetch_and_save_index(symbol: str, start: date, end: date) -> None:

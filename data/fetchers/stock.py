@@ -90,7 +90,7 @@ def fetch_nse_equity_list() -> list[dict]:
 
 
 def query_stocks(query: str) -> pd.DataFrame:
-    """Return NSE-equity symbols matching the query, indexed by symbol.
+    """Return equity symbols matching the query (any exchange — Indian or global), indexed by symbol.
 
     Defensive: yfinance's Lookup returns an empty, column-less frame for no-match / throttled
     responses (and can raise), so we normalise those to an empty result instead of a KeyError.
@@ -102,9 +102,9 @@ def query_stocks(query: str) -> pd.DataFrame:
     except Exception as e:
         logger.warning("yfinance Lookup failed for %r: %s", query, e)
         return empty
-    if df is None or df.empty or "exchange" not in df.columns or "quoteType" not in df.columns:
+    if df is None or df.empty or "quoteType" not in df.columns:
         return empty
-    return df[(df["exchange"] == "NSI") & (df["quoteType"] == "equity")]
+    return df[df["quoteType"] == "equity"]
 
 
 def fetch_symbol_data(symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame | None:

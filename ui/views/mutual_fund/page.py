@@ -58,32 +58,46 @@ def _held_position(scheme_name: str) -> dict | None:
 
 
 def _refresh_fund(name: str) -> None:
-    """Refetch NAV + holdings + metadata and recompute metrics for one fund, then clear caches."""
-    import contextlib  # noqa: PLC0415
-
+    """Refetch NAV + holdings + metadata and recompute metrics for one fund; stash an outcome
+    toast (shown after the rerun). A failing source is recorded, not fatal."""
     from data.repositories.holdings import refresh_holdings_data  # noqa: PLC0415 — defer heavy import off boot
     from data.repositories.metadata import refresh_metadata  # noqa: PLC0415
     from data.repositories.nav import refresh_nav_data  # noqa: PLC0415
     from services.mf_metrics import recompute_metrics  # noqa: PLC0415
     from ui.state.loaders import load_holdings_data  # noqa: PLC0415
 
+    slug = make_slug(name)
+    steps = (
+        ("NAV", lambda: refresh_nav_data([name])),
+        ("Holdings", lambda: refresh_holdings_data([slug])),
+        ("Metadata", lambda: refresh_metadata(name)),
+        ("Metrics", lambda: recompute_metrics([name])),
+    )
+    failed: list[str] = []
     with st.spinner(f"Refreshing {short_scheme_name(name)}…"):
-        # A transient failure in one source shouldn't abort the whole refresh.
-        for step in (
-            lambda: refresh_nav_data([name]),
-            lambda: refresh_holdings_data([make_slug(name)]),
-            lambda: refresh_metadata(name),
-            lambda: recompute_metrics([name]),
-        ):
-            with contextlib.suppress(Exception):
+        for label, step in steps:
+            try:
                 step()
+            except Exception:
+                failed.append(label)
     clear_freshness_cache()
     load_metadata_cached.clear()
     load_metrics_cached.clear()
     load_holdings_data.clear()
+    short = short_scheme_name(name)
+    st.session_state["_mf_refresh_msg"] = (
+        ("⚠️", f"Refreshed {short} with issues — {', '.join(failed)} failed.")
+        if failed
+        else ("✅", f"Refreshed {short} — NAV, holdings, metadata & metrics updated.")
+    )
 
 
 st.title("Mutual Fund Analysis")
+
+# Outcome toast from a just-completed per-fund refresh (set before the rerun).
+_refresh_msg = st.session_state.pop("_mf_refresh_msg", None)
+if _refresh_msg:
+    st.toast(_refresh_msg[1], icon=_refresh_msg[0])
 
 # ---- Fund selection (pick among tracked funds; discovery lives on the MF Screener)
 tracked = list_tracked()
