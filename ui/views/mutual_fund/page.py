@@ -188,7 +188,11 @@ if launch:
     _identity_bits.append(f"launched {launch}" + (f" ({_age:.1f}y)" if _age else ""))
 st.markdown(" · ".join(_identity_bits))
 
+# At-a-glance: the major performance + risk/cost numbers up top; details live in the tabs below.
+_m = _metrics.row(0, named=True) if _metrics.height else {}
 _chg_1d = float(nav_pd.iloc[-1] / nav_pd.iloc[-2] - 1) if len(nav_pd) >= 2 else None
+_alpha = _m.get("alpha_1y")
+_alpha_pill = f"{_alpha * 100:+.1f}% alpha" if isinstance(_alpha, (int, float)) and _alpha == _alpha else None
 render_kpi_row(
     [
         Kpi(
@@ -197,7 +201,15 @@ render_kpi_row(
             delta=f"{_chg_1d * 100:+.2f}%" if _chg_1d is not None else None,
             help=f"As of {nav_pd.index.max():%d %b %Y}",
         ),
-        Kpi("1Y return", absolute_return(nav_pd, 252), fmt="pct"),
+        Kpi("1Y return", absolute_return(nav_pd, 252), fmt="pct", delta=_alpha_pill, help="Pill = 1Y alpha vs benchmark"),
+        Kpi("3Y CAGR", _m.get("cagr_3y"), fmt="pct"),
+        Kpi("Sharpe (1Y)", _m.get("sharpe_1y"), fmt="ratio", help="Risk-adjusted return; higher is better"),
+    ]
+)
+render_kpi_row(
+    [
+        Kpi("Max drawdown (1Y)", _m.get("max_dd_1y"), fmt="pct", help="Worst peak-to-trough fall in the last year"),
+        Kpi("Volatility (1Y)", _m.get("vol_1y"), fmt="pct_unsigned", help="Annualised standard deviation"),
         Kpi(
             "AUM (₹ Cr)",
             meta.get("aumCrores") or None,
