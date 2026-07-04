@@ -6,6 +6,8 @@ Percentiles are vs the screened universe — the data has no sector classificati
 
 from __future__ import annotations
 
+import contextlib
+
 import polars as pl
 import streamlit as st
 
@@ -57,16 +59,28 @@ def _render_momentum(symbol: str) -> None:
 
 def _render_valuation(bare: str) -> None:
     st.subheader("Valuation & quality")
-    universe = load_stock_screener_df_cached()
-    if universe.is_empty() or bare not in universe["symbol"].to_list():
-        st.info("No screener.in fundamentals cached for this symbol yet.")
-        if st.button("Sync fundamentals from screener.in", key="sync-fundamentals"):
-            from services.stock_sync_service import sync_stocks  # noqa: PLC0415 — defer heavy import off boot
+    # Fundamentals come from screener.in and are scraped lazily (the Nifty 500 seed loads price
+    # metrics only). Auto-fetch on first open; if screener.in has nothing usable, offer a retry.
+    from data.repositories.stock_fundamentals import ensure_stock_fundamentals, fundamentals_status_of  # noqa: PLC0415
 
-            with st.spinner(f"Scraping screener.in for {bare}…"):
-                sync_stocks([bare])
+    status = fundamentals_status_of(bare)
+    if status != "available":
+        if status is None:
+            with st.spinner(f"Fetching {bare} fundamentals from screener.in…"), contextlib.suppress(Exception):
+                ensure_stock_fundamentals([bare])
             load_stock_screener_df_cached.clear()
             st.rerun()
+        st.info(f"Fundamentals aren't available for **{bare}** on screener.in.")
+        if st.button("Retry fundamentals sync", key="sync-fundamentals"):
+            with st.spinner(f"Scraping screener.in for {bare}…"), contextlib.suppress(Exception):
+                ensure_stock_fundamentals([bare])
+            load_stock_screener_df_cached.clear()
+            st.rerun()
+        return
+
+    universe = load_stock_screener_df_cached()
+    if universe.is_empty() or bare not in universe["symbol"].to_list():
+        st.info("Fundamentals scraped but not in the screener universe yet — check back shortly.")
         return
 
     row = universe.filter(pl.col("symbol") == bare).row(0, named=True)

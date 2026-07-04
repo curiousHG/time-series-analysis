@@ -209,6 +209,13 @@ def ensure_stock_fundamentals(
     return load_stock_metrics(symbols)
 
 
+def fundamentals_status_of(symbol: str) -> str | None:
+    """Registry fundamentals_status for a bare symbol: 'available' / 'unavailable' / None (never scraped)."""
+    with get_session() as session:
+        row = session.get(StockRegistry, symbol)
+        return row.fundamentals_status if row else None
+
+
 def load_stock_metrics(symbols: list[str] | None = None) -> pl.DataFrame:
     """Load cached stock metrics (all, or a subset)."""
     with get_session() as session:
