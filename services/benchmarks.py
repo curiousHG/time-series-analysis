@@ -197,8 +197,34 @@ def _normalise_benchmark(name: str) -> str:
     return s
 
 
+# Nifty strategy/factor indices (Quality / Value / Momentum / Alpha / Low-Vol …) aren't on
+# yfinance and niftyindices no longer serves them cleanly — fall back to the closest fetchable
+# PARENT universe. Longest tokens first so "500" doesn't match inside "50".
+_PARENT_UNIVERSE = (
+    ("smallcap", "NIFTY SMALLCAP 250"),
+    ("midcap", "NIFTY MIDCAP 150"),
+    ("next 50", "^NSMIDCP"),
+    ("500", "^CRSLDX"),
+    ("200", "^CNX200"),
+    ("100", "^CNX100"),
+    ("50", "^NSEI"),
+)
+
+
+def _parent_universe_fallback(normalised: str) -> str | None:
+    """Closest fetchable parent index for a Nifty strategy/factor benchmark (a proxy)."""
+    if "nifty" not in normalised:
+        return None
+    for token, symbol in _PARENT_UNIVERSE:
+        if token in normalised:
+            return symbol
+    return None
+
+
 def resolve_benchmark_symbol(benchmark_name: str | None) -> str | None:
-    """Map a metadata-benchmark string (e.g. 'NIFTY 500 TRI') to a fetchable symbol."""
+    """Map a metadata-benchmark string (e.g. 'NIFTY 500 TRI') to a fetchable symbol. Nifty
+    factor/strategy indices with no exact match fall back to their parent universe (a proxy)."""
     if not benchmark_name:
         return None
-    return BENCHMARK_SYMBOL_MAP.get(_normalise_benchmark(benchmark_name))
+    normalised = _normalise_benchmark(benchmark_name)
+    return BENCHMARK_SYMBOL_MAP.get(normalised) or _parent_universe_fallback(normalised)
