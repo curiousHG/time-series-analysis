@@ -13,12 +13,12 @@ import quantstats as qs
 from sqlmodel import col, select
 
 from core.database import get_session
-from core.models import AmfiScheme, MfHolding, MfNav
+from core.models import AmfiScheme, MfHolding, MfMetadata, MfNav
 from core.timing import timed, timeit
 from data.repositories.scheme_metrics import clear_metrics, find_stale_schemes, load_metrics, upsert_metrics
 from data.repositories.stock import ensure_stock_data, refresh_stock_to_today
 from mutual_funds.display import make_slug  # noqa: F401 — back-compat re-export for callers
-from services.benchmarks import subcategory_benchmark
+from services.benchmarks import benchmark_for_fund
 from services.constants import RF_DAILY, TRADING_DAYS
 
 logger = logging.getLogger(__name__)
@@ -483,6 +483,21 @@ def _subcategories(scheme_names: list[str]) -> dict[str, str | None]:
     return {r[0]: r[1] for r in rows}
 
 
+def _metadata_benchmarks(scheme_names: list[str]) -> dict[str, str | None]:
+    """scheme_name -> its named metadata benchmark (e.g. 'Russell 3000 Growth TRI'), when known.
+
+    Queries just scheme_name + benchmark (joined via scheme_code) — avoids loading the wide
+    metadata frame with its long free-text columns.
+    """
+    with get_session() as session:
+        rows = session.exec(
+            select(AmfiScheme.scheme_name, MfMetadata.benchmark)
+            .join(MfMetadata, MfMetadata.scheme_code == AmfiScheme.scheme_code)
+            .where(col(AmfiScheme.scheme_name).in_(scheme_names))
+        ).all()
+    return {r[0]: r[1] for r in rows if r[1]}
+
+
 @timeit("mf_metrics.recompute_metrics")
 def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int = 4) -> int:
     """Recompute and persist metrics for `scheme_names` (or every scheme with NAV); returns rows upserted.
@@ -500,9 +515,11 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
     if not scheme_names:
         return 0
 
-    # Each fund's benchmark comes from its SEBI sub-category (None for Debt/Arbitrage -> CAPM NaN).
-    # Load each distinct index once, then broadcast to the workers.
-    bench_sym_by_name = {n: subcategory_benchmark(s) for n, s in _subcategories(scheme_names).items()}
+    # Each fund's benchmark: metadata benchmark (mappable) → sub-category → Nifty 50 default for
+    # non-debt funds (None for Debt/Arbitrage/Liquid → CAPM NaN). Load each distinct index once.
+    subcats = _subcategories(scheme_names)
+    meta_bench = _metadata_benchmarks(scheme_names)
+    bench_sym_by_name = {n: benchmark_for_fund(subcats.get(n), meta_bench.get(n)) for n in scheme_names}
     distinct_syms = sorted({s for s in bench_sym_by_name.values() if s})
     logger.info("recompute: %d funds across %d benchmark(s): %s", len(scheme_names), len(distinct_syms), distinct_syms)
     bench_cache = {sym: _load_benchmark_returns(sym) for sym in distinct_syms}

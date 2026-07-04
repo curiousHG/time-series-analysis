@@ -66,7 +66,10 @@ def render(ctx: FundContext) -> None:
 
 def _render_capm_kpis(ctx: FundContext) -> None:
     m = ctx.metrics_row or {}
-    st.caption("CAPM stats from the metrics cache (1Y daily returns vs the fund's category benchmark).")
+    st.caption(
+        "CAPM stats from the metrics cache — 1Y daily returns vs the fund's benchmark "
+        "(its named benchmark, else sub-category index, else Nifty 50 for non-debt funds)."
+    )
     render_kpi_row(
         [
             Kpi("Alpha (1Y, ann.)", m.get("alpha_1y"), fmt="pct"),

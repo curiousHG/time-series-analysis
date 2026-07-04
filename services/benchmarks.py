@@ -159,6 +159,36 @@ def subcategory_benchmark(sub_category: str | None) -> str | None:
     return SUBCATEGORY_BENCHMARK.get(sub_category)
 
 
+# Fixed-income / non-directional sub-categories where an equity CAPM benchmark is meaningless.
+_DEBT_LIKE_KEYWORDS = (
+    "liquid", "overnight", "money market", "duration", "bond", "gilt", "credit risk",
+    "banking and psu", "floater", "arbitrage", "fixed maturity", "interval", "debt",
+)
+
+
+def _is_debt_like(sub_category: str | None) -> bool:
+    s = (sub_category or "").lower()
+    return any(k in s for k in _DEBT_LIKE_KEYWORDS)
+
+
+def benchmark_for_fund(sub_category: str | None, metadata_benchmark: str | None = None) -> str | None:
+    """Resolve a fund's benchmark index symbol for CAPM alpha/beta.
+
+    Priority: (1) the fund's named metadata benchmark if mappable (e.g. "Russell 3000 Growth
+    TRI" → ^RAG), (2) its SEBI sub-category benchmark, (3) Nifty 50 as the default for any
+    non-debt fund. Debt / arbitrage / liquid schemes return None (equity CAPM is meaningless).
+    """
+    sym = resolve_benchmark_symbol(metadata_benchmark)
+    if sym:
+        return sym
+    sym = subcategory_benchmark(sub_category)
+    if sym:
+        return sym
+    if _is_debt_like(sub_category):
+        return None
+    return "^NSEI"
+
+
 def _normalise_benchmark(name: str) -> str:
     s = name.lower()
     s = re.sub(r"\b(tri|pri|total return( index)?|price return( index)?|index)\b", "", s)
