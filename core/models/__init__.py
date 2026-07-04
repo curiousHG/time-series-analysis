@@ -13,4 +13,11 @@ from core.models.mutual_fund import (
     MfSectorAllocation,
     MfTradebook,
 )
-from core.models.stock import StockMetrics, StockOhlcv, StockQuarterly, StockRegistry
+from core.models.stock import (
+    IndexOhlcv,
+    IndexRegistry,
+    StockMetrics,
+    StockOhlcv,
+    StockQuarterly,
+    StockRegistry,
+)

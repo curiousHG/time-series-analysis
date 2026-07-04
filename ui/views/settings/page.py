@@ -9,7 +9,7 @@ from data.repositories.amfi import get_scheme_count
 from data.repositories.tradebook import get_tradebook_stats
 from services.db_stats import get_db_stats
 from services.registry_service import list_tracked
-from ui.views.settings import amfi, data_sources, db_stats, metrics_cache, refresh, tradebook
+from ui.views.settings import amfi, data_sources, db_stats, metrics_cache, refresh, stocks, tradebook
 
 
 def _inject_styles() -> None:
@@ -100,7 +100,9 @@ def _render_overview() -> None:
 
 
 def _render_tabs() -> None:
-    portfolio_tab, fund_tab, system_tab, reference_tab = st.tabs(["Portfolio Data", "Fund Data", "System", "Reference"])
+    portfolio_tab, fund_tab, stock_tab, system_tab, reference_tab = st.tabs(
+        ["Portfolio Data", "Fund Data", "Stock Data", "System", "Reference"]
+    )
 
     with portfolio_tab:
         st.markdown("### Portfolio Data")
@@ -119,6 +121,14 @@ def _render_tabs() -> None:
         amfi.render()
         refresh.render()
         metrics_cache.render()
+
+    with stock_tab:
+        st.markdown("### Stock Data")
+        st.markdown(
+            '<div class="settings-section-note">Retry price downloads for stocks with no fetchable history.</div>',
+            unsafe_allow_html=True,
+        )
+        stocks.render()
 
     with system_tab:
         st.markdown("### System")

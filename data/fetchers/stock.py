@@ -7,6 +7,7 @@ import httpx
 import pandas as pd
 import yfinance as yf
 
+from core.notifications import push_notice
 from data.constants import (
     NIFTYINDICES_HEADERS,
     NIFTYINDICES_HISTORY_URL,
@@ -123,6 +124,8 @@ def fetch_symbol_data(symbol: str, start: str, end: str, interval: str = "1d") -
         return data
     except Exception as e:
         logger.error(f"Error fetching data for symbol {symbol}: {e}")
+        # Surface to the UI (drained as a toast); de-dup per symbol so repeats collapse.
+        push_notice(f"Price fetch failed for {symbol}: {e}", level="error", key=f"fetch:{symbol}")
         return None
 
 

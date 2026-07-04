@@ -6,17 +6,20 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
+from data.repositories.stock import get_stock_ohlcv_statuses
 from indicators import INDICATOR_REGISTRY, compute_indicators
-from ui.persistence.selections import load_selection
+from stocks.constants import to_bare_symbol
+from ui.components.notifications import render_toasts
+from ui.persistence.selections import load_selection, save_selection
 from ui.state.loaders import load_stock_open_close
 from ui.views.stock_analysis import chart as chart_tab
 from ui.views.stock_analysis import fundamentals as fundamentals_tab
 from ui.views.stock_analysis import strategy_backtest as backtest_tab
 
 # The watchlist is curated from the Stock Screener (search + add, or click a Symbol to open).
-# Seed it from disk so the selector below has options on a fresh page load.
+# Seed it from disk, canonicalising to bare symbols (legacy entries were stored `.NS`).
 if "selected_stocks" not in st.session_state:
-    st.session_state.selected_stocks = load_selection("selected_stocks", [])
+    st.session_state.selected_stocks = sorted({to_bare_symbol(s) for s in load_selection("selected_stocks", [])})
 
 # Load the full available history; the chart opens focused on the last year and the
 # Daily/Weekly/Monthly buttons control candle aggregation (see chart tab).
@@ -28,7 +31,21 @@ df = load_stock_open_close(
     pd.to_datetime("2000-01-01"),
     pd.Timestamp.today().normalize(),
 )
+render_toasts()  # surface any fetch errors pushed during the load
+
 symbols = df.select("Symbol").unique().to_series().to_list()
+
+# Auto-remove watchlist symbols confirmed to have no price data (2 empty fetches → unavailable).
+_missing = [s for s in st.session_state.selected_stocks if s not in symbols]
+if _missing:
+    _statuses = get_stock_ohlcv_statuses(_missing)
+    _dead = [s for s in _missing if _statuses.get(to_bare_symbol(s)) == "unavailable"]
+    if _dead:
+        st.session_state.selected_stocks = [s for s in st.session_state.selected_stocks if s not in _dead]
+        save_selection("selected_stocks", st.session_state.selected_stocks)
+        for s in _dead:
+            st.toast(f"Removed {s} — no price data (retry in Settings > Stock Data).", icon="🗑️")
+
 # Drop a stale pre-selection (e.g. from a screener click whose OHLCV didn't load) so the
 # keyed selectbox never gets a value outside its options.
 if st.session_state.get("stock_analysis_symbol") not in symbols:

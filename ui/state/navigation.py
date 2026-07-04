@@ -27,10 +27,13 @@ def open_fund_in_analysis(scheme_name: str) -> None:
 
 
 def open_stock_in_analysis(symbol: str) -> None:
-    """Add `symbol` to the Stock Analysis watchlist (yfinance `.NS` form), select it, switch."""
-    yf_sym = symbol if symbol.endswith(".NS") or symbol.startswith("^") else f"{symbol}.NS"
-    selected = sorted({*st.session_state.get("selected_stocks", []), yf_sym})
+    """Add `symbol` to the Stock Analysis watchlist (bare canonical form), select it, switch."""
+    from stocks.constants import to_bare_symbol  # noqa: PLC0415 — avoid a domain import at module load
+
+    bare = to_bare_symbol(symbol)
+    existing = {to_bare_symbol(s) for s in st.session_state.get("selected_stocks", [])}  # heal legacy .NS
+    selected = sorted(existing | {bare})
     st.session_state.selected_stocks = selected
     save_selection("selected_stocks", selected)
-    st.session_state.stock_analysis_symbol = yf_sym
+    st.session_state.stock_analysis_symbol = bare
     st.switch_page(STOCK_ANALYSIS_PAGE)

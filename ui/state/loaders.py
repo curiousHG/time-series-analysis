@@ -20,6 +20,7 @@ from data.repositories.tradebook import load_tradebook_from_db
 from mutual_funds.display import short_scheme_name
 from mutual_funds.tradebook import normalize_transactions
 from services.screener_service import build_screener_df
+from stocks.constants import to_bare_symbol
 
 # Instrumentation note: only the heavy loaders carry @timeit (screener / metrics / stock
 # bulk loads). @st.cache_data is the outermost decorator, so cache hits skip @timeit and
@@ -69,9 +70,12 @@ def load_stock_open_close(
 
     for symbol in symbols:
         df = ensure_stock_data(symbol, start, end)
+        if df.is_empty():
+            continue  # dropped symbols (no data) fall out; the page auto-removes confirmed-dead ones
 
-        # expected columns: date, open, close
-        df = df.select(["Date", "Open", "Close", "High", "Low", "Volume"]).with_columns(pl.lit(symbol).alias("Symbol"))
+        # Label with the canonical bare symbol so the frame matches how OHLCV is now keyed.
+        bare = to_bare_symbol(symbol)
+        df = df.select(["Date", "Open", "Close", "High", "Low", "Volume"]).with_columns(pl.lit(bare).alias("Symbol"))
 
         frames.append(df)
 

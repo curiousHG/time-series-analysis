@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 import polars as pl
@@ -7,7 +8,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, select
 
 from core.database import get_session
-from core.models import StockOhlcv, StockRegistry
+from core.models import IndexOhlcv, IndexRegistry, StockOhlcv, StockRegistry
+from core.notifications import push_notice
 from data.constants import EMPTY_OHLCV, MIN_FETCH_DAYS
 from data.fetchers.stock import (
     fetch_nse_equity_list,
@@ -16,6 +18,7 @@ from data.fetchers.stock import (
     fetch_symbol_data_jugaad,
     query_stocks,
 )
+from stocks.constants import is_index_symbol, to_bare_symbol, to_yf_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -64,37 +67,37 @@ def _to_date(d: datetime | date) -> date:
     return d.date() if isinstance(d, datetime) else d
 
 
-def _fetch_and_save(symbol: str, start: date, end: date) -> None:
-    """Fetch stock data from external sources and upsert into DB.
+def _fetch_and_save_stock(symbol: str, start: date, end: date) -> None:
+    """Fetch an NSE equity (bare canonical symbol) — jugaad-data first, then yfinance — and
+    upsert into stock_ohlcv keyed by the bare symbol."""
+    data = fetch_symbol_data_jugaad(symbol, start, end)  # strips .NS internally; bare is fine
+    if data is not None and not data.empty:
+        _upsert_ohlcv(StockOhlcv, symbol, pl.from_pandas(data.reset_index()))
+        return
+    data = fetch_symbol_data(to_yf_symbol(symbol), start=start, end=end)
+    if data is not None and not data.empty:
+        _upsert_ohlcv(StockOhlcv, symbol, pl.from_pandas(data.reset_index()))
 
-    Routing: "NIFTY …" index names → niftyindices.com (yfinance lacks Smallcap 250 / Midcap 150);
-    `.NS` symbols → jugaad-data first, then yfinance; everything else → yfinance.
-    """
+
+def _fetch_and_save_index(symbol: str, start: date, end: date) -> None:
+    """Fetch an index — niftyindices.com for "NIFTY …" space-form (yfinance lacks Smallcap 250 /
+    Midcap 150), yfinance otherwise — and upsert into index_ohlcv."""
     if symbol.startswith("NIFTY "):
         data = fetch_nse_index(symbol, start, end)
-        if data is not None and not data.empty:
-            _upsert_ohlcv(symbol, pl.from_pandas(data.reset_index()))
-        return
-
-    if symbol.endswith(".NS"):
-        data = fetch_symbol_data_jugaad(symbol, start, end)
-        if data is not None and not data.empty:
-            _upsert_ohlcv(symbol, pl.from_pandas(data.reset_index()))
-            return
-
-    data = fetch_symbol_data(symbol, start=start, end=end)
+    else:
+        data = fetch_symbol_data(symbol, start=start, end=end)
     if data is not None and not data.empty:
-        _upsert_ohlcv(symbol, pl.from_pandas(data.reset_index()))
+        _upsert_ohlcv(IndexOhlcv, symbol, pl.from_pandas(data.reset_index()))
 
 
-def _upsert_ohlcv(symbol: str, df: pl.DataFrame) -> None:
-    """Upsert OHLCV rows into the database."""
+def _upsert_ohlcv(model: type, symbol: str, df: pl.DataFrame) -> None:
+    """Upsert OHLCV rows into `model`'s table (StockOhlcv or IndexOhlcv)."""
     if df.height == 0:
         return
     with get_session() as session:
         for row in df.iter_rows(named=True):
             stmt = (
-                pg_insert(StockOhlcv)
+                pg_insert(model)
                 .values(
                     date=row["Date"],
                     symbol=symbol,
@@ -120,17 +123,17 @@ def _upsert_ohlcv(symbol: str, df: pl.DataFrame) -> None:
     logger.info("Saved %d OHLCV rows for %s", df.height, symbol)
 
 
-def _load_ohlcv(symbol: str, start_date: date, end_date: date) -> pl.DataFrame:
-    """Load OHLCV data from database for a symbol within a date range."""
+def _load_ohlcv(model: type, symbol: str, start_date: date, end_date: date) -> pl.DataFrame:
+    """Load OHLCV rows for `symbol` from `model`'s table within a date range."""
     with get_session() as session:
         rows = session.exec(
-            select(StockOhlcv)
+            select(model)
             .where(
-                col(StockOhlcv.symbol) == symbol,
-                col(StockOhlcv.date) >= start_date,
-                col(StockOhlcv.date) <= end_date,
+                col(model.symbol) == symbol,
+                col(model.date) >= start_date,
+                col(model.date) <= end_date,
             )
-            .order_by(col(StockOhlcv.date))
+            .order_by(col(model.date))
         ).all()
 
     if not rows:
@@ -148,68 +151,219 @@ def _load_ohlcv(symbol: str, start_date: date, end_date: date) -> pl.DataFrame:
     )
 
 
-def _get_date_range(symbol: str) -> tuple[date, date] | None:
-    """Get min/max dates for a symbol in the database, or None if no data."""
+def _date_range(model: type, symbol: str) -> tuple[date, date] | None:
+    """Min/max dates for `symbol` in `model`'s table, or None if no data."""
     with get_session() as session:
         row = session.exec(
-            select(
-                func.min(col(StockOhlcv.date)),
-                func.max(col(StockOhlcv.date)),
-            ).where(col(StockOhlcv.symbol) == symbol)
+            select(func.min(col(model.date)), func.max(col(model.date))).where(col(model.symbol) == symbol)
         ).one()
-
     if row[0] is None:
         return None
     return row[0], row[1]
 
 
-def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
-    """DB-first loader: fetch only the missing date gaps (jugaad-data/NSE first, yfinance fallback)."""
-    start = _to_date(start_date)
-    end = _to_date(end_date)
+# ---- Availability watermark (status / earliest floor / empty-streak) ----------------------
+#
+# Stored on stock_registry (equities, bare key) and index_registry (indices). The `earliest`
+# floor stops ensure_* from re-attempting impossible pre-inception history; the empty_streak
+# flips a stock to `unavailable` after 2 consecutive empty fetches so it's skipped + removed.
 
-    existing = _get_date_range(symbol)
+_UNSET = object()
 
+
+@dataclass
+class _Wm:
+    status: str | None = None
+    earliest: date | None = None
+    streak: int = 0
+
+
+def _get_stock_wm(symbol: str) -> _Wm:
+    with get_session() as session:
+        row = session.get(StockRegistry, symbol)
+        if row is None:
+            return _Wm()
+        return _Wm(row.ohlcv_status, row.ohlcv_earliest, row.ohlcv_empty_streak or 0)
+
+
+def _set_stock_wm(symbol: str, *, status: str | None = None, earliest=_UNSET, empty_streak: int | None = None) -> None:
+    with get_session() as session:
+        row = session.get(StockRegistry, symbol)
+        if row is None:
+            row = StockRegistry(symbol=symbol)  # on-demand (symbol not in the NSE master)
+            session.add(row)
+        if status is not None:
+            row.ohlcv_status = status
+            row.ohlcv_as_of = datetime.now()
+        if earliest is not _UNSET:
+            row.ohlcv_earliest = earliest
+        if empty_streak is not None:
+            row.ohlcv_empty_streak = empty_streak
+        session.commit()
+
+
+def _get_index_wm(symbol: str) -> _Wm:
+    with get_session() as session:
+        row = session.get(IndexRegistry, symbol)
+        if row is None:
+            return _Wm()
+        return _Wm(row.status, row.earliest, 0)
+
+
+def _set_index_wm(symbol: str, *, status: str | None = None, earliest=_UNSET, empty_streak: int | None = None) -> None:
+    with get_session() as session:
+        row = session.get(IndexRegistry, symbol)
+        if row is None:
+            row = IndexRegistry(symbol=symbol)
+            session.add(row)
+        if status is not None:
+            row.status = status
+            row.as_of = datetime.now()
+        if earliest is not _UNSET:
+            row.earliest = earliest
+        session.commit()
+
+
+def _ensure_ohlcv(symbol, start, end, *, model, fetch_fn, get_wm, set_wm, flag_unavailable) -> pl.DataFrame:
+    """Shared DB-first gap-fetch with backward-gap watermark. Used by ensure_stock_data and
+    ensure_index_data with their respective table/fetcher/watermark accessors."""
+    wm = get_wm(symbol)
+    if wm.status == "unavailable":
+        return EMPTY_OHLCV.clone()  # short-circuit — cleared by a Settings retry
+
+    existing = _date_range(model, symbol)
     if existing is None:
         last_empty = _empty_fetch_cache.get(symbol)
         if last_empty is not None and datetime.now() - last_empty < _EMPTY_FETCH_TTL:
-            return EMPTY_OHLCV.clone()  # known-empty (e.g. unfetchable index) — don't re-hammer
-        _fetch_and_save(symbol, start, end)
-        if _get_date_range(symbol) is None:
+            return EMPTY_OHLCV.clone()  # known-empty this hour — don't re-hammer
+        fetch_fn(symbol, start, end)
+        rng = _date_range(model, symbol)
+        if rng is None:
             _empty_fetch_cache[symbol] = datetime.now()
-            logger.info("no OHLCV for %s — negative-caching for %s", symbol, _EMPTY_FETCH_TTL)
+            streak = wm.streak + 1
+            if flag_unavailable and streak >= 2:
+                set_wm(symbol, status="unavailable", empty_streak=streak)
+                push_notice(f"No price data for {symbol} — marked unavailable.", level="warning", key=f"ohlcv:{symbol}")
+            else:
+                set_wm(symbol, status="pending", empty_streak=streak)
+            logger.info("no OHLCV for %s — negative-caching for %s (streak=%d)", symbol, _EMPTY_FETCH_TTL, streak)
         else:
             _empty_fetch_cache.pop(symbol, None)
+            set_wm(symbol, status="available", earliest=rng[0], empty_streak=0)
     else:
         db_min, db_max = existing
-        if start < db_min and (db_min - start).days >= MIN_FETCH_DAYS:
-            _fetch_and_save(symbol, start, db_min)
+        # Backward gap — only if we haven't already confirmed db_min is the floor.
+        if start < db_min and (db_min - start).days >= MIN_FETCH_DAYS and wm.earliest != db_min:
+            fetch_fn(symbol, start, db_min)
+            new_min = _date_range(model, symbol)[0]
+            floor = db_min if new_min >= db_min else None  # lock floor only if nothing earlier arrived
+            set_wm(symbol, status="available", earliest=floor, empty_streak=0)
+        elif wm.status != "available":
+            set_wm(symbol, status="available", empty_streak=0)
+        # Forward gap.
         if end > db_max and (end - db_max).days >= MIN_FETCH_DAYS:
-            _fetch_and_save(symbol, db_max, end)
+            fetch_fn(symbol, db_max, end)
 
-    return _load_ohlcv(symbol, start, end)
+    return _load_ohlcv(model, symbol, start, end)
+
+
+def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
+    """DB-first OHLCV loader. Equities are keyed by the bare NSE symbol (RELIANCE); index
+    symbols are delegated to ensure_index_data (index_ohlcv). Fetches only missing gaps."""
+    start = _to_date(start_date)
+    end = _to_date(end_date)
+    if is_index_symbol(symbol):
+        return ensure_index_data(symbol, start, end)
+    sym = to_bare_symbol(symbol)
+    return _ensure_ohlcv(
+        sym, start, end, model=StockOhlcv, fetch_fn=_fetch_and_save_stock,
+        get_wm=_get_stock_wm, set_wm=_set_stock_wm, flag_unavailable=True,
+    )
+
+
+def ensure_index_data(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
+    """DB-first OHLCV loader for market indices (index_ohlcv)."""
+    start = _to_date(start_date)
+    end = _to_date(end_date)
+    return _ensure_ohlcv(
+        symbol, start, end, model=IndexOhlcv, fetch_fn=_fetch_and_save_index,
+        get_wm=_get_index_wm, set_wm=_set_index_wm, flag_unavailable=False,
+    )
 
 
 def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
-    """Force-fetch the forward gap db_max→today, bypassing MIN_FETCH_DAYS, for callers
-    needing guaranteed-fresh data (e.g. the metrics-recompute benchmark). Returns
-    (today, db_max_after); db_max_after is None if nothing fetched. No-op if current.
-    """
+    """Force-fetch the forward gap db_max→today, bypassing MIN_FETCH_DAYS, for callers needing
+    guaranteed-fresh data (e.g. the metrics-recompute benchmark). Index symbols are delegated.
+    Returns (today, db_max_after); db_max_after is None if nothing fetched. No-op if current."""
+    if is_index_symbol(symbol):
+        return refresh_index_to_today(symbol)
+    sym = to_bare_symbol(symbol)
+    return _refresh_to_today(sym, model=StockOhlcv, fetch_fn=_fetch_and_save_stock)
+
+
+def refresh_index_to_today(symbol: str) -> tuple[date, date | None]:
+    """refresh_stock_to_today for an index (index_ohlcv)."""
+    return _refresh_to_today(symbol, model=IndexOhlcv, fetch_fn=_fetch_and_save_index)
+
+
+def _refresh_to_today(symbol, *, model, fetch_fn) -> tuple[date, date | None]:
     today = date.today()
-    existing = _get_date_range(symbol)
+    existing = _date_range(model, symbol)
     if existing is None:
         # Cold cache: pull a 10Y backfill so all rolling-CAGR windows have data.
         start = today - timedelta(days=365 * 10)
-        _fetch_and_save(symbol, start, today + timedelta(days=1))
+        fetch_fn(symbol, start, today + timedelta(days=1))
     else:
         _, db_max = existing
         if db_max >= today:
             return today, db_max
-        # Force-fetch the gap regardless of MIN_FETCH_DAYS.
-        _fetch_and_save(symbol, db_max, today + timedelta(days=1))
-
-    new_range = _get_date_range(symbol)
+        fetch_fn(symbol, db_max, today + timedelta(days=1))  # force-fetch regardless of MIN_FETCH_DAYS
+    new_range = _date_range(model, symbol)
     return today, (new_range[1] if new_range else None)
+
+
+# ---- Status queries for the UI (auto-remove dead symbols, Settings retry, index picker) ----
+
+
+def get_stock_ohlcv_statuses(symbols: list[str]) -> dict[str, str]:
+    """{bare_symbol: status} for the given symbols that carry an ohlcv_status."""
+    bare = [to_bare_symbol(s) for s in symbols]
+    if not bare:
+        return {}
+    with get_session() as session:
+        rows = session.exec(
+            select(StockRegistry.symbol, StockRegistry.ohlcv_status).where(col(StockRegistry.symbol).in_(bare))
+        ).all()
+    return {sym: status for sym, status in rows if status}
+
+
+def list_unavailable_stock_symbols() -> list[str]:
+    """Bare symbols whose price history was confirmed unavailable."""
+    with get_session() as session:
+        rows = session.exec(select(StockRegistry.symbol).where(StockRegistry.ohlcv_status == "unavailable")).all()
+    return list(rows)
+
+
+def clear_stock_ohlcv_status(symbol: str) -> None:
+    """Reset a symbol for a fresh retry: status→pending, clear floor + streak + negative cache."""
+    sym = to_bare_symbol(symbol)
+    _empty_fetch_cache.pop(sym, None)
+    _empty_fetch_cache.pop(symbol, None)
+    with get_session() as session:
+        row = session.get(StockRegistry, sym)
+        if row is not None:
+            row.ohlcv_status = "pending"
+            row.ohlcv_earliest = None
+            row.ohlcv_empty_streak = 0
+            row.ohlcv_as_of = datetime.now()
+            session.commit()
+
+
+def list_index_symbols() -> list[str]:
+    """Distinct index symbols we hold OHLC for (index_ohlcv)."""
+    with get_session() as session:
+        rows = session.exec(select(col(IndexOhlcv.symbol)).distinct().order_by(col(IndexOhlcv.symbol))).all()
+    return list(rows)
 
 
 def search_stock_symbols(query: str):

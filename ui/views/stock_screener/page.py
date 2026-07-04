@@ -11,9 +11,10 @@ import pandas as pd
 import streamlit as st
 
 from services.stock_screener_service import apply_stock_filters
-from stocks.constants import NIFTY_50
+from stocks.constants import NIFTY_50, to_bare_symbol
 from stocks.metric_catalog import CATEGORY_COLORS, DEFAULT_VISIBLE_COLS, STOCK_METRIC_RENAME
 from ui.components.aggrid_theme import streamlit_dark_aggrid_theme
+from ui.components.notifications import render_toasts
 from ui.components.screener_grid import clicked_cell_value, render_screener_grid
 from ui.constants import STOCK_FILTER_DEFAULTS, STOCK_SCREENER_PERSIST_KEY
 from ui.persistence.selections import load_selection, save_selection
@@ -47,13 +48,13 @@ def _add_stocks(yf_symbols: list[str]) -> None:
 
     wide_start = pd.to_datetime("2000-01-01")
     today = pd.Timestamp.today()
-    bare = [s.removesuffix(".NS") for s in yf_symbols]  # screener.in + stock_metrics use the bare NSE symbol
-    with st.spinner(f"Pulling full history + computing metrics for {len(yf_symbols)} stock(s)…"):
-        for yf_sym in yf_symbols:
-            ensure_stock_data(yf_sym, wide_start, today)  # whole-range OHLCV → stock_ohlcv (DB-first, fetches the gap)
+    bare = [to_bare_symbol(s) for s in yf_symbols]  # canonical NSE symbol — the key everywhere now
+    with st.spinner(f"Pulling full history + computing metrics for {len(bare)} stock(s)…"):
+        for sym in bare:
+            ensure_stock_data(sym, wide_start, today)  # whole-range OHLCV → stock_ohlcv (DB-first, fetches the gap)
         sync_stocks(bare)  # screener.in fundamentals + CAPM alpha/beta → stock_metrics
 
-    watchlist = sorted({*load_selection("selected_stocks", []), *yf_symbols})
+    watchlist = sorted({to_bare_symbol(s) for s in load_selection("selected_stocks", [])} | set(bare))
     save_selection("selected_stocks", watchlist)
     st.session_state.selected_stocks = watchlist
     load_stock_screener_df_cached.clear()  # new rows appear in the table
@@ -84,6 +85,8 @@ with st.expander("Add stocks to the universe", expanded=False, icon=":material/a
     if st.button("Add selected", type="primary", disabled=not _picked):
         _add_stocks([sym for sym, _ in _picked])
         st.rerun()
+
+render_toasts()  # surface any fetch errors from a populate/add-stocks run
 
 _df = load_stock_screener_df_cached()
 
