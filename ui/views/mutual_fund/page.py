@@ -59,7 +59,7 @@ def _held_position(scheme_name: str) -> dict | None:
 
 st.title("Mutual Fund Analysis")
 
-# ---- Fund selection (sidebar filters narrow the dropdown)
+# ---- Fund selection (pick among tracked funds; discovery lives on the MF Screener)
 tracked = list_tracked()
 if tracked.is_empty():
     st.info("No tracked funds yet. Add funds from the **MF Screener** page.")

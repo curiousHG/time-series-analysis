@@ -21,18 +21,8 @@ SETTINGS_PAGE = "ui/views/settings/page.py"
 
 
 def open_fund_in_analysis(scheme_name: str) -> None:
-    """Pre-select `scheme_name` on the MF Analysis page and switch to it.
-
-    Clears the Analysis page's filters so the opened fund stays in the selectbox options
-    (a persisted filter could otherwise exclude it).
-    """
+    """Pre-select `scheme_name` on the MF Analysis page and switch to it."""
     st.session_state["mf_analysis_fund"] = scheme_name
-    st.session_state["mf_analysis_search"] = ""
-    for k in ("mf_analysis_amc", "mf_analysis_cat", "mf_analysis_sub_cat", "mf_analysis_plan", "mf_analysis_option"):
-        st.session_state[k] = []
-    st.session_state["mf_analysis_min_age"] = 0.0
-    st.session_state["mf_analysis_only_meta"] = False
-    st.session_state["mf_analysis_only_holdings"] = False
     st.switch_page(MF_ANALYSIS_PAGE)
 
 
@@ -41,7 +31,6 @@ def open_stock_in_analysis(symbol: str) -> None:
     yf_sym = symbol if symbol.endswith(".NS") or symbol.startswith("^") else f"{symbol}.NS"
     selected = sorted({*st.session_state.get("selected_stocks", []), yf_sym})
     st.session_state.selected_stocks = selected
-    st.session_state.selected_stocks_widget = selected
     save_selection("selected_stocks", selected)
     st.session_state.stock_analysis_symbol = yf_sym
     st.switch_page(STOCK_ANALYSIS_PAGE)

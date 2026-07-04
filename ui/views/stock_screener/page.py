@@ -7,16 +7,18 @@ screener) sits beneath it — click a Symbol to open the stock in Stock Analysis
 
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
 from services.stock_screener_service import apply_stock_filters
 from stocks.constants import NIFTY_50
 from stocks.metric_catalog import CATEGORY_COLORS, DEFAULT_VISIBLE_COLS, STOCK_METRIC_RENAME
 from ui.components.aggrid_theme import streamlit_dark_aggrid_theme
-from ui.components.screener_grid import clicked_cell_value, render_screener_grid, render_selection_echo
+from ui.components.screener_grid import clicked_cell_value, render_screener_grid
 from ui.constants import STOCK_FILTER_DEFAULTS, STOCK_SCREENER_PERSIST_KEY
+from ui.persistence.selections import load_selection, save_selection
 from ui.state.filter_persistence import hydrate_filters, make_persist_callback
-from ui.state.loaders import load_stock_screener_df_cached
+from ui.state.loaders import cached_search_stock, load_stock_open_close, load_stock_screener_df_cached
 from ui.state.navigation import open_stock_in_analysis
 from ui.views.stock_screener import chart as chart_view
 
@@ -37,7 +39,51 @@ def _populate(symbols: list[str]) -> None:
     load_stock_screener_df_cached.clear()
 
 
+def _add_stocks(yf_symbols: list[str]) -> None:
+    """Add stocks to the universe from a yfinance search: pull full OHLCV history into the DB,
+    scrape fundamentals + compute CAPM metrics, and add them to the Stock Analysis watchlist."""
+    from data.repositories.stock import ensure_stock_data  # noqa: PLC0415 — defer heavy import off boot
+    from services.stock_sync_service import sync_stocks  # noqa: PLC0415
+
+    wide_start = pd.to_datetime("2000-01-01")
+    today = pd.Timestamp.today()
+    bare = [s.removesuffix(".NS") for s in yf_symbols]  # screener.in + stock_metrics use the bare NSE symbol
+    with st.spinner(f"Pulling full history + computing metrics for {len(yf_symbols)} stock(s)…"):
+        for yf_sym in yf_symbols:
+            ensure_stock_data(yf_sym, wide_start, today)  # whole-range OHLCV → stock_ohlcv (DB-first, fetches the gap)
+        sync_stocks(bare)  # screener.in fundamentals + CAPM alpha/beta → stock_metrics
+
+    watchlist = sorted({*load_selection("selected_stocks", []), *yf_symbols})
+    save_selection("selected_stocks", watchlist)
+    st.session_state.selected_stocks = watchlist
+    load_stock_screener_df_cached.clear()  # new rows appear in the table
+    load_stock_open_close.clear()  # Stock Analysis picks up the freshly pulled history
+
+
 st.title("Stock Screener")
+
+with st.expander("Add stocks to the universe", expanded=False, icon=":material/add:"):
+    st.caption(
+        "Search Yahoo Finance for NSE stocks. Adding one pulls its full price history into the "
+        "database, scrapes fundamentals, and computes CAPM alpha/beta — it then shows up in the "
+        "table below and in the Stock Analysis picker."
+    )
+    _q = st.text_input("Search by name or symbol", placeholder="e.g. tata motors", key="stock_scr_add_query")
+    _opts: list[tuple[str, str]] = []
+    if _q and len(_q) >= 3:
+        with st.spinner("Searching…"):
+            _res = cached_search_stock(_q).reset_index()
+        if not _res.empty:
+            _opts = list(zip(_res["symbol"], _res["shortName"], strict=False))
+    _picked = st.multiselect(
+        "Results",
+        options=_opts,
+        format_func=lambda t: f"{t[0]} — {t[1]}",
+        key="stock_scr_add_picked",
+    )
+    if st.button("Add selected", type="primary", disabled=not _picked):
+        _add_stocks([sym for sym, _ in _picked])
+        st.rerun()
 
 _df = load_stock_screener_df_cached()
 
@@ -116,7 +162,6 @@ _grid_response = render_screener_grid(
     height=520,
     pinned_min_width=140,
 )
-render_selection_echo(_grid_response)
 
 _clicked = clicked_cell_value(_grid_response, "Symbol")
 if _clicked:

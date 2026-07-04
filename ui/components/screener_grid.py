@@ -1,17 +1,18 @@
 """Shared AgGrid screener table — header/floating filters, typed columns, pinned link
-column, checkbox multi-select, native copy. Generalized from the MF screener so the stock
-screener (and future grids) get the same interaction model.
+column, native Cmd/Ctrl+C copy. Generalized from the MF screener so the stock screener
+(and future grids) get the same interaction model.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import pandas as pd
-import streamlit as st
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 from ui.charts.theme import LINK
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 # Re-fit columns to grid width on first render and on resize. Respects each column's
 # min/max, so many metrics overflow to a horizontal scroll instead of being crushed.
@@ -30,7 +31,7 @@ def _build_grid_options(
     pinned_min_width: int = 300,
 ):
     """Configure AgGrid: header filters, numeric vs text filter type, pinned link column,
-    multi-row checkbox selection, native Cmd/Ctrl+C copy.
+    native Cmd/Ctrl+C copy.
     """
     gob = GridOptionsBuilder.from_dataframe(pdf)
     gob.configure_default_column(
@@ -51,13 +52,6 @@ def _build_grid_options(
         elif c in text_cols:
             gob.configure_column(c, filter="agTextColumnFilter")
 
-    # Multi-row selection for the copy-to-TSV echo. The checkbox lives in its own column
-    # (injected after build), so a link-cell click only opens the row and never selects it.
-    gob.configure_selection(
-        selection_mode="multiple",
-        use_checkbox=False,
-        suppressRowClickSelection=True,
-    )
     if pinned_col and pinned_col in pdf.columns:
         style = {"color": LINK, "cursor": "pointer", "fontWeight": 600} if pinned_col == link_col else None
         gob.configure_column(pinned_col, pinned="left", minWidth=pinned_min_width, cellStyle=style)
@@ -76,29 +70,7 @@ def _build_grid_options(
         onFirstDataRendered=_FIT_COLUMNS,  # ...and on initial render
     )
 
-    grid_options = gob.build()
-    # Field-less checkbox column for selection, pinned hard left and kept off the link column.
-    grid_options["columnDefs"].insert(
-        0,
-        {
-            "headerName": "",
-            "colId": "_select",
-            "checkboxSelection": True,
-            "headerCheckboxSelection": True,
-            "headerCheckboxSelectionFilteredOnly": True,
-            "pinned": "left",
-            "width": 44,
-            "minWidth": 44,
-            "maxWidth": 44,
-            "filter": False,
-            "floatingFilter": False,
-            "sortable": False,
-            "resizable": False,
-            "suppressMovable": True,
-            "lockPosition": True,
-        },
-    )
-    return grid_options
+    return gob.build()
 
 
 def render_screener_grid(
@@ -112,7 +84,7 @@ def render_screener_grid(
     height: int = 650,
     pinned_min_width: int = 300,
 ) -> dict:
-    """Render the grid and return the AgGrid response (for click-through + selection echo).
+    """Render the grid and return the AgGrid response (for click-through).
 
     Deliberately keyless: with a fixed `key`, st_aggrid keeps the first mount's data and
     won't re-render when the filtered frame changes (unless `reload_data` gymnastics are
@@ -132,8 +104,8 @@ def render_screener_grid(
         height=height,
         theme=theme,
         allow_unsafe_jscode=True,  # required for the sizeColumnsToFit callbacks
-        # `cellClicked` drives open-on-click; the rest keep selection / filter / sort in sync.
-        update_on=["cellClicked", "selectionChanged", "filterChanged", "sortChanged"],
+        # `cellClicked` drives open-on-click; the rest keep filter / sort in sync.
+        update_on=["cellClicked", "filterChanged", "sortChanged"],
         # Return rows in the order the user actually sees (client-side sort + header filters
         # applied) so callers like the screener's "Fetch top N" can be WYSIWYG.
         data_return_mode="FILTERED_AND_SORTED",
@@ -149,21 +121,3 @@ def clicked_cell_value(grid_response: dict, col: str) -> str | None:
         return None
     value = (event.get("data") or {}).get(col) or event.get("value")
     return str(value) if value else None
-
-
-def selected_rows_df(grid_response: dict) -> pd.DataFrame | None:
-    """Normalise AgGrid's selected_rows (list-of-dicts or DataFrame) to a DataFrame."""
-    selected = grid_response.get("selected_rows")
-    if selected is None or len(selected) == 0:
-        return None
-    return pd.DataFrame(selected) if isinstance(selected, list) else selected
-
-
-def render_selection_echo(grid_response: dict) -> None:
-    """Render an expander with the selected rows as TSV — paste-ready for Excel / Sheets."""
-    sel_df = selected_rows_df(grid_response)
-    if sel_df is None:
-        return
-    with st.expander(f"📋 {len(sel_df)} selected row(s) — copy", expanded=False):
-        st.caption("Tab-separated; paste straight into Excel / Sheets / Notion.")
-        st.code(sel_df.to_csv(sep="\t", index=False), language="text")

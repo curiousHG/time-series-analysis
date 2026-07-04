@@ -7,20 +7,26 @@ import polars as pl
 import streamlit as st
 
 from indicators import INDICATOR_REGISTRY, compute_indicators
-from ui.components.stock_picker import stock_picker
+from ui.persistence.selections import load_selection
 from ui.state.loaders import load_stock_open_close
 from ui.views.stock_analysis import chart as chart_tab
 from ui.views.stock_analysis import fundamentals as fundamentals_tab
 from ui.views.stock_analysis import strategy_backtest as backtest_tab
 
-stock_picker()
+# The watchlist is curated from the Stock Screener (search + add, or click a Symbol to open).
+# Seed it from disk so the selector below has options on a fresh page load.
+if "selected_stocks" not in st.session_state:
+    st.session_state.selected_stocks = load_selection("selected_stocks", [])
 
 # Load the full available history; the chart opens focused on the last year and the
 # Daily/Weekly/Monthly buttons control candle aggregation (see chart tab).
+# `end` is normalized to midnight so this @st.cache_data loader gets a stable key within the
+# day — otherwise Timestamp.today()'s sub-second component busts the cache on every rerun and
+# the full per-symbol reload (spinner) runs again on each widget interaction.
 df = load_stock_open_close(
     st.session_state.selected_stocks,
     pd.to_datetime("2000-01-01"),
-    pd.Timestamp.today(),
+    pd.Timestamp.today().normalize(),
 )
 symbols = df.select("Symbol").unique().to_series().to_list()
 # Drop a stale pre-selection (e.g. from a screener click whose OHLCV didn't load) so the

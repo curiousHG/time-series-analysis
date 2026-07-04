@@ -21,10 +21,10 @@ from mutual_funds.metric_catalog import (
 )
 from services.registry_service import backfill_missing
 from services.screener_service import status_cell
-from ui.components.screener_grid import clicked_cell_value, render_screener_grid, render_selection_echo
+from ui.components.screener_grid import clicked_cell_value, render_screener_grid
 from ui.state.navigation import open_fund_in_analysis
 
-__all__ = ["render_open_action", "render_selection_echo", "render_table"]
+__all__ = ["render_open_action", "render_table"]
 
 
 def _build_display_pdf(filtered: pl.DataFrame, visible_metrics: list[str]) -> pd.DataFrame:
