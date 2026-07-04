@@ -90,6 +90,42 @@ def fetch_nse_equity_list() -> list[dict]:
     ]
 
 
+def fetch_nse_bhavcopy(day: date) -> pd.DataFrame | None:
+    """All NSE cash-market equity OHLCV for a single day in one download (UDiFF bhavcopy).
+
+    Returns Date/Symbol/Open/High/Low/Close/Volume (bare symbols) for the EQ/BE/BZ series, or
+    None on a holiday/weekend/future date (no file) or a fetch failure.
+    """
+    from jugaad_data.nse import bhavcopy_raw  # noqa: PLC0415 — heavy optional dep, only on this path
+
+    try:
+        raw = bhavcopy_raw(day)
+    except Exception as e:
+        logger.debug("bhavcopy unavailable for %s: %s", day, e)
+        return None
+    try:
+        df = pd.read_csv(StringIO(raw))
+    except Exception:
+        return None
+    df.columns = [c.strip() for c in df.columns]
+    if "Sgmt" not in df.columns or "TckrSymb" not in df.columns:
+        return None
+    eq = df[(df["Sgmt"] == "CM") & (df["SctySrs"].isin(["EQ", "BE", "BZ"]))]
+    if eq.empty:
+        return None
+    return pd.DataFrame(
+        {
+            "Date": pd.to_datetime(eq["TradDt"]).dt.date,
+            "Symbol": eq["TckrSymb"].astype(str).str.strip(),
+            "Open": eq["OpnPric"],
+            "High": eq["HghPric"],
+            "Low": eq["LwPric"],
+            "Close": eq["ClsPric"],
+            "Volume": eq["TtlTradgVol"],
+        }
+    )
+
+
 def fetch_nifty500_symbols() -> list[str]:
     """Bare NSE symbols of the Nifty 500 constituents (from NSE's published index CSV)."""
     r = httpx.get(NIFTY500_LIST_URL, headers=NSE_HEADERS, timeout=30, follow_redirects=True)

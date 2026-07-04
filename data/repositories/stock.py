@@ -114,6 +114,51 @@ def register_stock(symbol: str, *, name: str | None = None, exchange: str | None
         session.commit()
 
 
+def save_bhavcopy_day(day: date, *, only_existing: bool = True) -> int:
+    """Fetch the NSE bhavcopy for `day` and bulk-upsert equity OHLCV into stock_ohlcv — one
+    download covers every cash-market stock. When only_existing, limits to symbols already in
+    stock_ohlcv (extends their series); else stores the whole universe. Returns rows upserted."""
+    import pandas as pd  # noqa: PLC0415 — pandas only here; the repo is polars-native
+
+    from data.fetchers.stock import fetch_nse_bhavcopy  # noqa: PLC0415 — defer heavy import off boot
+
+    df = fetch_nse_bhavcopy(day)
+    if df is None or df.empty:
+        return 0
+    if only_existing:
+        with get_session() as session:
+            existing = set(session.exec(select(col(StockOhlcv.symbol)).distinct()).all())
+        df = df[df["Symbol"].isin(existing)]
+        if df.empty:
+            return 0
+
+    def _num(v: object) -> float | None:
+        return float(v) if pd.notna(v) else None
+
+    rows = [
+        {
+            "date": r.Date,
+            "symbol": r.Symbol,
+            "open": _num(r.Open),
+            "high": _num(r.High),
+            "low": _num(r.Low),
+            "close": _num(r.Close),
+            "volume": int(r.Volume) if pd.notna(r.Volume) else None,
+        }
+        for r in df.itertuples(index=False)
+    ]
+    with get_session() as session:
+        stmt = pg_insert(StockOhlcv).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["date", "symbol"],
+            set_={c: stmt.excluded[c] for c in ("open", "high", "low", "close", "volume")},
+        )
+        session.exec(stmt)
+        session.commit()
+    logger.info("bhavcopy %s: upserted %d rows (only_existing=%s)", day, len(rows), only_existing)
+    return len(rows)
+
+
 def _fetch_and_save_index(symbol: str, start: date, end: date) -> None:
     """Fetch an index — niftyindices.com for "NIFTY …" space-form (yfinance lacks Smallcap 250 /
     Midcap 150), yfinance otherwise — and upsert into index_ohlcv."""

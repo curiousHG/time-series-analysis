@@ -49,6 +49,30 @@ def seed_nifty500(*, force_fundamentals: bool = False) -> int:
     return sync_stocks(todo, scrape_fundamentals=force_fundamentals)
 
 
+def refresh_stocks_via_bhavcopy(days_back: int = 7) -> int:
+    """Append the last `days_back` calendar days of NSE bhavcopy for tracked stocks (weekends/
+    holidays are simply empty), keeping the whole stock universe fresh in a few bulk downloads
+    rather than one yfinance call per symbol. Returns rows upserted."""
+    import datetime as _dt  # noqa: PLC0415
+
+    from data.repositories.stock import save_bhavcopy_day  # noqa: PLC0415 — defer off boot
+
+    today = _dt.date.today()
+    total = sum(save_bhavcopy_day(today - _dt.timedelta(days=i), only_existing=True) for i in range(days_back))
+    logger.info("bhavcopy refresh: %d rows over %d days", total, days_back)
+    return total
+
+
+def recompute_all_stock_metrics() -> int:
+    """Recompute CAPM price metrics for the whole tracked stock universe (uses cached OHLCV)."""
+    from data.repositories.stock_fundamentals import load_stock_metrics  # noqa: PLC0415
+    from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
+
+    m = load_stock_metrics()
+    symbols = m["symbol"].to_list() if not m.is_empty() and "symbol" in m.columns else []
+    return recompute_price_metrics(symbols) if symbols else 0
+
+
 def list_unavailable_stocks() -> list[str]:
     """Bare symbols whose price history was confirmed unavailable (for the Settings retry list)."""
     from data.repositories.stock import list_unavailable_stock_symbols  # noqa: PLC0415 — defer off boot
