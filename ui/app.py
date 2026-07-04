@@ -12,28 +12,42 @@ with timed("boot.init_schema"):
 
 
 @st.cache_resource(show_spinner=False)
-def _kickoff_nifty500_seed() -> bool:
-    """Start a one-time background thread that seeds the Nifty 500 into the DB (OHLCV + CAPM
-    metrics). DB-first + resumable, so it's a quick no-op once populated. Never blocks the UI."""
+def _kickoff_background_refresh() -> bool:
+    """Start a one-time background thread that keeps market data fresh: seed the Nifty 500 (DB-first,
+    resumable), append recent NSE bhavcopy days for the whole stock universe, and pull the board
+    indices to today. All cheap/idempotent, so it's a quick pass on each boot. Never blocks the UI."""
     import logging  # noqa: PLC0415 — keep boot imports minimal
     import threading  # noqa: PLC0415
 
     def _worker() -> None:
+        log = logging.getLogger("boot")
         try:
-            from services.stock_sync_service import seed_nifty500  # noqa: PLC0415 — defer heavy import off boot
+            from services.stock_sync_service import refresh_stocks_via_bhavcopy, seed_nifty500  # noqa: PLC0415
 
-            seed_nifty500()
+            seed_nifty500()  # fill any missing Nifty 500 constituents (no-op once populated)
+            refresh_stocks_via_bhavcopy()  # keep the whole stock universe fresh (bulk bhavcopy)
         except Exception:
-            logging.getLogger("boot").exception("nifty500 background seed failed")
+            log.exception("background stock refresh failed")
+        try:
+            from data.repositories.stock import refresh_index_to_today  # noqa: PLC0415
+            from services.insights_service import MARKET_PULSE_SYMBOLS, SECTOR_INDEX_SYMBOLS  # noqa: PLC0415
 
-    threading.Thread(target=_worker, name="nifty500-seed", daemon=True).start()
+            for sym in {s for s, _, _ in SECTOR_INDEX_SYMBOLS} | set(MARKET_PULSE_SYMBOLS):
+                try:
+                    refresh_index_to_today(sym)
+                except Exception:
+                    continue
+        except Exception:
+            log.exception("background index refresh failed")
+
+    threading.Thread(target=_worker, name="bg-data-refresh", daemon=True).start()
     return True
 
 
 def run():
     with timed("page.run"):
         st.set_page_config(layout="wide")
-        _kickoff_nifty500_seed()  # background Nifty 500 seed (cached → starts once per process)
+        _kickoff_background_refresh()  # background data refresh (cached → starts once per process)
         pages = [
             st.Page("ui/views/overview/page.py", title="Overview", url_path="overview", default=True),
             st.Page("ui/views/portfolio/page.py", title="Portfolio", url_path="portfolio"),

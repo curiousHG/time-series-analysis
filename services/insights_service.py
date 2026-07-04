@@ -342,6 +342,47 @@ MARKET_PULSE_SYMBOLS: dict[str, str] = {
     "^NSMIDCP": "Nifty Next 50",
 }
 
+# Broad + sectoral indices for the Overview sector board (all yfinance-fetchable). (symbol, label, group)
+SECTOR_INDEX_SYMBOLS: list[tuple[str, str, str]] = [
+    ("^NSEI", "Nifty 50", "Broad"),
+    ("^NSMIDCP", "Nifty Next 50", "Broad"),
+    ("NIFTY MIDCAP 150", "Nifty Midcap 150", "Broad"),
+    ("NIFTY SMALLCAP 250", "Nifty Smallcap 250", "Broad"),
+    ("^NSEBANK", "Bank", "Sector"),
+    ("^CNXIT", "IT", "Sector"),
+    ("^CNXPHARMA", "Pharma", "Sector"),
+    ("^CNXAUTO", "Auto", "Sector"),
+    ("^CNXFMCG", "FMCG", "Sector"),
+    ("^CNXMETAL", "Metal", "Sector"),
+    ("^CNXENERGY", "Energy", "Sector"),
+    ("^CNXREALTY", "Realty", "Sector"),
+    ("^CNXINFRA", "Infra", "Sector"),
+    ("^CNXPSUBANK", "PSU Bank", "Sector"),
+]
+
+_SECTOR_WINDOWS = {"1D": 1, "1W": 5, "1M": 21, "3M": 63}
+
+
+@timeit("insights.index_performance")
+def index_performance() -> pl.DataFrame:
+    """Trailing 1D/1W/1M/3M returns for broad + sectoral indices (DB-first via ensure_index_data).
+    Powers the Overview 'what's leading/lagging by sector' board."""
+    start = datetime.now() - timedelta(days=160)
+    end = datetime.now()
+    rows: list[dict] = []
+    for symbol, label, group in SECTOR_INDEX_SYMBOLS:
+        try:
+            df = ensure_stock_data(symbol, start, end)  # delegates indices → index_ohlcv
+        except Exception:
+            continue
+        if df.is_empty():
+            continue
+        close = df.select(["Date", "Close"]).to_pandas().set_index("Date").sort_index()["Close"]
+        row = {"label": label, "group": group, "symbol": symbol}
+        row.update({window: trailing_return(close, n) for window, n in _SECTOR_WINDOWS.items()})
+        rows.append(row)
+    return pl.DataFrame(rows) if rows else pl.DataFrame()
+
 
 @timeit("insights.market_pulse")
 def market_pulse(symbols: dict[str, str] | None = None) -> pl.DataFrame:

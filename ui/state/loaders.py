@@ -166,6 +166,13 @@ def load_market_pulse_cached() -> pl.DataFrame:
     return market_pulse()
 
 
+@st.cache_data(ttl=900, show_spinner="Loading sector performance…")
+def load_index_performance_cached() -> pl.DataFrame:
+    from services.insights_service import index_performance  # noqa: PLC0415 — defer heavy import off boot
+
+    return index_performance()
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def load_fund_movers_cached() -> pl.DataFrame:
     from services.insights_service import fund_movers  # noqa: PLC0415 — defer heavy import off boot
