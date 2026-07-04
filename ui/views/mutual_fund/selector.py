@@ -22,8 +22,11 @@ _persist_mf_filters = make_persist_callback(_MF_PERSIST_KEY, _MF_FILTER_DEFAULTS
 _BOOKMARKS_KEY = "mf_bookmarks"  # user-curated quick-access funds (selections.json)
 
 
-def _set_fund(name: str) -> None:
-    st.session_state["mf_analysis_fund"] = name
+def _quick_jump() -> None:
+    """on_change for the quick-access dropdown: jump the fund picker to the chosen fund."""
+    pick = st.session_state.get("mf_quick_access")
+    if pick:
+        st.session_state["mf_analysis_fund"] = pick
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -44,17 +47,30 @@ def _portfolio_fund_names() -> list[str]:
         return []
 
 
-def _quick_picks(title: str, names: list[str], prefix: str) -> None:
-    """A row of buttons that jump to a fund; the full name is on hover (short label on the chip)."""
-    if not names:
+def _render_quick_access(tracked_set: set[str]) -> None:
+    """One dropdown combining portfolio holdings + bookmarks; selecting jumps the fund picker.
+    Each entry is tagged 📁 (held) / ⭐ (bookmarked)."""
+    portfolio = {n for n in _portfolio_fund_names() if n in tracked_set}
+    bookmarks = {n for n in load_selection(_BOOKMARKS_KEY, []) if n in tracked_set}
+    combined = sorted(portfolio | bookmarks, key=lambda n: short_scheme_name(n).lower())
+    if not combined:
         return
-    st.caption(title)
-    cols = st.columns(min(len(names), 3))
-    for i, name in enumerate(names):
-        cols[i % len(cols)].button(
-            short_scheme_name(name), key=f"qp_{prefix}_{name}", on_click=_set_fund, args=(name,),
-            use_container_width=True, help=name,
-        )
+
+    def _label(name: str | None) -> str:
+        if name is None:
+            return "— jump to a portfolio / bookmarked fund —"
+        tag = ("📁" if name in portfolio else "") + ("⭐" if name in bookmarks else "")
+        return f"{tag} {short_scheme_name(name)}"
+
+    if st.session_state.get("mf_quick_access") not in (None, *combined):
+        st.session_state.pop("mf_quick_access", None)
+    st.selectbox(
+        "Quick access (portfolio & bookmarks)",
+        options=[None, *combined],
+        format_func=_label,
+        key="mf_quick_access",
+        on_change=_quick_jump,
+    )
 
 
 def _render_bookmark_toggle(selected: str | None) -> None:
@@ -137,9 +153,8 @@ def select_fund(tracked: pl.DataFrame) -> tuple[str | None, pl.DataFrame]:
         return None, enriched
 
     tracked_set = set(scheme_names)
-    # Quick access: portfolio holdings (default) + user bookmarks — both jump the selector.
-    _quick_picks("📁 Your portfolio", [n for n in _portfolio_fund_names() if n in tracked_set], "pf")
-    _quick_picks("⭐ Bookmarked", [n for n in load_selection(_BOOKMARKS_KEY, []) if n in tracked_set], "bm")
+    # Quick access: one dropdown combining portfolio holdings (default) + user bookmarks.
+    _render_quick_access(tracked_set)
 
     # Drop a persisted fund that is no longer tracked, so the selectbox value stays in its options.
     if st.session_state.get("mf_analysis_fund") not in scheme_names:
