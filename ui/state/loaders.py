@@ -94,6 +94,17 @@ def load_stock_open_close(
     return pl.concat(frames)
 
 
+@st.cache_data(show_spinner="Loading index…")
+def load_index_ohlcv(symbol: str, start: datetime | None = None, end: datetime | None = None) -> pl.DataFrame:
+    """Single-index OHLCV (index_ohlcv), shaped like load_stock_open_close for the chart."""
+    from data.repositories.stock import ensure_index_data  # noqa: PLC0415 — defer heavy import off boot
+
+    df = ensure_index_data(symbol, start, end)
+    if df.is_empty():
+        return df
+    return df.select(["Date", "Open", "Close", "High", "Low", "Volume"]).with_columns(pl.lit(symbol).alias("Symbol"))
+
+
 @st.cache_data(ttl=24 * 3600)
 def cached_search(query: str) -> pl.DataFrame:
     """Fuzzy-search AMFI schemes by name. Returns a DataFrame with schemeName + metadata."""

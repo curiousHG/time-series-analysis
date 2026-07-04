@@ -57,7 +57,7 @@ def _render_fund_growth(mapped: pl.DataFrame, nav_df: pl.DataFrame):
 
 
 def _render_monthly_heatmap(nav_df: pl.DataFrame):
-    st.subheader("Monthly Returns Heatmap")
+    st.subheader("Monthly Returns (%)")
 
     pv_all = nav_df.to_pandas()
     if pv_all.empty:
@@ -67,29 +67,20 @@ def _render_monthly_heatmap(nav_df: pl.DataFrame):
     monthly = pivot.resample("ME").last().pct_change() * 100
 
     if monthly.empty or monthly.shape[0] < 2:
-        st.info("Not enough data for monthly heatmap.")
+        st.info("Not enough data for monthly returns.")
         return
 
-    monthly_avg = monthly.mean(axis=1)
-
-    heatmap_data = pd.DataFrame(
-        {
-            "Year": monthly_avg.index.year,
-            "Month": monthly_avg.index.month,
-            "Return": monthly_avg.values,
-        }
-    )
-
-    heatmap_pivot = heatmap_data.pivot(index="Year", columns="Month", values="Return")
-    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    heatmap_pivot.columns = [month_names[m - 1] for m in heatmap_pivot.columns]
-
-    fig = px.imshow(
-        heatmap_pivot,
-        text_auto=".1f",
+    monthly_avg = monthly.mean(axis=1)  # portfolio-average monthly return
+    monthly_df = pd.DataFrame({"month": monthly_avg.index, "return": monthly_avg.values})
+    fig = px.bar(
+        monthly_df,
+        x="month",
+        y="return",
+        color="return",
         color_continuous_scale="RdYlGn",
-        aspect="auto",
-        title="Average Monthly Returns (%)",
+        color_continuous_midpoint=0,
     )
-    fig.update_layout(height=300)
+    fig.update_layout(
+        height=320, showlegend=False, coloraxis_showscale=False, xaxis_title=None, yaxis_title="Return %"
+    )
     st.plotly_chart(fig, use_container_width=True, key="monthly-heatmap")
