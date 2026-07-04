@@ -35,22 +35,93 @@ BENCHMARK_SYMBOL_MAP: dict[str, str] = {
     "nifty auto": "^CNXAUTO",
     "nifty metal": "^CNXMETAL",
     "nifty energy": "^CNXENERGY",
+    # US / global benchmarks — for overseas FoFs (e.g. Franklin U.S. Opportunities → Russell
+    # 3000 Growth). All resolve on yfinance and route to index_ohlcv via the '^' convention.
+    "s&p 500": "^GSPC",
+    "s&p500": "^GSPC",
+    "nasdaq 100": "^NDX",
+    "nasdaq100": "^NDX",
+    "nasdaq": "^IXIC",
+    "nasdaq composite": "^IXIC",
+    "russell 3000": "^RUA",
+    "russell 3000 growth": "^RAG",
+    "russell 3000 value": "^RAV",
+    "russell 1000": "^RUI",
+    "russell 1000 growth": "^RLG",
+    "russell 2000": "^RUT",
+    "russell 2000 growth": "^RUO",
+    "msci world": "URTH",
+    "msci acwi": "ACWI",
+    "msci all country world": "ACWI",
 }
 
-# Curated dropdown options for UI selectors. Order = display order.
+# Curated dropdown options for UI selectors (index picker, risk-vs-return). Order = display.
 BENCHMARK_CHOICES: dict[str, str] = {
     "Nifty 50": "^NSEI",
     "Nifty 100": "^CNX100",
     "Nifty 500": "^CRSLDX",
     "Nifty Next 50": "^NSMIDCP",
     "Nifty Midcap 100": "NIFTY_MIDCAP_100.NS",
+    "Nifty Midcap 150": "NIFTY MIDCAP 150",
     "Nifty Smallcap 100": "^CNXSC",
+    "Nifty Smallcap 250": "NIFTY SMALLCAP 250",
     "BSE Sensex": "^BSESN",
     "Nifty Bank": "^NSEBANK",
     "Nifty IT": "^CNXIT",
+    # US / global (yfinance)
+    "S&P 500 (US)": "^GSPC",
+    "Nasdaq 100 (US)": "^NDX",
+    "Nasdaq Composite (US)": "^IXIC",
+    "Russell 3000 (US)": "^RUA",
+    "Russell 3000 Growth (US)": "^RAG",
+    "Russell 2000 (US)": "^RUT",
+    "MSCI World": "URTH",
+    "MSCI ACWI": "ACWI",
 }
 
 DEFAULT_BENCHMARK_LABEL = "Nifty 50"
+
+# symbol → friendly label, for index selectors that only know the raw symbol.
+INDEX_DISPLAY_NAMES: dict[str, str] = {
+    "^NSEI": "Nifty 50",
+    "^CNX100": "Nifty 100",
+    "^CNX200": "Nifty 200",
+    "^CRSLDX": "Nifty 500",
+    "^NSMIDCP": "Nifty Next 50",
+    "^NSEMDCP50": "Nifty Midcap 50",
+    "NIFTY_MIDCAP_100.NS": "Nifty Midcap 100",
+    "NIFTY MIDCAP 150": "Nifty Midcap 150",
+    "NIFTY_MIDCAP_150.NS": "Nifty Midcap 150 (legacy)",
+    "^CNXSC": "Nifty Smallcap 100",
+    "NIFTY SMALLCAP 250": "Nifty Smallcap 250",
+    "NIFTY_SMLCAP_250.NS": "Nifty Smallcap 250 (legacy)",
+    "^NSEBANK": "Nifty Bank",
+    "^BSESN": "BSE Sensex",
+    "^CNXIT": "Nifty IT",
+    "^CNXPHARMA": "Nifty Pharma",
+    "^CNXFMCG": "Nifty FMCG",
+    "^CNXAUTO": "Nifty Auto",
+    "^CNXMETAL": "Nifty Metal",
+    "^CNXENERGY": "Nifty Energy",
+    "^GSPC": "S&P 500 (US)",
+    "^NDX": "Nasdaq 100 (US)",
+    "^IXIC": "Nasdaq Composite (US)",
+    "^RUA": "Russell 3000 (US)",
+    "^RAG": "Russell 3000 Growth (US)",
+    "^RAV": "Russell 3000 Value (US)",
+    "^RUI": "Russell 1000 (US)",
+    "^RLG": "Russell 1000 Growth (US)",
+    "^RUT": "Russell 2000 (US)",
+    "^RUO": "Russell 2000 Growth (US)",
+    "URTH": "MSCI World",
+    "ACWI": "MSCI ACWI",
+    "INR=X": "USD / INR",
+}
+
+
+def index_display_name(symbol: str) -> str:
+    """Friendly label for an index/FX symbol; falls back to the raw symbol."""
+    return INDEX_DISPLAY_NAMES.get(symbol, symbol)
 
 # SEBI sub-category → benchmark index symbol (fetchable via yfinance "^…" or niftyindices
 # "NIFTY …"). Sub-categories absent here (all Debt, Arbitrage, Index/ETF/FoF, Conservative

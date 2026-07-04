@@ -10,6 +10,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from services.benchmarks import BENCHMARK_CHOICES
 from services.stock_screener_service import apply_stock_filters
 from stocks.constants import NIFTY_50, to_bare_symbol
 from stocks.metric_catalog import CATEGORY_COLORS, DEFAULT_VISIBLE_COLS, STOCK_METRIC_RENAME
@@ -61,30 +62,46 @@ def _add_stocks(yf_symbols: list[str]) -> None:
     load_stock_open_close.clear()  # Stock Analysis picks up the freshly pulled history
 
 
+def _add_index(symbol: str, label: str) -> None:
+    """Fetch a market index's full history into index_ohlcv so it's chartable in Stock Analysis."""
+    from data.repositories.stock import ensure_index_data  # noqa: PLC0415 — defer heavy import off boot
+    from ui.state.loaders import load_index_ohlcv  # noqa: PLC0415
+
+    with st.spinner(f"Fetching {label}…"):
+        ensure_index_data(symbol, pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
+    load_index_ohlcv.clear()
+    st.toast(f"Added index {label}.", icon="✅")
+
+
 st.title("Stock Screener")
 
-with st.expander("Add stocks to the universe", expanded=False, icon=":material/add:"):
-    st.caption(
-        "Search Yahoo Finance for NSE stocks. Adding one pulls its full price history into the "
-        "database, scrapes fundamentals, and computes CAPM alpha/beta — it then shows up in the "
-        "table below and in the Stock Analysis picker."
-    )
-    _q = st.text_input("Search by name or symbol", placeholder="e.g. tata motors", key="stock_scr_add_query")
-    _opts: list[tuple[str, str]] = []
-    if _q and len(_q) >= 3:
-        with st.spinner("Searching…"):
-            _res = cached_search_stock(_q).reset_index()
-        if not _res.empty:
-            _opts = list(zip(_res["symbol"], _res["shortName"], strict=False))
-    _picked = st.multiselect(
-        "Results",
-        options=_opts,
-        format_func=lambda t: f"{t[0]} — {t[1]}",
-        key="stock_scr_add_picked",
-    )
-    if st.button("Add selected", type="primary", disabled=not _picked):
-        _add_stocks([sym for sym, _ in _picked])
-        st.rerun()
+with st.expander("Add ticker (stock or index)", expanded=False, icon=":material/add:"):
+    _kind = st.radio("Type", ["Stock", "Index"], horizontal=True, key="add_ticker_kind")
+    if _kind == "Stock":
+        st.caption(
+            "Search Yahoo Finance for NSE stocks. Adding pulls full price history, scrapes "
+            "fundamentals, and computes CAPM alpha/beta — it shows up in the table below and in "
+            "the Stock Analysis ticker picker."
+        )
+        _q = st.text_input("Search by name or symbol", placeholder="e.g. tata motors", key="stock_scr_add_query")
+        _opts: list[tuple[str, str]] = []
+        if _q and len(_q) >= 3:
+            with st.spinner("Searching…"):
+                _res = cached_search_stock(_q).reset_index()
+            if not _res.empty:
+                _opts = list(zip(_res["symbol"], _res["shortName"], strict=False))
+        _picked = st.multiselect(
+            "Results", options=_opts, format_func=lambda t: f"{t[0]} — {t[1]}", key="stock_scr_add_picked"
+        )
+        if st.button("Add stock(s)", type="primary", disabled=not _picked):
+            _add_stocks([sym for sym, _ in _picked])
+            st.rerun()
+    else:
+        st.caption("Pull a market index (Indian or US) into the database so it's chartable in Stock Analysis.")
+        _ilabel = st.selectbox("Index", list(BENCHMARK_CHOICES), key="stock_scr_add_index")
+        if st.button("Add index", type="primary"):
+            _add_index(BENCHMARK_CHOICES[_ilabel], _ilabel)
+            st.rerun()
 
 render_toasts()  # surface any fetch errors from a populate/add-stocks run
 

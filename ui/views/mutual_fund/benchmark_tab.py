@@ -39,10 +39,17 @@ def _resolve_benchmark(ctx: FundContext) -> tuple[str | None, str]:
 def render(ctx: FundContext) -> None:
     symbol, label = _resolve_benchmark(ctx)
     if symbol is None:
-        st.info(
-            "No equity benchmark is mapped for this fund (typical for debt / arbitrage / "
-            "liquid schemes) — benchmark-relative analytics don't apply."
-        )
+        named = ctx.meta.get("benchmark")
+        if named:
+            st.info(
+                f"Benchmark **{named}** isn't in our fetchable index set, so benchmark-relative "
+                "analytics are unavailable for this fund."
+            )
+        else:
+            st.info(
+                "No benchmark is named for this fund (typical for debt / arbitrage / liquid "
+                "schemes) — benchmark-relative analytics don't apply."
+            )
         return
 
     fund_dates = pd.DatetimeIndex(pd.to_datetime(ctx.nav_pd.index))
