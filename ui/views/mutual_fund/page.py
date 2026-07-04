@@ -14,7 +14,7 @@ from data.repositories.nav import load_nav_df
 from mutual_funds.display import make_slug, short_scheme_name
 from services.mf_metrics import absolute_return
 from services.registry_service import backfill_missing, list_tracked
-from ui.components.freshness_banner import render_freshness_banner
+from ui.components.freshness_banner import clear_freshness_cache, is_fund_stale
 from ui.components.metric_tiles import Kpi, render_kpi_row
 from ui.state.loaders import load_metadata_cached, load_metrics_cached, load_txn_data
 from ui.views.mutual_fund import about_tab, benchmark_tab, calendar_tab, holdings_tab, performance_tab, risk_tab
@@ -55,6 +55,32 @@ def _held_position(scheme_name: str) -> dict | None:
         }
     except Exception:
         return None
+
+
+def _refresh_fund(name: str) -> None:
+    """Refetch NAV + holdings + metadata and recompute metrics for one fund, then clear caches."""
+    import contextlib  # noqa: PLC0415
+
+    from data.repositories.holdings import refresh_holdings_data  # noqa: PLC0415 — defer heavy import off boot
+    from data.repositories.metadata import refresh_metadata  # noqa: PLC0415
+    from data.repositories.nav import refresh_nav_data  # noqa: PLC0415
+    from services.mf_metrics import recompute_metrics  # noqa: PLC0415
+    from ui.state.loaders import load_holdings_data  # noqa: PLC0415
+
+    with st.spinner(f"Refreshing {short_scheme_name(name)}…"):
+        # A transient failure in one source shouldn't abort the whole refresh.
+        for step in (
+            lambda: refresh_nav_data([name]),
+            lambda: refresh_holdings_data([make_slug(name)]),
+            lambda: refresh_metadata(name),
+            lambda: recompute_metrics([name]),
+        ):
+            with contextlib.suppress(Exception):
+                step()
+    clear_freshness_cache()
+    load_metadata_cached.clear()
+    load_metrics_cached.clear()
+    load_holdings_data.clear()
 
 
 st.title("Mutual Fund Analysis")
@@ -98,9 +124,6 @@ if nav_status == "unavailable":
 if metadata_status == "unavailable":
     st.warning("Metadata not available for this fund — header AMC/AUM/TER/benchmark fields will be partial.")
 
-# ---- Data-freshness banner for the selected fund
-render_freshness_banner([selected], [make_slug(selected)])
-
 # ---- Load NAV first — the header shows live numbers, not just static identity
 nav_df = load_nav_df([selected]).sort("date")
 if nav_df.is_empty():
@@ -133,8 +156,15 @@ if meta.get("riskLevel"):
 if held:
     chips.append(f":green-background[**Held · {held['weight_pct']:.1f}% of portfolio**]")
 
-st.markdown(f"### {short_scheme_name(selected)}")
-st.caption(selected)
+_name_col, _refresh_col = st.columns([9, 1], vertical_alignment="center")
+with _name_col:
+    st.markdown(f"### {short_scheme_name(selected)}")
+with _refresh_col:
+    if is_fund_stale([selected], [make_slug(selected)]) and st.button(
+        "🔄 Refresh", key="mf_refresh_fund", help="Refetch NAV, holdings & metadata and recompute metrics"
+    ):
+        _refresh_fund(selected)
+        st.rerun()
 st.markdown(" ".join(chips))
 _identity_bits = [f"**{amc}**"]
 if benchmark:

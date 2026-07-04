@@ -29,6 +29,15 @@ def clear_freshness_cache() -> None:
     _cached_holdings_report.clear()
 
 
+def is_fund_stale(scheme_names: list[str], scheme_slugs: list[str]) -> bool:
+    """True when any of the given funds has stale NAV or holdings data."""
+    if not scheme_names:
+        return False
+    nav = _cached_nav_report(tuple(scheme_names), tuple(scheme_slugs))
+    holdings = _cached_holdings_report(tuple(scheme_names), tuple(scheme_slugs))
+    return nav.has_stale or holdings.has_stale
+
+
 def _nav_line(report: FreshnessReport) -> str:
     bdays = report.max_business_days_old
     suffix = f" (oldest: {bdays} business days behind)" if bdays else ""

@@ -153,19 +153,17 @@ def select_fund(tracked: pl.DataFrame) -> tuple[str | None, pl.DataFrame]:
         return None, enriched
 
     tracked_set = set(scheme_names)
-    # Quick access: one dropdown combining portfolio holdings (default) + user bookmarks.
-    _render_quick_access(tracked_set)
-
     # Drop a persisted fund that is no longer tracked, so the selectbox value stays in its options.
     if st.session_state.get("mf_analysis_fund") not in scheme_names:
         st.session_state.pop("mf_analysis_fund", None)
 
-    col_pick, col_star = st.columns([20, 1], vertical_alignment="bottom")
-    with col_pick:
-        # Full scheme name shown so Direct/Regular · Growth/IDCW variants are distinguishable.
-        selected = st.selectbox(
-            "Fund", options=scheme_names, key="mf_analysis_fund", on_change=_persist_mf_filters
-        )
+    # Quick access + the full-name Fund picker side by side, with the bookmark toggle.
+    col_quick, col_fund, col_star = st.columns([1, 1.8, 0.15], vertical_alignment="bottom")
+    with col_quick:
+        _render_quick_access(tracked_set)
+    with col_fund:
+        # Full scheme name shown so Direct/Regular, Growth/IDCW variants are distinguishable.
+        selected = st.selectbox("Fund", options=scheme_names, key="mf_analysis_fund", on_change=_persist_mf_filters)
     with col_star:
         _render_bookmark_toggle(selected)
     return selected, enriched
