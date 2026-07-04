@@ -62,13 +62,18 @@ _FORMATTERS = {
 
 @dataclass(frozen=True)
 class Kpi:
-    """One metric tile. `fmt` picks a shared formatter; None renders `value` verbatim."""
+    """One metric tile. `fmt` picks a shared formatter; None renders `value` verbatim.
+
+    `pill` is an optional (streamlit-color, text) rating badge rendered under the value — a
+    quick good/bad read of what the number means (e.g. ("green", "Good")).
+    """
 
     label: str
     value: Any
     delta: str | None = None
     help: str | None = None
     fmt: str | None = None  # "pct" | "pct_unsigned" | "ratio" | "inr" | "inr_compact"
+    pill: tuple[str, str] | None = None  # (color, text) — color ∈ green/orange/red/blue/gray
 
 
 def render_kpi_row(tiles: list[Kpi], columns: int | None = None) -> None:
@@ -84,3 +89,6 @@ def render_kpi_row(tiles: list[Kpi], columns: int | None = None) -> None:
             else:
                 display = EM_DASH if _is_missing(tile.value) else str(tile.value)
             col.metric(tile.label, display, delta=tile.delta, help=tile.help)
+            if tile.pill is not None:
+                color, text = tile.pill
+                col.markdown(f":{color}-background[{text}]")
