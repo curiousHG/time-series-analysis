@@ -106,13 +106,17 @@ with st.expander("Add ticker (stock or index)", expanded=False, icon=":material/
             if not _res.empty:
                 _ex = _res["exchange"] if "exchange" in _res.columns else pd.Series([""] * len(_res))
                 _opts = list(zip(_res["symbol"], _res["shortName"], _ex, strict=False))
+        # Migrate any legacy 2-tuple picks in session to (symbol, name, exchange) 3-tuples.
+        _raw = st.session_state.get("stock_scr_add_picked", [])
+        _norm = [(p[0], p[1], p[2] if len(p) > 2 else "") for p in _raw if len(p) >= 2]
+        if _norm != _raw:
+            st.session_state["stock_scr_add_picked"] = _norm
         # Keep already-selected options so picks survive query changes (accumulate across searches).
-        _prev = st.session_state.get("stock_scr_add_picked", [])
-        _merged = _opts + [o for o in _prev if o not in _opts]
+        _merged = _opts + [o for o in _norm if o not in _opts]
         _picked = st.multiselect(
             "Selected to add",
             options=_merged,
-            format_func=lambda t: f"{t[0]} — {t[1]}" + (f"  ·  {t[2]}" if t[2] else ""),
+            format_func=lambda t: f"{t[0]} — {t[1]}" + (f"  ·  {t[2]}" if len(t) > 2 and t[2] else ""),
             key="stock_scr_add_picked",
         )
         if st.button(f"Add {len(_picked)} stock(s)", type="primary", disabled=not _picked):
