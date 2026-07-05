@@ -3,6 +3,7 @@
 import streamlit as st
 
 from services.portfolio_service import build_portfolio_value_series, get_mapped_data
+from ui.components.background_refresh import BackgroundRefresh, progress_cb
 from ui.state import navigation
 from ui.state.loaders import (
     load_fund_movers_cached,
@@ -14,28 +15,29 @@ from ui.state.loaders import (
 )
 from ui.views.overview import alerts, indexes, market_pulse, movers, snapshot
 
+_REFRESH_KEY = "overview_refresh"
 
-def _refresh_data() -> None:
-    """Refresh what the Overview shows: stock prices + all NSE indices (bhavcopy) + international
-    indices, then drop the cached insight frames. Stashes an outcome toast for after the rerun."""
-    from data.repositories.stock import refresh_index_to_today  # noqa: PLC0415 — defer off boot
+
+def _overview_refresh_task() -> dict:
+    """Refresh what the Overview shows: stock prices + all NSE indices (bhavcopy) + the board's
+    ^-indices (market pulse + international) to today. Runs on a background task."""
+    from core.background import set_task_progress  # noqa: PLC0415 — defer off boot
+    from data.repositories.stock import refresh_index_to_today  # noqa: PLC0415
     from services.insights_service import INTERNATIONAL_PULSE_SYMBOLS, MARKET_PULSE_SYMBOLS  # noqa: PLC0415
-    from services.stock_sync_service import refresh_indices_via_bhavcopy, refresh_stocks_via_bhavcopy  # noqa: PLC0415
+    from services.stock_sync_service import refresh_all_stock_data  # noqa: PLC0415
 
-    with st.spinner("Refreshing market & stock data…"):
+    result = refresh_all_stock_data(progress_cb=progress_cb(_REFRESH_KEY))
+    board = sorted(set(MARKET_PULSE_SYMBOLS) | set(INTERNATIONAL_PULSE_SYMBOLS))
+    for i, sym in enumerate(board, 1):
         try:
-            stock_rows = refresh_stocks_via_bhavcopy()
+            refresh_index_to_today(sym)
         except Exception:
-            stock_rows = 0
-        try:
-            idx_rows = refresh_indices_via_bhavcopy()
-        except Exception:
-            idx_rows = 0
-        for sym in set(MARKET_PULSE_SYMBOLS) | set(INTERNATIONAL_PULSE_SYMBOLS):
-            try:
-                refresh_index_to_today(sym)
-            except Exception:
-                continue
+            continue
+        set_task_progress(_REFRESH_KEY, phase="Board indices", done=i, total=len(board))
+    return result
+
+
+def _clear_overview_caches() -> None:
     for loader in (
         load_market_pulse_cached,
         load_index_performance_cached,
@@ -44,20 +46,25 @@ def _refresh_data() -> None:
         load_fund_movers_cached,
     ):
         loader.clear()
-    st.session_state["_ov_refresh_msg"] = ("✅", f"Refreshed {idx_rows:,} index + {stock_rows:,} stock price rows.")
+
+
+_REFRESH = BackgroundRefresh(
+    _REFRESH_KEY,
+    "Data refresh",
+    cache_clearers=(_clear_overview_caches,),
+    summarize=lambda r: f"{r.get('index_rows', 0):,} index + {r.get('stock_rows', 0):,} stock rows" if isinstance(r, dict) else str(r),
+)
 
 
 st.title("Overview")
 
-_ov_msg = st.session_state.pop("_ov_refresh_msg", None)
-if _ov_msg:
-    st.toast(_ov_msg[1], icon=_ov_msg[0])
+_REFRESH.consume()
 
 _hdr, _btn = st.columns([5, 1], vertical_alignment="center")
 with _btn:
-    if st.button("🔄 Refresh data", key="ov_refresh", use_container_width=True, help="Update stock + index prices to today"):
-        _refresh_data()
-        st.rerun()
+    _REFRESH.start_button("🔄 Refresh data", _overview_refresh_task, key="ov_refresh", help="Update stock + index prices to today")
+if _REFRESH.is_running():
+    _REFRESH.poll()
 
 tab_dashboard, tab_indexes = st.tabs(["Dashboard", "Indexes"])
 

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import streamlit as st
 
 import ui.charts.theme  # noqa: F401 — registers Plotly dark theme
@@ -11,41 +13,47 @@ with timed("boot.init_schema"):
     init_schema()
 
 
+# Once-per-day boot-refresh guard — so restarting the process during the day doesn't re-run the
+# full bhavcopy pass. Shares the "stock_data_refresh" background key with the Settings > Stock Data
+# button, so the two can't run concurrently (dedup) and the boot pass is visible in that view.
+_BOOT_REFRESH_KEY = "stock_data_refresh"
+_BOOT_GUARD = Path("data/user/.last_boot_refresh")
+
+
+def _boot_refreshed_today() -> bool:
+    import datetime  # noqa: PLC0415
+
+    try:
+        return _BOOT_GUARD.read_text().strip() == datetime.date.today().isoformat()
+    except OSError:
+        return False
+
+
 @st.cache_resource(show_spinner=False)
 def _kickoff_background_refresh() -> bool:
-    """Start a one-time background thread that keeps market data fresh: seed the Nifty 500 (DB-first,
-    resumable), append recent NSE bhavcopy days for the whole stock universe, and pull the board
-    indices to today. All cheap/idempotent, so it's a quick pass on each boot. Never blocks the UI."""
-    import logging  # noqa: PLC0415 — keep boot imports minimal
-    import threading  # noqa: PLC0415
+    """Kick off a once-per-day background pass that keeps market data fresh: seed the Nifty 500
+    (DB-first, resumable) + append the latest NSE bhavcopy for the whole stock+index universe +
+    recompute metrics. Routed through core.background under the shared stock-refresh key so it can't
+    race a user-triggered Settings refresh, and guarded to run at most once per calendar day."""
+    import datetime  # noqa: PLC0415 — keep boot imports minimal
+    import logging  # noqa: PLC0415
 
-    def _worker() -> None:
-        log = logging.getLogger("boot")
-        try:
-            from services.stock_sync_service import (  # noqa: PLC0415
-                refresh_indices_via_bhavcopy,
-                refresh_stocks_via_bhavcopy,
-                seed_nifty500,
-            )
+    from core.background import start_task  # noqa: PLC0415
 
-            seed_nifty500()  # fill any missing Nifty 500 constituents (no-op once populated)
-            refresh_stocks_via_bhavcopy()  # keep the whole stock universe fresh (bulk bhavcopy)
-            refresh_indices_via_bhavcopy()  # + all 160 NSE indices (incl. factor) via index bhavcopy
-        except Exception:
-            log.exception("background stock/index refresh failed")
-        try:
-            from data.repositories.stock import refresh_index_to_today  # noqa: PLC0415
-            from services.insights_service import MARKET_PULSE_SYMBOLS, SECTOR_INDEX_SYMBOLS  # noqa: PLC0415
+    if _boot_refreshed_today():
+        return True
 
-            for sym in {s for s, _, _ in SECTOR_INDEX_SYMBOLS} | set(MARKET_PULSE_SYMBOLS):
-                try:
-                    refresh_index_to_today(sym)
-                except Exception:
-                    continue
-        except Exception:
-            log.exception("background index refresh failed")
+    def _work() -> dict:
+        from services.stock_sync_service import refresh_all_stock_data, seed_nifty500  # noqa: PLC0415
 
-    threading.Thread(target=_worker, name="bg-data-refresh", daemon=True).start()
+        seed_nifty500()  # fill any missing Nifty 500 constituents (no-op once populated)
+        result = refresh_all_stock_data()  # bulk bhavcopy stocks + 160 indices + recompute metrics
+        _BOOT_GUARD.parent.mkdir(parents=True, exist_ok=True)
+        _BOOT_GUARD.write_text(datetime.date.today().isoformat())
+        logging.getLogger("boot").info("boot data refresh done: %s", result)
+        return result
+
+    start_task(_BOOT_REFRESH_KEY, _work)
     return True
 
 
