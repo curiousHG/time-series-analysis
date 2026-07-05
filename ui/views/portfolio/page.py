@@ -9,37 +9,52 @@ import polars as pl
 import streamlit as st
 
 from services.registry_service import load_registry
+from ui.components.background_refresh import BackgroundRefresh
 from ui.components.freshness_banner import clear_freshness_cache, is_fund_stale
 from ui.state.loaders import load_holdings_data, load_txn_data
 from ui.views.portfolio import flows_tab, overview_tab, positions_tab, risk_tab
 from ui.views.portfolio.helpers import build_portfolio_value_series, get_mapped_data
 
+_REFRESH_KEY = "portfolio_refresh"
 
-def _refresh_portfolio(names: list[str], slugs: list[str]) -> None:
-    """Refetch NAV + holdings for the portfolio's active funds and recompute metrics, in place.
-    Stashes an outcome toast (shown after the rerun); a failing source is recorded, not fatal."""
-    from data.repositories.holdings import refresh_holdings_data  # noqa: PLC0415 — defer off boot
+
+def _portfolio_refresh_task(names: list[str], slugs: list[str]) -> dict:
+    """Refetch NAV + holdings for the portfolio's active funds and recompute metrics. Runs on a
+    background task; a failing source is recorded, not fatal."""
+    from core.background import set_task_progress  # noqa: PLC0415 — defer off boot
+    from data.repositories.holdings import refresh_holdings_data  # noqa: PLC0415
     from data.repositories.nav import refresh_nav_data  # noqa: PLC0415
     from services.mf_metrics import recompute_metrics  # noqa: PLC0415
 
+    steps = (
+        ("NAV", lambda: refresh_nav_data(names)),
+        ("Holdings", lambda: refresh_holdings_data(slugs)),
+        ("Metrics", lambda: recompute_metrics(names)),
+    )
     failed: list[str] = []
-    with st.spinner("Refreshing portfolio data…"):
-        for label, step in (
-            ("NAV", lambda: refresh_nav_data(names)),
-            ("Holdings", lambda: refresh_holdings_data(slugs)),
-            ("Metrics", lambda: recompute_metrics(names)),
-        ):
-            try:
-                step()
-            except Exception:
-                failed.append(label)
+    for i, (label, step) in enumerate(steps):
+        set_task_progress(_REFRESH_KEY, phase=label, done=i, total=len(steps))
+        try:
+            step()
+        except Exception:
+            failed.append(label)
+    set_task_progress(_REFRESH_KEY, phase="Done", done=len(steps), total=len(steps))
+    return {"failed": failed}
+
+
+def _clear_portfolio_caches() -> None:
     clear_freshness_cache()
     load_holdings_data.clear()
-    st.session_state["_pf_refresh_msg"] = (
-        ("⚠️", f"Refreshed with issues — {', '.join(failed)} failed.")
-        if failed
-        else ("✅", "Portfolio data refreshed — NAV, holdings & metrics updated.")
-    )
+
+
+_REFRESH = BackgroundRefresh(
+    _REFRESH_KEY,
+    "Portfolio refresh",
+    cache_clearers=(_clear_portfolio_caches,),
+    summarize=lambda r: (
+        f"issues — {', '.join(r['failed'])} failed" if isinstance(r, dict) and r.get("failed") else "NAV, holdings & metrics updated"
+    ),
+)
 
 
 def _render(txn_df: pl.DataFrame | None) -> None:
@@ -65,13 +80,17 @@ def _render(txn_df: pl.DataFrame | None) -> None:
     active_slugs = [slug for n in active_names if (slug := name_to_slug.get(n))]
     active_registry = registry.filter(pl.col("schemeName").is_in(active_names))
 
-    if is_fund_stale(active_names, active_slugs) and st.button(
-        "🔄 Refresh portfolio data",
-        key="pf_refresh",
-        help="Some holdings have stale NAV/holdings — refetch them and recompute metrics now",
-    ):
-        _refresh_portfolio(active_names, active_slugs)
-        st.rerun()
+    _REFRESH.consume()
+    if _REFRESH.is_running():
+        _REFRESH.poll()
+    elif is_fund_stale(active_names, active_slugs):
+        _REFRESH.start_button(
+            "🔄 Refresh portfolio data",
+            lambda: _portfolio_refresh_task(active_names, active_slugs),
+            key="pf_refresh",
+            help="Some holdings have stale NAV/holdings — refetch them and recompute metrics now",
+            use_container_width=False,
+        )
 
     holdings_df, sectors_df, assets_df = load_holdings_data(active_slugs)
     pv_series = build_portfolio_value_series(mapped, portfolio_nav)
@@ -91,7 +110,4 @@ def _render(txn_df: pl.DataFrame | None) -> None:
 
 
 st.title("Portfolio")
-_pf_msg = st.session_state.pop("_pf_refresh_msg", None)
-if _pf_msg:
-    st.toast(_pf_msg[1], icon=_pf_msg[0])
 _render(load_txn_data())
