@@ -88,6 +88,85 @@ def refresh_indices_via_bhavcopy(*, max_days: int = 120) -> int:
     return total
 
 
+def backfill_indices_history(*, years: int = 12) -> int:
+    """Backfill index bhavcopy history as far back as ~`years` — fills the backward gap (below the
+    earliest stored day) and the forward gap (last→today), skipping the already-stored range.
+    Long-running; run it on a background task. Returns rows upserted."""
+    import datetime as _dt  # noqa: PLC0415
+
+    from data.repositories.stock import (  # noqa: PLC0415
+        first_index_bhavcopy_date,
+        last_index_bhavcopy_date,
+        save_index_bhavcopy_day,
+    )
+
+    today = _dt.date.today()
+    target = today - _dt.timedelta(days=365 * years)
+    first, last = first_index_bhavcopy_date(), last_index_bhavcopy_date()
+    total = 0
+    if first:  # backward gap: target .. first-1
+        day = target
+        while day < first:
+            total += save_index_bhavcopy_day(day)
+            day += _dt.timedelta(days=1)
+    day = (last + _dt.timedelta(days=1)) if last else target  # forward gap
+    while day <= today:
+        total += save_index_bhavcopy_day(day)
+        day += _dt.timedelta(days=1)
+    logger.info("index history backfill: %d rows (target %s)", total, target)
+    return total
+
+
+def refresh_all_stock_data() -> dict:
+    """Full stock + index data refresh for the background task: bhavcopy stocks + indices, then
+    recompute stock metrics. Returns per-step counts for the outcome toast."""
+    stock_rows = refresh_stocks_via_bhavcopy()
+    index_rows = refresh_indices_via_bhavcopy()
+    metrics = recompute_all_stock_metrics()
+    return {"stock_rows": stock_rows, "index_rows": index_rows, "metrics": metrics}
+
+
+def stock_data_health() -> dict:
+    """Counts + last-updated dates + staleness for stock/index data (Settings data-health view)."""
+    import datetime as _dt  # noqa: PLC0415
+
+    import numpy as np  # noqa: PLC0415
+    from sqlmodel import text  # noqa: PLC0415
+
+    from core.database import get_session  # noqa: PLC0415
+
+    def _q(session, sql: str):
+        return session.exec(text(sql)).one()[0]
+
+    with get_session() as session:
+        stocks = _q(session, "SELECT count(distinct symbol) FROM stock_ohlcv") or 0
+        stock_last = _q(session, "SELECT max(date) FROM stock_ohlcv")
+        indices = _q(session, "SELECT count(distinct symbol) FROM index_ohlcv") or 0
+        index_last = _q(session, "SELECT max(date) FROM index_ohlcv")
+        index_first = _q(session, "SELECT min(date) FROM index_ohlcv WHERE symbol = 'Nifty 50'")
+        with_metrics = _q(session, "SELECT count(*) FROM stock_metrics WHERE return_1y IS NOT NULL") or 0
+        with_fundamentals = _q(session, "SELECT count(*) FROM stock_registry WHERE fundamentals_status = 'available'") or 0
+        unavailable = _q(session, "SELECT count(*) FROM stock_registry WHERE ohlcv_status = 'unavailable'") or 0
+
+    today = _dt.date.today()
+
+    def _bdays_old(d) -> int | None:
+        return int(np.busday_count(d, today)) if d else None
+
+    return {
+        "stocks": stocks,
+        "stock_last": stock_last,
+        "stock_stale_days": _bdays_old(stock_last),
+        "indices": indices,
+        "index_last": index_last,
+        "index_stale_days": _bdays_old(index_last),
+        "index_first": index_first,
+        "with_metrics": with_metrics,
+        "with_fundamentals": with_fundamentals,
+        "unavailable": unavailable,
+    }
+
+
 def recompute_all_stock_metrics() -> int:
     """Recompute CAPM price metrics for the whole tracked stock universe (uses cached OHLCV)."""
     from data.repositories.stock_fundamentals import load_stock_metrics  # noqa: PLC0415

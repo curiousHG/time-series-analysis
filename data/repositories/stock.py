@@ -203,6 +203,12 @@ def last_index_bhavcopy_date() -> date | None:
         return session.exec(select(func.max(col(IndexOhlcv.date))).where(col(IndexOhlcv.symbol) == "Nifty 50")).one()
 
 
+def first_index_bhavcopy_date() -> date | None:
+    """Earliest date of the NSE-name index bhavcopy (tracked via 'Nifty 50') — the backfill floor."""
+    with get_session() as session:
+        return session.exec(select(func.min(col(IndexOhlcv.date))).where(col(IndexOhlcv.symbol) == "Nifty 50")).one()
+
+
 def _fetch_and_save_index(symbol: str, start: date, end: date) -> None:
     """Fetch an index — niftyindices.com for "NIFTY …" space-form (yfinance lacks Smallcap 250 /
     Midcap 150), yfinance otherwise — and upsert into index_ohlcv."""
