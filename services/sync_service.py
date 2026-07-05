@@ -169,3 +169,40 @@ def refresh_holdings_for_schemes(
             _emit(progress_cb, FetchEvent(done, total, name, outcome, detail))
 
     return result
+
+
+# ---- Background full-refresh orchestrator ------------------------------------------------
+
+
+def refresh_all_fund_data(
+    scheme_names: list[str],
+    *,
+    scope: str = "all",
+    progress_cb: Callable[..., None] | None = None,
+) -> dict:
+    """Run NAV and/or holdings updates for a set of tracked funds, suitable for a background task.
+
+    `scope` is 'nav', 'holdings', or 'all'. `progress_cb(**fields)` receives live phase/done/total
+    (e.g. phase='NAV', done=12, total=99) so a polling UI can show progress. Returns a summary dict.
+    """
+    out: dict = {}
+    if scope in ("all", "nav"):
+
+        def _nav_cb(ev: FetchEvent) -> None:
+            if progress_cb:
+                progress_cb(phase="NAV", done=ev.done, total=ev.total)
+
+        nav = update_nav_incremental(scheme_names, progress_cb=_nav_cb)
+        out |= {"nav_updated": nav.updated_count, "nav_new_rows": nav.new_rows_total, "nav_failed": len(nav.failures)}
+
+    if scope in ("all", "holdings"):
+
+        def _hold_cb(ev: FetchEvent) -> None:
+            if progress_cb:
+                progress_cb(phase="Holdings", done=ev.done, total=ev.total)
+
+        holdings = refresh_holdings_for_schemes(scheme_names, progress_cb=_hold_cb)
+        out |= {"holdings_updated": holdings.success_count, "holdings_failed": len(holdings.failures)}
+
+    logger.info("refresh_all_fund_data(scope=%s): %s", scope, out)
+    return out

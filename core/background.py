@@ -67,6 +67,15 @@ def is_running(key: str) -> bool:
     return task_state(key).status == "running"
 
 
+def set_task_progress(key: str, **fields: Any) -> None:
+    """Merge live progress fields into a running task's `meta` (e.g. phase='NAV', done=12, total=99)
+    so a polling UI can show how far along a long background job is."""
+    with _LOCK:
+        state = _TASKS.get(key)
+        if state and state.status == "running":
+            state.meta.update(fields)
+
+
 def consume_if_finished(key: str) -> TaskState | None:
     """If the task is done/failed, return its state and reset it to idle (one-shot). Else None."""
     with _LOCK:

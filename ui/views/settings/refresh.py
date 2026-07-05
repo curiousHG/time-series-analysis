@@ -1,4 +1,8 @@
-"""Settings → Refresh tracked-fund data section. Pure rendering; orchestration lives in
+"""Settings → Refresh tracked-fund data section.
+
+Refresh runs on a background task (stale-while-revalidate): the view keeps showing the last-computed
+freshness + status tables while NAV/holdings update off-thread, shows live progress via a polling
+fragment, and swaps to fresh data the moment the task finishes. Orchestration lives in
 services.sync_service / data_freshness / registry_service."""
 
 from __future__ import annotations
@@ -6,6 +10,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from core.background import consume_if_finished, is_running, set_task_progress, start_task, task_state
 from data.repositories.holdings import load_holdings
 from data.repositories.nav import load_nav_df
 from mutual_funds.display import make_slug
@@ -20,59 +25,101 @@ from services.registry_service import (
     list_unavailable_funds,
     retry_unavailable,
 )
-from services.sync_service import (
-    FetchEvent,
-    refresh_holdings_for_schemes,
-    update_nav_incremental,
-)
+from services.sync_service import refresh_all_fund_data
 from ui.components.freshness_banner import clear_freshness_cache
 from ui.constants import STATUS_STYLES
 from ui.state.loaders import get_short_names, load_holdings_data, load_nav_data
+
+_FUND_KEY = "fund_data_refresh"
 
 
 def _color_status(val: str) -> str:
     return STATUS_STYLES.get(val, "")
 
 
+@st.cache_data(ttl=300, show_spinner="Computing fund freshness…")
+def _fund_freshness() -> dict:
+    """Freshness reports for every tracked fund — cached so the view keeps showing the last-known
+    state while a background refresh runs (cleared when the refresh finishes)."""
+    names = list_tracked()["schemeName"].to_list()
+    slugs = [make_slug(n) for n in names]
+    return {
+        "names": names,
+        "slugs": slugs,
+        "nav": compute_nav_freshness(names, slugs),
+        "holdings": compute_holdings_freshness(names, slugs),
+    }
+
+
+def _clear_fund_caches() -> None:
+    _fund_freshness.clear()
+    load_nav_data.clear()
+    load_holdings_data.clear()
+    clear_freshness_cache()
+
+
+def _start_refresh(scope: str, names: list[str]) -> None:
+    start_task(
+        _FUND_KEY,
+        lambda: refresh_all_fund_data(names, scope=scope, progress_cb=lambda **f: set_task_progress(_FUND_KEY, **f)),
+        meta={"scope": scope},
+    )
+
+
 def render() -> None:
     st.markdown("#### Tracked Fund Data")
+
+    # Consume a just-finished background refresh (swap to fresh data + toast the outcome).
+    finished = consume_if_finished(_FUND_KEY)
+    if finished is not None:
+        _clear_fund_caches()
+        if finished.status == "done":
+            r = finished.result or {}
+            parts = []
+            if "nav_updated" in r:
+                parts.append(f"NAV {r['nav_updated']} updated (+{r.get('nav_new_rows', 0):,} rows)")
+            if "holdings_updated" in r:
+                parts.append(f"holdings {r['holdings_updated']} updated")
+            st.toast("Fund refresh done — " + (", ".join(parts) if parts else "no changes") + ".", icon="✅")
+        else:
+            st.toast(f"Fund refresh failed: {finished.error}", icon="⚠️")
 
     tracked = list_tracked()
     if tracked.height == 0:
         st.info("No tracked funds yet. Add some via the **MF Screener** page.")
         return
 
-    scheme_names = tracked["schemeName"].to_list()
-    short_by_name = get_short_names(tuple(scheme_names))
+    fr = _fund_freshness()
+    names, slugs = fr["names"], fr["slugs"]
+    nav_report, holdings_report = fr["nav"], fr["holdings"]
+    short_by_name = get_short_names(tuple(names))
 
-    with st.spinner(f"Computing freshness for {len(scheme_names):,} tracked fund(s)…"):
-        slugs = [make_slug(n) for n in scheme_names]
-        nav_report = compute_nav_freshness(scheme_names, slugs)
-        holdings_report = compute_holdings_freshness(scheme_names, slugs)
-
-    with st.spinner("Loading NAV and holdings data…"):
-        nav_df = load_nav_df(scheme_names)
-        holdings_df = load_holdings(slugs)
+    refreshing = is_running(_FUND_KEY)
+    if refreshing:
+        _poll_fund_refresh()  # live progress banner; triggers a full rerun when the task finishes
 
     h1, h2, h3, h4 = st.columns(4)
-    h1.metric("Tracked funds", f"{len(scheme_names):,}")
+    h1.metric("Tracked funds", f"{len(names):,}")
     h2.metric("Stale NAV", f"{nav_report.stale_count:,}", help=f"Current date: {nav_report.current_date}")
     h3.metric("Stale holdings", f"{holdings_report.stale_count:,}")
     h4.metric("Unresolved sources", f"{list_unavailable_funds().height:,}")
 
     col1, col2, col3 = st.columns(3)
-    update_nav = col1.button("Update All NAV", type="primary", use_container_width=True)
-    update_holdings = col2.button("Update All Holdings", type="secondary", use_container_width=True)
-    update_all = col3.button("Update Everything", type="secondary", use_container_width=True)
-
-    if update_nav or update_all:
-        _run_nav_update(scheme_names, short_by_name)
-    if update_holdings or update_all:
-        _run_holdings_update(scheme_names, short_by_name)
+    if col1.button("Update All NAV", type="primary", disabled=refreshing, use_container_width=True):
+        _start_refresh("nav", names)
+        st.rerun()
+    if col2.button("Update All Holdings", disabled=refreshing, use_container_width=True):
+        _start_refresh("holdings", names)
+        st.rerun()
+    if col3.button("Update Everything", disabled=refreshing, use_container_width=True):
+        _start_refresh("all", names)
+        st.rerun()
 
     _render_retry_unavailable(short_by_name)
 
     with st.expander("Status details", expanded=False):
+        nav_df = load_nav_df(names)
+        holdings_df = load_holdings(slugs)
         _render_status_table(
             title="NAV",
             stale=f"{nav_report.stale_count} of {nav_report.total} tracked funds are stale.",
@@ -83,6 +130,19 @@ def render() -> None:
             stale=f"{holdings_report.stale_count} of {holdings_report.total} tracked funds are stale.",
             rows=build_holdings_status_rows(holdings_report, holdings_df, short_by_name),
         )
+
+
+@st.fragment(run_every="3s")
+def _poll_fund_refresh() -> None:
+    """Poll the background refresh: show live phase/progress, and full-rerun when it finishes."""
+    if not is_running(_FUND_KEY):
+        st.rerun(scope="app")  # finished → rerun the page to consume the result + show fresh data
+        return
+    meta = task_state(_FUND_KEY).meta
+    phase = meta.get("phase", "…")
+    done, total = meta.get("done", 0), meta.get("total", 0) or 1
+    st.info(f"🔄 Refreshing in the background — {phase} [{done}/{total}]. Showing last-cached freshness meanwhile.")
+    st.progress(min(done / total, 1.0))
 
 
 # ---- Status tables -----------------------------------------------------------------------
@@ -96,110 +156,6 @@ def _render_status_table(*, title: str, stale: str, rows: list[dict]) -> None:
         use_container_width=True,
         hide_index=True,
     )
-
-
-# ---- Update buttons (UI shell over the sync service) -------------------------------------
-
-
-def _outcome_glyph(outcome: str) -> str:
-    return {"updated": "✓", "skipped": "•", "failed": "✗"}.get(outcome, "?")
-
-
-def _make_progress_renderer(progress, counter_slot, log_slot, short_by_name: dict[str, str], counter_fmt):
-    """Callback that drives the progress bar + counters + log slot; counter_fmt shapes the line."""
-    recent: list[str] = []
-    counters = {"updated": 0, "skipped": 0, "failed": 0, "new_rows": 0, "holdings_rows": 0}
-
-    def cb(event: FetchEvent) -> None:
-        short = short_by_name.get(event.scheme_name, event.scheme_name)
-        progress.progress(event.done / event.total, text=f"[{event.done}/{event.total}] {short}")
-        counters[event.outcome] += 1
-        if event.outcome == "updated":
-            # detail leads with a count for both NAV and holdings; parse and accumulate.
-            try:
-                n = int(event.detail.split(" ", 1)[0])
-            except (ValueError, IndexError):
-                n = 0
-            # Both keys always populated; each formatter picks the one it cares about.
-            counters["new_rows"] += n
-            counters["holdings_rows"] += n
-        recent.append(f"{_outcome_glyph(event.outcome)} {short} — {event.detail}")
-        counter_slot.markdown(counter_fmt(counters))
-        log_slot.code("\n".join(recent[-8:]), language=None)
-
-    return cb
-
-
-def _run_nav_update(scheme_names: list[str], short_by_name: dict[str, str]) -> None:
-    st.markdown("#### NAV Update Progress")
-    total = len(scheme_names)
-    progress = st.progress(0.0, text=f"Starting NAV updates for {total} fund(s)…")
-    counter_slot = st.empty()
-    log_slot = st.empty()
-
-    def fmt(c: dict[str, int]) -> str:
-        return (
-            f"**Updated:** {c['updated']} · **Skipped:** {c['skipped']} · "
-            f"**Failed:** {c['failed']} · **New rows:** {c['new_rows']:,}"
-        )
-
-    cb = _make_progress_renderer(progress, counter_slot, log_slot, short_by_name, fmt)
-    result = update_nav_incremental(scheme_names, progress_cb=cb)
-
-    progress.progress(
-        1.0,
-        text=f"Done — {result.updated_count} updated, {result.skipped_count} skipped, {len(result.failures)} failed",
-    )
-    counter_slot.markdown(
-        f"**Updated:** {result.updated_count} · **Skipped:** {result.skipped_count} · "
-        f"**Failed:** {len(result.failures)} · **New rows:** {result.new_rows_total:,}"
-    )
-
-    load_nav_data.clear()
-    clear_freshness_cache()
-    if result.failures:
-        with st.expander(f"{len(result.failures)} failure(s)"):
-            for name, err in result.failures:
-                st.error(f"**{short_by_name.get(name, name)}** — {err}")
-    st.toast(f"NAV: {result.updated_count} updated ({result.new_rows_total} new rows), {result.skipped_count} skipped")
-    st.rerun()
-
-
-def _run_holdings_update(scheme_names: list[str], short_by_name: dict[str, str]) -> None:
-    st.markdown("#### Holdings Update Progress")
-    total = len(scheme_names)
-    progress = st.progress(0.0, text=f"Starting holdings updates for {total} fund(s)…")
-    counter_slot = st.empty()
-    log_slot = st.empty()
-
-    def fmt(c: dict[str, int]) -> str:
-        # NAV keys are reused; for holdings we ignore "skipped" / "rows".
-        return (
-            f"**Updated:** {c['updated']} · **Failed:** {c['failed']} · "
-            f"**Holdings rows so far:** {c.get('holdings_rows', 0):,}"
-        )
-
-    cb = _make_progress_renderer(progress, counter_slot, log_slot, short_by_name, fmt)
-
-    result = refresh_holdings_for_schemes(scheme_names, progress_cb=cb)
-
-    progress.progress(
-        1.0,
-        text=f"Done — {result.success_count} updated, {len(result.failures)} failed",
-    )
-    counter_slot.markdown(
-        f"**Updated:** {result.success_count} · **Failed:** {len(result.failures)} · "
-        f"**Holdings rows:** {result.total_holdings:,}"
-    )
-
-    load_holdings_data.clear()
-    clear_freshness_cache()
-    if result.failures:
-        with st.expander(f"{len(result.failures)} failure(s)"):
-            for name, err in result.failures:
-                st.error(f"**{short_by_name.get(name, name)}** — {err}")
-    st.toast(f"Saved holdings for {result.success_count}/{total} funds")
-    st.rerun()
 
 
 # ---- Retry-unavailable picker ------------------------------------------------------------
