@@ -91,10 +91,12 @@ def fetch_nse_equity_list() -> list[dict]:
 
 
 def fetch_nse_bhavcopy(day: date) -> pd.DataFrame | None:
-    """All NSE cash-market equity OHLCV for a single day in one download (UDiFF bhavcopy).
+    """All NSE cash-market equity OHLCV for a single day in one download.
 
-    Returns Date/Symbol/Open/High/Low/Close/Volume (bare symbols) for the EQ/BE/BZ series, or
-    None on a holiday/weekend/future date (no file) or a fetch failure.
+    Handles BOTH bhavcopy schemas jugaad returns: the UDiFF CM format (>= 2024-07-08) and the older
+    sec_bhavdata_full format (< 2024-07-08) that jugaad silently falls back to. Returns
+    Date/Symbol/Open/High/Low/Close/Volume (bare symbols) for the EQ/BE/BZ series, or None on a
+    holiday/weekend/future date (no file), a fetch failure, or an unrecognized schema.
     """
     from jugaad_data.nse import bhavcopy_raw  # noqa: PLC0415 — heavy optional dep, only on this path
 
@@ -108,22 +110,41 @@ def fetch_nse_bhavcopy(day: date) -> pd.DataFrame | None:
     except Exception:
         return None
     df.columns = [c.strip() for c in df.columns]
-    if "Sgmt" not in df.columns or "TckrSymb" not in df.columns:
-        return None
-    eq = df[(df["Sgmt"] == "CM") & (df["SctySrs"].isin(["EQ", "BE", "BZ"]))]
-    if eq.empty:
-        return None
-    return pd.DataFrame(
-        {
-            "Date": pd.to_datetime(eq["TradDt"]).dt.date,
-            "Symbol": eq["TckrSymb"].astype(str).str.strip(),
-            "Open": eq["OpnPric"],
-            "High": eq["HghPric"],
-            "Low": eq["LwPric"],
-            "Close": eq["ClsPric"],
-            "Volume": eq["TtlTradgVol"],
-        }
-    )
+
+    if "TckrSymb" in df.columns:  # UDiFF CM format (>= 2024-07-08)
+        eq = df[(df["Sgmt"] == "CM") & (df["SctySrs"].isin(["EQ", "BE", "BZ"]))]
+        if eq.empty:
+            return None
+        return pd.DataFrame(
+            {
+                "Date": pd.to_datetime(eq["TradDt"]).dt.date,
+                "Symbol": eq["TckrSymb"].astype(str).str.strip(),
+                "Open": eq["OpnPric"],
+                "High": eq["HghPric"],
+                "Low": eq["LwPric"],
+                "Close": eq["ClsPric"],
+                "Volume": eq["TtlTradgVol"],
+            }
+        )
+
+    if "SYMBOL" in df.columns and "SERIES" in df.columns:  # sec_bhavdata_full format (< 2024-07-08)
+        eq = df[df["SERIES"].astype(str).str.strip().isin(["EQ", "BE", "BZ"])]
+        if eq.empty:
+            return None
+        return pd.DataFrame(
+            {
+                "Date": pd.to_datetime(eq["DATE1"].astype(str).str.strip(), format="%d-%b-%Y").dt.date,
+                "Symbol": eq["SYMBOL"].astype(str).str.strip(),
+                "Open": eq["OPEN_PRICE"],
+                "High": eq["HIGH_PRICE"],
+                "Low": eq["LOW_PRICE"],
+                "Close": eq["CLOSE_PRICE"],
+                "Volume": eq["TTL_TRD_QNTY"],
+            }
+        )
+
+    logger.debug("bhavcopy %s: unrecognized schema (cols=%s)", day, list(df.columns)[:6])
+    return None
 
 
 def fetch_nse_index_bhavcopy(day: date) -> pd.DataFrame | None:

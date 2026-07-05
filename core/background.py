@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -57,10 +57,16 @@ def start_task(key: str, fn: Callable[[], Any], *, meta: dict | None = None) -> 
 
 
 def task_state(key: str) -> TaskState:
-    """Current state for `key` (idle if never started)."""
+    """Current state for `key` (idle if never started).
+
+    Returns a shallow copy (with its own `meta` dict) so a caller reading `.meta` can't race a
+    worker thread mutating it via `set_task_progress`.
+    """
     with _LOCK:
         state = _TASKS.get(key)
-        return TaskState() if state is None else state
+        if state is None:
+            return TaskState()
+        return replace(state, meta=dict(state.meta))
 
 
 def is_running(key: str) -> bool:

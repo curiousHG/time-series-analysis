@@ -118,10 +118,21 @@ All data is stored in PostgreSQL via SQLModel ORM. Models in `core/models/`:
 | `mf_sector_allocation` | Sector weights | id, scheme_code FK |
 | `mf_asset_allocation` | Asset class weights | id, scheme_code FK |
 | `mf_registry` | Tracked funds + source statuses | scheme_code |
+| `mf_metadata` | AdvisorKhoj/Kuvera fund metadata | scheme_code |
+| `mf_scheme_metrics` | Cached NAV-derived risk/return metrics | scheme_code |
+| `mf_amc` | AMC dimension | id (name unique) |
+| `mf_category` | Fund category dimension | id (name unique) |
 | `amfi_schemes` | AMFI master (14K schemes with ISIN) | scheme_code |
-| `stock_ohlcv` | Daily OHLCV data | (date, symbol) |
-| `stock_registry` | Stock metadata | symbol |
+| `stock_ohlcv` | Daily equity OHLCV (bare symbols) | (date, symbol) |
+| `stock_registry` | Stock metadata + OHLCV/fundamentals watermarks | symbol |
+| `stock_metrics` | screener.in fundamentals + CAPM alpha/beta snapshot | symbol |
+| `stock_quarterly` | Quarterly P&L per stock | (symbol, period_end) |
+| `index_ohlcv` | Index/FX OHLCV (NSE bhavcopy names + `^` for foreign indices) | (date, symbol) |
+| `index_registry` | Index registry + backfill floor | symbol |
 | `mf_tradebook` | Kite/Zerodha trades (deduped by trade_id) | trade_id |
+
+Legacy tables `stock_ohlcv_status`, `scheme_code_map`, `bots`, `orders`, `trades` were dropped
+(unused/superseded — status now lives in `stock_registry.ohlcv_*` columns).
 
 Connection: `DATABASE_URL` env var (default: `postgresql://harshit@localhost:5432/trading`).
 

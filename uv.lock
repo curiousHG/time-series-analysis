@@ -2881,18 +2881,6 @@ wheels = [
 ]
 
 [[package]]
-name = "streamlit-lightweight-charts"
-version = "0.7.20"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "streamlit" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7e/51/4a1b5c968746baf403845e4dc58d0e4c789f0a4274a690b06d1f11e073a2/streamlit-lightweight-charts-0.7.20.tar.gz", hash = "sha256:1341348b8286c23975246b391956295c70cb315c06eaec9a51b31e5bcf774ef5", size = 661775, upload-time = "2023-05-22T17:16:02.799Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/d1/adc3380ab8f92c7c89516a562186349a61cf063a931e88811398fccd2024/streamlit_lightweight_charts-0.7.20-py3-none-any.whl", hash = "sha256:61e0edc669dac626176a16da173414f577161f28107a3475762640d5665c7fe4", size = 669339, upload-time = "2023-05-22T17:15:59.81Z" },
-]
-
-[[package]]
 name = "ta-lib"
 version = "0.6.8"
 source = { registry = "https://pypi.org/simple" }
@@ -2986,7 +2974,6 @@ dependencies = [
     { name = "sqlmodel" },
     { name = "streamlit" },
     { name = "streamlit-aggrid" },
-    { name = "streamlit-lightweight-charts" },
     { name = "ta-lib" },
     { name = "vectorbt" },
     { name = "watchdog" },
@@ -3020,7 +3007,6 @@ requires-dist = [
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "streamlit", specifier = ">=1.52.2" },
     { name = "streamlit-aggrid", specifier = ">=1.2.1.post2" },
-    { name = "streamlit-lightweight-charts", specifier = ">=0.7" },
     { name = "ta-lib", specifier = ">=0.6" },
     { name = "vectorbt", specifier = ">=0.28.2" },
     { name = "watchdog", specifier = ">=6.0.0" },
