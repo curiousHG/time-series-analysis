@@ -22,12 +22,17 @@ def _kickoff_background_refresh() -> bool:
     def _worker() -> None:
         log = logging.getLogger("boot")
         try:
-            from services.stock_sync_service import refresh_stocks_via_bhavcopy, seed_nifty500  # noqa: PLC0415
+            from services.stock_sync_service import (  # noqa: PLC0415
+                refresh_indices_via_bhavcopy,
+                refresh_stocks_via_bhavcopy,
+                seed_nifty500,
+            )
 
             seed_nifty500()  # fill any missing Nifty 500 constituents (no-op once populated)
             refresh_stocks_via_bhavcopy()  # keep the whole stock universe fresh (bulk bhavcopy)
+            refresh_indices_via_bhavcopy()  # + all 160 NSE indices (incl. factor) via index bhavcopy
         except Exception:
-            log.exception("background stock refresh failed")
+            log.exception("background stock/index refresh failed")
         try:
             from data.repositories.stock import refresh_index_to_today  # noqa: PLC0415
             from services.insights_service import MARKET_PULSE_SYMBOLS, SECTOR_INDEX_SYMBOLS  # noqa: PLC0415

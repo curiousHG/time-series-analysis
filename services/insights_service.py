@@ -360,6 +360,18 @@ SECTOR_INDEX_SYMBOLS: list[tuple[str, str, str]] = [
     ("^CNXPSUBANK", "PSU Bank", "Sector"),
 ]
 
+# International indices (yfinance) for the Overview Indexes tab. (symbol, label, region)
+INTERNATIONAL_INDEX_SYMBOLS: list[tuple[str, str, str]] = [
+    ("^GSPC", "S&P 500", "US"),
+    ("^NDX", "Nasdaq 100", "US"),
+    ("^DJI", "Dow Jones", "US"),
+    ("^FTSE", "FTSE 100", "UK"),
+    ("^GDAXI", "DAX", "Germany"),
+    ("^N225", "Nikkei 225", "Japan"),
+    ("^HSI", "Hang Seng", "Hong Kong"),
+]
+INTERNATIONAL_PULSE_SYMBOLS: dict[str, str] = {s: label for s, label, _ in INTERNATIONAL_INDEX_SYMBOLS}
+
 _SECTOR_WINDOWS = {"1D": 1, "1W": 5, "1M": 21, "3M": 63}
 
 

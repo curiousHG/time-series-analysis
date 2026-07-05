@@ -159,6 +159,50 @@ def save_bhavcopy_day(day: date, *, only_existing: bool = True) -> int:
     return len(rows)
 
 
+def save_index_bhavcopy_day(day: date) -> int:
+    """Fetch the NSE index bhavcopy for `day` and bulk-upsert all 160+ indices into index_ohlcv,
+    keyed by the NSE index name (e.g. 'Nifty 50', 'NIFTY200 Quality 30'). Returns rows upserted."""
+    import pandas as pd  # noqa: PLC0415 — pandas only here; the repo is polars-native
+
+    from data.fetchers.stock import fetch_nse_index_bhavcopy  # noqa: PLC0415 — defer heavy import off boot
+
+    df = fetch_nse_index_bhavcopy(day)
+    if df is None or df.empty:
+        return 0
+
+    def _num(v: object) -> float | None:
+        return float(v) if pd.notna(v) else None
+
+    rows = [
+        {
+            "date": r.Date,
+            "symbol": r.Name,
+            "open": _num(r.Open),
+            "high": _num(r.High),
+            "low": _num(r.Low),
+            "close": _num(r.Close),
+            "volume": int(r.Volume) if pd.notna(r.Volume) and r.Volume else None,
+        }
+        for r in df.itertuples(index=False)
+    ]
+    with get_session() as session:
+        stmt = pg_insert(IndexOhlcv).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["date", "symbol"],
+            set_={c: stmt.excluded[c] for c in ("open", "high", "low", "close", "volume")},
+        )
+        session.exec(stmt)
+        session.commit()
+    logger.info("index bhavcopy %s: upserted %d indices", day, len(rows))
+    return len(rows)
+
+
+def last_index_bhavcopy_date() -> date | None:
+    """Last date of the NSE-name index bhavcopy (tracked via the 'Nifty 50' row)."""
+    with get_session() as session:
+        return session.exec(select(func.max(col(IndexOhlcv.date))).where(col(IndexOhlcv.symbol) == "Nifty 50")).one()
+
+
 def _fetch_and_save_index(symbol: str, start: date, end: date) -> None:
     """Fetch an index — niftyindices.com for "NIFTY …" space-form (yfinance lacks Smallcap 250 /
     Midcap 150), yfinance otherwise — and upsert into index_ohlcv."""
@@ -439,11 +483,39 @@ def clear_stock_ohlcv_status(symbol: str) -> None:
             session.commit()
 
 
+def read_index_ohlcv(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
+    """Read index OHLCV straight from index_ohlcv (no fetch) shaped for charting — for bhavcopy-
+    sourced indices (name-keyed) that are refreshed in bulk, not on demand."""
+    df = _load_ohlcv(IndexOhlcv, symbol, _to_date(start_date), _to_date(end_date))
+    return df if df.is_empty() else df.with_columns(pl.lit(symbol).alias("Symbol"))
+
+
 def list_index_symbols() -> list[str]:
     """Distinct index symbols we hold OHLC for (index_ohlcv)."""
     with get_session() as session:
         rows = session.exec(select(col(IndexOhlcv.symbol)).distinct().order_by(col(IndexOhlcv.symbol))).all()
     return list(rows)
+
+
+def last_stock_ohlcv_date() -> date | None:
+    """Most recent date present in stock_ohlcv (across all symbols), or None if empty."""
+    with get_session() as session:
+        return session.exec(select(func.max(col(StockOhlcv.date)))).one()
+
+
+def list_bhavcopy_index_names() -> list[str]:
+    """Distinct NSE-name indices from the index bhavcopy (excludes the ^-symbol / space-form
+    yfinance indices) — the comprehensive 160-index set incl. factor/strategy indices."""
+    with get_session() as session:
+        rows = session.exec(
+            select(col(IndexOhlcv.symbol))
+            .where(~col(IndexOhlcv.symbol).startswith("^"), ~col(IndexOhlcv.symbol).contains("="))
+            .distinct()
+            .order_by(col(IndexOhlcv.symbol))
+        ).all()
+    # The legacy niftyindices space-form entries ("NIFTY SMALLCAP 250") are ALL-CAPS; the bhavcopy
+    # names are title-case ("Nifty Smallcap 250"). Keep the bhavcopy (title-case) set.
+    return [r for r in rows if not r.isupper()]
 
 
 def search_stock_symbols(query: str):

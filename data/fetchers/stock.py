@@ -126,6 +126,42 @@ def fetch_nse_bhavcopy(day: date) -> pd.DataFrame | None:
     )
 
 
+def fetch_nse_index_bhavcopy(day: date) -> pd.DataFrame | None:
+    """All NSE index OHLCV for a single day in one download (ind_close_all) — 160+ indices incl.
+    sectoral + factor/strategy indices (Quality/Value/Momentum/Alpha/Low-Vol), which yfinance and
+    niftyindices don't serve. Returns Date/Name/Open/High/Low/Close/Volume (Name = NSE index name)."""
+    from jugaad_data.nse import bhavcopy_index_raw  # noqa: PLC0415 — heavy optional dep, only on this path
+
+    try:
+        raw = bhavcopy_index_raw(day)
+    except Exception as e:
+        logger.debug("index bhavcopy unavailable for %s: %s", day, e)
+        return None
+    try:
+        df = pd.read_csv(StringIO(raw))
+    except Exception:
+        return None
+    df.columns = [c.strip() for c in df.columns]
+    if "Index Name" not in df.columns or "Closing Index Value" not in df.columns:
+        return None
+
+    def _num(colname: str) -> pd.Series:
+        return pd.to_numeric(df[colname].astype(str).str.replace(",", "", regex=False), errors="coerce")
+
+    out = pd.DataFrame(
+        {
+            "Date": pd.to_datetime(df["Index Date"], format="%d-%m-%Y", errors="coerce").dt.date,
+            "Name": df["Index Name"].astype(str).str.strip(),
+            "Open": _num("Open Index Value"),
+            "High": _num("High Index Value"),
+            "Low": _num("Low Index Value"),
+            "Close": _num("Closing Index Value"),
+            "Volume": _num("Volume"),
+        }
+    )
+    return out[out["Close"].notna() & out["Date"].notna()]
+
+
 def fetch_nifty500_symbols() -> list[str]:
     """Bare NSE symbols of the Nifty 500 constituents (from NSE's published index CSV)."""
     r = httpx.get(NIFTY500_LIST_URL, headers=NSE_HEADERS, timeout=30, follow_redirects=True)

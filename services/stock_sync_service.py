@@ -49,17 +49,42 @@ def seed_nifty500(*, force_fundamentals: bool = False) -> int:
     return sync_stocks(todo, scrape_fundamentals=force_fundamentals)
 
 
-def refresh_stocks_via_bhavcopy(days_back: int = 7) -> int:
-    """Append the last `days_back` calendar days of NSE bhavcopy for tracked stocks (weekends/
-    holidays are simply empty), keeping the whole stock universe fresh in a few bulk downloads
-    rather than one yfinance call per symbol. Returns rows upserted."""
+def refresh_stocks_via_bhavcopy(*, max_days: int = 90) -> int:
+    """Append every NSE bhavcopy day from the last stored date up to today for tracked stocks
+    (weekends/holidays are simply empty). One bulk download per day beats a yfinance call per
+    symbol. `max_days` caps a cold-start backfill. Returns rows upserted."""
     import datetime as _dt  # noqa: PLC0415
 
-    from data.repositories.stock import save_bhavcopy_day  # noqa: PLC0415 — defer off boot
+    from data.repositories.stock import last_stock_ohlcv_date, save_bhavcopy_day  # noqa: PLC0415 — defer off boot
 
     today = _dt.date.today()
-    total = sum(save_bhavcopy_day(today - _dt.timedelta(days=i), only_existing=True) for i in range(days_back))
-    logger.info("bhavcopy refresh: %d rows over %d days", total, days_back)
+    last = last_stock_ohlcv_date()
+    start = max(last + _dt.timedelta(days=1), today - _dt.timedelta(days=max_days)) if last else today - _dt.timedelta(days=max_days)
+    total = 0
+    day = start
+    while day <= today:
+        total += save_bhavcopy_day(day, only_existing=True)
+        day += _dt.timedelta(days=1)
+    logger.info("bhavcopy refresh: %d rows from %s to %s", total, start, today)
+    return total
+
+
+def refresh_indices_via_bhavcopy(*, max_days: int = 120) -> int:
+    """Backfill every NSE index bhavcopy day from the last stored index date up to today — 160+
+    indices (incl. factor/strategy indices yfinance lacks) into index_ohlcv. Returns rows upserted."""
+    import datetime as _dt  # noqa: PLC0415
+
+    from data.repositories.stock import last_index_bhavcopy_date, save_index_bhavcopy_day  # noqa: PLC0415
+
+    today = _dt.date.today()
+    last = last_index_bhavcopy_date()
+    start = max(last + _dt.timedelta(days=1), today - _dt.timedelta(days=max_days)) if last else today - _dt.timedelta(days=max_days)
+    total = 0
+    day = start
+    while day <= today:
+        total += save_index_bhavcopy_day(day)
+        day += _dt.timedelta(days=1)
+    logger.info("index bhavcopy refresh: %d rows from %s to %s", total, start, today)
     return total
 
 

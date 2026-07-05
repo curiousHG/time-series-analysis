@@ -14,6 +14,7 @@ import streamlit as st
 from services.stock_sync_service import (
     list_unavailable_stocks,
     recompute_all_stock_metrics,
+    refresh_indices_via_bhavcopy,
     refresh_stocks_via_bhavcopy,
     retry_stock_ohlcv,
 )
@@ -24,20 +25,25 @@ from ui.state.loaders import load_stock_open_close, load_stock_screener_df_cache
 def render() -> None:
     st.markdown("### Stock price data")
 
-    # --- Refresh all tracked stocks to today (NSE bhavcopy — one download per trading day) ---
+    # --- Refresh all stocks + indices (NSE bhavcopy — backfills every missing day, last→today) ---
     st.markdown("**Refresh prices**")
     st.caption(
-        "Append the latest trading days for every tracked stock in a few downloads via the NSE "
-        "bhavcopy (all stocks, one file per day)."
+        "Backfills **every missing trading day** from your last fetch up to today via the NSE "
+        "bhavcopy — stocks (all in one file/day) and all 160+ indices (incl. factor/strategy indices)."
     )
-    c1, c2 = st.columns(2)
-    if c1.button("Update all to today", type="primary", key="stk_bhav_today", use_container_width=True):
-        with st.spinner("Fetching NSE bhavcopy…"):
+    c1, c2, c3 = st.columns(3)
+    if c1.button("Update stocks", type="primary", key="stk_bhav_today", use_container_width=True):
+        with st.spinner("Backfilling stock bhavcopy…"):
             n = refresh_stocks_via_bhavcopy()
         load_stock_open_close.clear()
-        st.toast(f"Upserted {n:,} price rows from the bhavcopy.", icon="✅")
+        st.toast(f"Upserted {n:,} stock price rows.", icon="✅")
         st.rerun()
-    if c2.button("Recompute stock metrics", key="stk_recompute", use_container_width=True):
+    if c2.button("Update indices", type="primary", key="stk_idx_bhav", use_container_width=True):
+        with st.spinner("Backfilling index bhavcopy…"):
+            n = refresh_indices_via_bhavcopy()
+        st.toast(f"Upserted {n:,} index price rows (160+ indices).", icon="✅")
+        st.rerun()
+    if c3.button("Recompute metrics", key="stk_recompute", use_container_width=True):
         with st.spinner("Recomputing return / vol / CAPM alpha…"):
             n = recompute_all_stock_metrics()
         load_stock_screener_df_cached.clear()

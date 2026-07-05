@@ -61,6 +61,46 @@ def _num(text: str | None) -> float | None:
     return float(m.group()) if m else None
 
 
+# Index symbol → screener.in slug (its /company/<slug>/ page lists constituents).
+_INDEX_SCREENER_SLUG = {
+    "^NSEI": "NIFTY",
+    "^NSEBANK": "BANKNIFTY",
+    "^NSMIDCP": "NIFTYNEXT50",
+    "NIFTY MIDCAP 150": "NIFTYMIDCAP150",
+    "NIFTY SMALLCAP 250": "NIFTYSMLCAP250",
+}
+
+
+def index_screener_slug(symbol: str) -> str:
+    """Map an index symbol to its screener.in slug (^CNXREALTY → CNXREALTY, ^NSEI → NIFTY)."""
+    return _INDEX_SCREENER_SLUG.get(symbol) or symbol.lstrip("^")
+
+
+def fetch_index_constituents(slug: str) -> list[str]:
+    """Best-effort constituent stock symbols scraped from a screener.in index page (e.g. the
+    /company/CNXREALTY/ page). Returns ordered NSE symbols, or [] if the page has none."""
+    with _client() as client:
+        try:
+            r = client.get(f"/company/{slug}/")
+            r.raise_for_status()
+        except Exception as e:
+            logger.debug("index constituents fetch failed for %s: %s", slug, e)
+            return []
+    soup = BeautifulSoup(r.text, "html.parser")
+    out: list[str] = []
+    seen: set[str] = set()
+    for a in soup.select("a[href^='/company/']"):
+        m = re.match(r"^/company/([A-Z][A-Z0-9&_-]{1,20})/", a.get("href", ""))  # href may be /company/DLF/consolidated/
+        if not m:
+            continue
+        sym = m.group(1)
+        if sym == slug or sym in seen:
+            continue
+        seen.add(sym)
+        out.append(sym)
+    return out
+
+
 def search_company(query: str) -> list[dict]:
     """Public company search → [{id, name, url}, ...]."""
     with _client() as c:
