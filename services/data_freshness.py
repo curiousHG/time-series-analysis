@@ -39,7 +39,8 @@ class FreshnessReport:
         return self.stale_count > 0
 
 
-def _busdays_between(start: date, end: date) -> int:
+def business_days_between(start: date, end: date) -> int:
+    """Trading-ish business days between two dates (weekdays; holidays not modelled)."""
     return int(np.busday_count(start, end))
 
 
@@ -74,7 +75,7 @@ def _build_report(
             continue
 
         days = (current_date - last).days
-        bdays = _busdays_between(last, current_date) if use_business_days else None
+        bdays = business_days_between(last, current_date) if use_business_days else None
         compare = bdays if bdays is not None else days
         is_stale = compare > threshold_days
         status: FreshnessStatus = "stale" if is_stale else "fresh"

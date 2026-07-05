@@ -180,26 +180,6 @@ def load_international_pulse_cached() -> pl.DataFrame:
     return market_pulse(INTERNATIONAL_PULSE_SYMBOLS)
 
 
-# NSE index name → screener.in slug (its /company/<slug>/ page lists constituents). Sectoral/
-# broad ones are known; factor indices fall back to a squashed-uppercase heuristic (best-effort).
-_INDEX_NAME_SLUG = {
-    "nifty 50": "NIFTY",
-    "nifty bank": "BANKNIFTY",
-    "nifty next 50": "NIFTYNEXT50",
-    "nifty it": "CNXIT",
-    "nifty pharma": "CNXPHARMA",
-    "nifty auto": "CNXAUTO",
-    "nifty fmcg": "CNXFMCG",
-    "nifty metal": "CNXMETAL",
-    "nifty energy": "CNXENERGY",
-    "nifty realty": "CNXREALTY",
-    "nifty infrastructure": "CNXINFRA",
-    "nifty psu bank": "CNXPSUBANK",
-    "nifty midcap 150": "NIFTYMIDCAP150",
-    "nifty smallcap 250": "NIFTYSMLCAP250",
-}
-
-
 @st.cache_data(show_spinner="Loading index…")
 def load_index_chart_ohlcv(symbol: str, start: datetime | None = None, end: datetime | None = None) -> pl.DataFrame:
     """Chart-ready OHLCV for any index straight from index_ohlcv (bhavcopy or yfinance-sourced)."""
@@ -219,12 +199,9 @@ def load_index_valuation_cached(symbol: str) -> dict | None:
 @st.cache_data(ttl=24 * 3600, show_spinner=False)
 def load_index_constituents_cached(index_name: str) -> list[str]:
     """Constituent stock symbols of an NSE index (via screener.in), best-effort + long-cached."""
-    import re  # noqa: PLC0415
+    from services.market_data_service import index_constituents  # noqa: PLC0415 — defer off boot
 
-    from data.fetchers.screener_in import fetch_index_constituents  # noqa: PLC0415 — defer off boot
-
-    slug = _INDEX_NAME_SLUG.get(index_name.strip().lower()) or re.sub(r"[^A-Za-z0-9]", "", index_name).upper()
-    return fetch_index_constituents(slug)
+    return index_constituents(index_name)
 
 
 @st.cache_data(ttl=900, show_spinner=False)

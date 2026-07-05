@@ -136,12 +136,10 @@ def refresh_all_stock_data(*, progress_cb: Callable[..., None] | None = None) ->
 
 def stock_data_health() -> dict:
     """Counts + last-updated dates + staleness for stock/index data (Settings data-health view)."""
-    import datetime as _dt  # noqa: PLC0415
-
-    import numpy as np  # noqa: PLC0415
     from sqlmodel import text  # noqa: PLC0415
 
     from core.database import get_session  # noqa: PLC0415
+    from services.data_freshness import business_days_between  # noqa: PLC0415
 
     def _q(session, sql: str):
         return session.exec(text(sql)).one()[0]
@@ -156,10 +154,10 @@ def stock_data_health() -> dict:
         with_fundamentals = _q(session, "SELECT count(*) FROM stock_registry WHERE fundamentals_status = 'available'") or 0
         unavailable = _q(session, "SELECT count(*) FROM stock_registry WHERE ohlcv_status = 'unavailable'") or 0
 
-    today = _dt.date.today()
+    today = _date.today()
 
     def _bdays_old(d) -> int | None:
-        return int(np.busday_count(d, today)) if d else None
+        return business_days_between(d, today) if d else None
 
     return {
         "stocks": stocks,
