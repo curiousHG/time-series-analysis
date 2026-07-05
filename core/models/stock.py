@@ -20,6 +20,9 @@ class StockOhlcv(SQLModel, table=True):
     close: float | None = None
     # BigInteger required — index volumes (Nifty 100, etc.) routinely exceed 32-bit INTEGER's ~2.1B max.
     volume: int | None = Field(default=None, sa_column=Column(BigInteger, nullable=True))
+    # From the NSE bhavcopy (both schemas): traded value in ₹ + number of trades that day.
+    turnover: float | None = None  # total traded value in ₹
+    num_trades: int | None = Field(default=None, sa_column=Column(BigInteger, nullable=True))
 
 
 class IndexOhlcv(SQLModel, table=True):
@@ -37,6 +40,11 @@ class IndexOhlcv(SQLModel, table=True):
     low: float | None = None
     close: float | None = None
     volume: int | None = Field(default=None, sa_column=Column(BigInteger, nullable=True))
+    # From the NSE index bhavcopy (ind_close_all) — valuation + traded value per index.
+    turnover_cr: float | None = None  # turnover in ₹ crore
+    pe: float | None = None
+    pb: float | None = None
+    div_yield: float | None = None
 
 
 class IndexRegistry(SQLModel, table=True):

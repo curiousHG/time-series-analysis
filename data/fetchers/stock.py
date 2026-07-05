@@ -124,6 +124,8 @@ def fetch_nse_bhavcopy(day: date) -> pd.DataFrame | None:
                 "Low": eq["LwPric"],
                 "Close": eq["ClsPric"],
                 "Volume": eq["TtlTradgVol"],
+                "Turnover": eq["TtlTrfVal"],  # traded value in ₹
+                "NumTrades": eq["TtlNbOfTxsExctd"],
             }
         )
 
@@ -140,6 +142,8 @@ def fetch_nse_bhavcopy(day: date) -> pd.DataFrame | None:
                 "Low": eq["LOW_PRICE"],
                 "Close": eq["CLOSE_PRICE"],
                 "Volume": eq["TTL_TRD_QNTY"],
+                "Turnover": pd.to_numeric(eq["TURNOVER_LACS"], errors="coerce") * 1e5,  # lakhs → ₹
+                "NumTrades": eq["NO_OF_TRADES"],
             }
         )
 
@@ -167,6 +171,8 @@ def fetch_nse_index_bhavcopy(day: date) -> pd.DataFrame | None:
         return None
 
     def _num(colname: str) -> pd.Series:
+        if colname not in df.columns:
+            return pd.Series([None] * len(df))
         return pd.to_numeric(df[colname].astype(str).str.replace(",", "", regex=False), errors="coerce")
 
     out = pd.DataFrame(
@@ -178,6 +184,10 @@ def fetch_nse_index_bhavcopy(day: date) -> pd.DataFrame | None:
             "Low": _num("Low Index Value"),
             "Close": _num("Closing Index Value"),
             "Volume": _num("Volume"),
+            "TurnoverCr": _num("Turnover (Rs. Cr.)"),
+            "PE": _num("P/E"),
+            "PB": _num("P/B"),
+            "DivYield": _num("Div Yield"),
         }
     )
     return out[out["Close"].notna() & out["Date"].notna()]

@@ -135,6 +135,9 @@ def save_bhavcopy_day(day: date, *, only_existing: bool = True) -> int:
     def _num(v: object) -> float | None:
         return float(v) if pd.notna(v) else None
 
+    def _int(v: object) -> int | None:
+        return int(v) if pd.notna(v) else None
+
     rows = [
         {
             "date": r.Date,
@@ -143,7 +146,9 @@ def save_bhavcopy_day(day: date, *, only_existing: bool = True) -> int:
             "high": _num(r.High),
             "low": _num(r.Low),
             "close": _num(r.Close),
-            "volume": int(r.Volume) if pd.notna(r.Volume) else None,
+            "volume": _int(r.Volume),
+            "turnover": _num(r.Turnover),
+            "num_trades": _int(r.NumTrades),
         }
         for r in df.itertuples(index=False)
     ]
@@ -151,7 +156,7 @@ def save_bhavcopy_day(day: date, *, only_existing: bool = True) -> int:
         stmt = pg_insert(StockOhlcv).values(rows)
         stmt = stmt.on_conflict_do_update(
             index_elements=["date", "symbol"],
-            set_={c: stmt.excluded[c] for c in ("open", "high", "low", "close", "volume")},
+            set_={c: stmt.excluded[c] for c in ("open", "high", "low", "close", "volume", "turnover", "num_trades")},
         )
         session.exec(stmt)
         session.commit()
@@ -182,6 +187,10 @@ def save_index_bhavcopy_day(day: date) -> int:
             "low": _num(r.Low),
             "close": _num(r.Close),
             "volume": int(r.Volume) if pd.notna(r.Volume) and r.Volume else None,
+            "turnover_cr": _num(r.TurnoverCr),
+            "pe": _num(r.PE),
+            "pb": _num(r.PB),
+            "div_yield": _num(r.DivYield),
         }
         for r in df.itertuples(index=False)
     ]
@@ -189,7 +198,7 @@ def save_index_bhavcopy_day(day: date) -> int:
         stmt = pg_insert(IndexOhlcv).values(rows)
         stmt = stmt.on_conflict_do_update(
             index_elements=["date", "symbol"],
-            set_={c: stmt.excluded[c] for c in ("open", "high", "low", "close", "volume")},
+            set_={c: stmt.excluded[c] for c in ("open", "high", "low", "close", "volume", "turnover_cr", "pe", "pb", "div_yield")},
         )
         session.exec(stmt)
         session.commit()
@@ -494,6 +503,27 @@ def read_index_ohlcv(symbol: str, start_date: datetime | date, end_date: datetim
     sourced indices (name-keyed) that are refreshed in bulk, not on demand."""
     df = _load_ohlcv(IndexOhlcv, symbol, _to_date(start_date), _to_date(end_date))
     return df if df.is_empty() else df.with_columns(pl.lit(symbol).alias("Symbol"))
+
+
+def latest_index_valuation(symbol: str) -> dict | None:
+    """Most recent P/E, P/B, Div Yield and turnover (₹ cr) for an index (from the bhavcopy), or None
+    if the index has no valuation rows (e.g. foreign `^` indices sourced from yfinance)."""
+    with get_session() as session:
+        row = session.exec(
+            select(
+                col(IndexOhlcv.date),
+                col(IndexOhlcv.pe),
+                col(IndexOhlcv.pb),
+                col(IndexOhlcv.div_yield),
+                col(IndexOhlcv.turnover_cr),
+            )
+            .where(col(IndexOhlcv.symbol) == symbol, col(IndexOhlcv.pe).is_not(None))
+            .order_by(col(IndexOhlcv.date).desc())
+            .limit(1)
+        ).first()
+    if row is None:
+        return None
+    return {"date": row[0], "pe": row[1], "pb": row[2], "div_yield": row[3], "turnover_cr": row[4]}
 
 
 def list_index_symbols() -> list[str]:

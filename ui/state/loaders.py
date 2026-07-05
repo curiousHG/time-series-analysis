@@ -208,6 +208,14 @@ def load_index_chart_ohlcv(symbol: str, start: datetime | None = None, end: date
     return read_index_ohlcv(symbol, start, end)
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def load_index_valuation_cached(symbol: str) -> dict | None:
+    """Latest P/E, P/B, Div Yield, turnover (₹ cr) for an index (from the bhavcopy)."""
+    from data.repositories.stock import latest_index_valuation  # noqa: PLC0415 — defer off boot
+
+    return latest_index_valuation(symbol)
+
+
 @st.cache_data(ttl=24 * 3600, show_spinner=False)
 def load_index_constituents_cached(index_name: str) -> list[str]:
     """Constituent stock symbols of an NSE index (via screener.in), best-effort + long-cached."""

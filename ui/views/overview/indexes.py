@@ -16,6 +16,7 @@ from ui.state.filter_persistence import hydrate_filters, make_persist_callback
 from ui.state.loaders import (
     load_index_chart_ohlcv,
     load_index_constituents_cached,
+    load_index_valuation_cached,
     load_international_pulse_cached,
     load_stock_screener_df_cached,
 )
@@ -75,6 +76,7 @@ def _render_chart() -> str | None:
         key="ov_idx_sel",
         on_change=_persist,
     )
+    _render_valuation(sel)
     idf = load_index_chart_ohlcv(sel, pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
     if idf.is_empty():
         st.warning("No price history for this index yet — it fills in as the bhavcopy backfills.")
@@ -100,6 +102,19 @@ def _render_chart() -> str | None:
     overlays, panels = compute_indicators(chart_df, overlays_sel + panels_sel)
     chart_tab.render(chart_df, overlays, panels, panels_sel, index_display_name(sel) if sel.startswith("^") else sel)
     return sel
+
+
+def _render_valuation(symbol: str) -> None:
+    """Latest P/E · P/B · Div Yield · turnover for the selected index (NSE bhavcopy). Foreign `^`
+    indices have none — the row is simply skipped."""
+    val = load_index_valuation_cached(symbol)
+    if not val:
+        return
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("P/E", f"{val['pe']:.1f}" if val.get("pe") is not None else EM_DASH)
+    c2.metric("P/B", f"{val['pb']:.2f}" if val.get("pb") is not None else EM_DASH)
+    c3.metric("Div Yield", f"{val['div_yield']:.2f}%" if val.get("div_yield") is not None else EM_DASH)
+    c4.metric("Turnover", f"₹{val['turnover_cr']:,.0f} Cr" if val.get("turnover_cr") is not None else EM_DASH)
 
 
 def _render_constituents(index_name: str) -> None:
