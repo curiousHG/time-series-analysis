@@ -15,6 +15,7 @@ from services.stock_screener_service import apply_stock_filters
 from stocks.constants import NIFTY_50, to_bare_symbol
 from stocks.metric_catalog import CATEGORY_COLORS, DEFAULT_VISIBLE_COLS, STOCK_METRIC_RENAME
 from ui.components.aggrid_theme import streamlit_dark_aggrid_theme
+from ui.components.background_refresh import BackgroundRefresh
 from ui.components.notifications import render_toasts
 from ui.components.screener_grid import clicked_cell_value, render_screener_grid
 from ui.constants import STOCK_FILTER_DEFAULTS, STOCK_SCREENER_PERSIST_KEY
@@ -33,12 +34,18 @@ def _none_if_zero(x: float) -> float | None:
     return x if x else None
 
 
-def _populate(symbols: list[str]) -> None:
+def _populate_task(symbols: list[str]) -> int:
     from services.stock_sync_service import sync_stocks  # noqa: PLC0415 — defer heavy import off boot
 
-    with st.spinner(f"Scraping screener.in + computing CAPM alpha for {len(symbols)} stocks… (a few minutes)"):
-        sync_stocks(symbols)
-    load_stock_screener_df_cached.clear()
+    return sync_stocks(symbols)
+
+
+_POPULATE = BackgroundRefresh(
+    "stock_screener_populate",
+    "Stock populate",
+    cache_clearers=(load_stock_screener_df_cached.clear,),
+    summarize=lambda r: f"{r:,} stocks synced" if isinstance(r, int) else "synced",
+)
 
 
 _NSE_EXCHANGES = {"NSE", "NSI", "BSE", "BO"}
@@ -131,13 +138,16 @@ with st.expander("Add ticker (stock or index)", expanded=False, icon=":material/
 
 render_toasts()  # surface any fetch errors from a populate/add-stocks run
 
+_POPULATE.consume()  # swap-to-fresh + toast if a populate just finished (before we read the frame)
 _df = load_stock_screener_df_cached()
 
 if _df.is_empty():
     st.info("No stock data cached yet. Populate the Nifty 50 sample to get started.")
-    if st.button("Populate Nifty 50 (scrape + compute alpha)", type="primary"):
-        _populate(list(NIFTY_50))
-        st.rerun()
+    _POPULATE.start_button(
+        "Populate Nifty 50 (scrape + compute alpha)", lambda: _populate_task(list(NIFTY_50)), type="primary"
+    )
+    if _POPULATE.is_running():
+        _POPULATE.poll()
     st.stop()
 
 _defaults = dict(STOCK_FILTER_DEFAULTS)
@@ -158,9 +168,11 @@ with st.sidebar:
     )
     roe_min = st.number_input("Min ROE %", min_value=0.0, step=1.0, key="stock_scr_roe", on_change=_persist_filters)
     alpha_min = st.number_input("Min Alpha %", step=1.0, key="stock_scr_alpha", on_change=_persist_filters)
-    if st.button("Re-sync Nifty 50"):
-        _populate(list(NIFTY_50))
-        st.rerun()
+    _POPULATE.start_button(
+        "Re-sync Nifty 50", lambda: _populate_task(list(NIFTY_50)), use_container_width=False
+    )
+    if _POPULATE.is_running():
+        _POPULATE.poll()
 
 _filtered = apply_stock_filters(
     _df,
