@@ -10,7 +10,6 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from core.background import consume_if_finished, is_running, set_task_progress, start_task, task_state
 from data.repositories.holdings import load_holdings
 from data.repositories.nav import load_nav_df
 from mutual_funds.display import make_slug
@@ -26,11 +25,10 @@ from services.registry_service import (
     retry_unavailable,
 )
 from services.sync_service import refresh_all_fund_data
+from ui.components.background_refresh import BackgroundRefresh, progress_cb
 from ui.components.freshness_banner import clear_freshness_cache
 from ui.constants import STATUS_STYLES
 from ui.state.loaders import get_short_names, load_holdings_data, load_nav_data
-
-_FUND_KEY = "fund_data_refresh"
 
 
 def _color_status(val: str) -> str:
@@ -58,31 +56,25 @@ def _clear_fund_caches() -> None:
     clear_freshness_cache()
 
 
-def _start_refresh(scope: str, names: list[str]) -> None:
-    start_task(
-        _FUND_KEY,
-        lambda: refresh_all_fund_data(names, scope=scope, progress_cb=lambda **f: set_task_progress(_FUND_KEY, **f)),
-        meta={"scope": scope},
-    )
+def _fund_summary(r: object) -> str:
+    parts = []
+    if isinstance(r, dict):
+        if "nav_updated" in r:
+            parts.append(f"NAV {r['nav_updated']} updated (+{r.get('nav_new_rows', 0):,} rows)")
+        if "holdings_updated" in r:
+            parts.append(f"holdings {r['holdings_updated']} updated")
+    return ", ".join(parts) if parts else "no changes"
+
+
+_REFRESH = BackgroundRefresh(
+    "fund_data_refresh", "Fund refresh", cache_clearers=(_clear_fund_caches,), summarize=_fund_summary
+)
 
 
 def render() -> None:
     st.markdown("#### Tracked Fund Data")
 
-    # Consume a just-finished background refresh (swap to fresh data + toast the outcome).
-    finished = consume_if_finished(_FUND_KEY)
-    if finished is not None:
-        _clear_fund_caches()
-        if finished.status == "done":
-            r = finished.result or {}
-            parts = []
-            if "nav_updated" in r:
-                parts.append(f"NAV {r['nav_updated']} updated (+{r.get('nav_new_rows', 0):,} rows)")
-            if "holdings_updated" in r:
-                parts.append(f"holdings {r['holdings_updated']} updated")
-            st.toast("Fund refresh done — " + (", ".join(parts) if parts else "no changes") + ".", icon="✅")
-        else:
-            st.toast(f"Fund refresh failed: {finished.error}", icon="⚠️")
+    _REFRESH.consume()  # swap-to-fresh + toast if a run just finished
 
     tracked = list_tracked()
     if tracked.height == 0:
@@ -94,9 +86,8 @@ def render() -> None:
     nav_report, holdings_report = fr["nav"], fr["holdings"]
     short_by_name = get_short_names(tuple(names))
 
-    refreshing = is_running(_FUND_KEY)
-    if refreshing:
-        _poll_fund_refresh()  # live progress banner; triggers a full rerun when the task finishes
+    if _REFRESH.is_running():
+        _REFRESH.poll()  # live phase/progress banner; full-rerun when the task finishes
 
     h1, h2, h3, h4 = st.columns(4)
     h1.metric("Tracked funds", f"{len(names):,}")
@@ -104,16 +95,16 @@ def render() -> None:
     h3.metric("Stale holdings", f"{holdings_report.stale_count:,}")
     h4.metric("Unresolved sources", f"{list_unavailable_funds().height:,}")
 
+    def _run(scope: str):
+        return lambda: refresh_all_fund_data(names, scope=scope, progress_cb=progress_cb(_REFRESH.key))
+
     col1, col2, col3 = st.columns(3)
-    if col1.button("Update All NAV", type="primary", disabled=refreshing, use_container_width=True):
-        _start_refresh("nav", names)
-        st.rerun()
-    if col2.button("Update All Holdings", disabled=refreshing, use_container_width=True):
-        _start_refresh("holdings", names)
-        st.rerun()
-    if col3.button("Update Everything", disabled=refreshing, use_container_width=True):
-        _start_refresh("all", names)
-        st.rerun()
+    with col1:
+        _REFRESH.start_button("Update All NAV", _run("nav"), meta={"scope": "nav"}, type="primary")
+    with col2:
+        _REFRESH.start_button("Update All Holdings", _run("holdings"), meta={"scope": "holdings"})
+    with col3:
+        _REFRESH.start_button("Update Everything", _run("all"), meta={"scope": "all"})
 
     _render_retry_unavailable(short_by_name)
 
@@ -130,19 +121,6 @@ def render() -> None:
             stale=f"{holdings_report.stale_count} of {holdings_report.total} tracked funds are stale.",
             rows=build_holdings_status_rows(holdings_report, holdings_df, short_by_name),
         )
-
-
-@st.fragment(run_every="3s")
-def _poll_fund_refresh() -> None:
-    """Poll the background refresh: show live phase/progress, and full-rerun when it finishes."""
-    if not is_running(_FUND_KEY):
-        st.rerun(scope="app")  # finished → rerun the page to consume the result + show fresh data
-        return
-    meta = task_state(_FUND_KEY).meta
-    phase = meta.get("phase", "…")
-    done, total = meta.get("done", 0), meta.get("total", 0) or 1
-    st.info(f"🔄 Refreshing in the background — {phase} [{done}/{total}]. Showing last-cached freshness meanwhile.")
-    st.progress(min(done / total, 1.0))
 
 
 # ---- Status tables -----------------------------------------------------------------------

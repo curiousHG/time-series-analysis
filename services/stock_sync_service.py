@@ -7,9 +7,15 @@ construction — DB-first `ensure_stock_fundamentals` skips already-fresh symbol
 from __future__ import annotations
 
 import logging
+from datetime import date as _date
+from datetime import timedelta as _timedelta
+from typing import TYPE_CHECKING
 
 from data.repositories.stock_fundamentals import ensure_stock_fundamentals
 from services.stock_metrics import recompute_price_metrics
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -49,80 +55,82 @@ def seed_nifty500(*, force_fundamentals: bool = False) -> int:
     return sync_stocks(todo, scrape_fundamentals=force_fundamentals)
 
 
-def refresh_stocks_via_bhavcopy(*, max_days: int = 90) -> int:
+def _days_between(start: _date, end: _date) -> list[_date]:
+    return [start + _timedelta(days=i) for i in range((end - start).days + 1)]
+
+
+def _report(progress_cb: Callable[..., None] | None, **fields: object) -> None:
+    if progress_cb is not None:
+        progress_cb(**fields)
+
+
+def refresh_stocks_via_bhavcopy(*, max_days: int = 90, progress_cb: Callable[..., None] | None = None) -> int:
     """Append every NSE bhavcopy day from the last stored date up to today for tracked stocks
     (weekends/holidays are simply empty). One bulk download per day beats a yfinance call per
     symbol. `max_days` caps a cold-start backfill. Returns rows upserted."""
-    import datetime as _dt  # noqa: PLC0415
-
     from data.repositories.stock import last_stock_ohlcv_date, save_bhavcopy_day  # noqa: PLC0415 — defer off boot
 
-    today = _dt.date.today()
+    today = _date.today()
     last = last_stock_ohlcv_date()
-    start = max(last + _dt.timedelta(days=1), today - _dt.timedelta(days=max_days)) if last else today - _dt.timedelta(days=max_days)
+    start = max(last + _timedelta(days=1), today - _timedelta(days=max_days)) if last else today - _timedelta(days=max_days)
+    days = _days_between(start, today)
     total = 0
-    day = start
-    while day <= today:
+    for i, day in enumerate(days, 1):
         total += save_bhavcopy_day(day, only_existing=True)
-        day += _dt.timedelta(days=1)
+        _report(progress_cb, phase="Stocks", done=i, total=len(days))
     logger.info("bhavcopy refresh: %d rows from %s to %s", total, start, today)
     return total
 
 
-def refresh_indices_via_bhavcopy(*, max_days: int = 120) -> int:
+def refresh_indices_via_bhavcopy(*, max_days: int = 120, progress_cb: Callable[..., None] | None = None) -> int:
     """Backfill every NSE index bhavcopy day from the last stored index date up to today — 160+
     indices (incl. factor/strategy indices yfinance lacks) into index_ohlcv. Returns rows upserted."""
-    import datetime as _dt  # noqa: PLC0415
-
     from data.repositories.stock import last_index_bhavcopy_date, save_index_bhavcopy_day  # noqa: PLC0415
 
-    today = _dt.date.today()
+    today = _date.today()
     last = last_index_bhavcopy_date()
-    start = max(last + _dt.timedelta(days=1), today - _dt.timedelta(days=max_days)) if last else today - _dt.timedelta(days=max_days)
+    start = max(last + _timedelta(days=1), today - _timedelta(days=max_days)) if last else today - _timedelta(days=max_days)
+    days = _days_between(start, today)
     total = 0
-    day = start
-    while day <= today:
+    for i, day in enumerate(days, 1):
         total += save_index_bhavcopy_day(day)
-        day += _dt.timedelta(days=1)
+        _report(progress_cb, phase="Indices", done=i, total=len(days))
     logger.info("index bhavcopy refresh: %d rows from %s to %s", total, start, today)
     return total
 
 
-def backfill_indices_history(*, years: int = 12) -> int:
+def backfill_indices_history(*, years: int = 12, progress_cb: Callable[..., None] | None = None) -> int:
     """Backfill index bhavcopy history as far back as ~`years` — fills the backward gap (below the
     earliest stored day) and the forward gap (last→today), skipping the already-stored range.
     Long-running; run it on a background task. Returns rows upserted."""
-    import datetime as _dt  # noqa: PLC0415
-
     from data.repositories.stock import (  # noqa: PLC0415
         first_index_bhavcopy_date,
         last_index_bhavcopy_date,
         save_index_bhavcopy_day,
     )
 
-    today = _dt.date.today()
-    target = today - _dt.timedelta(days=365 * years)
+    today = _date.today()
+    target = today - _timedelta(days=365 * years)
     first, last = first_index_bhavcopy_date(), last_index_bhavcopy_date()
+    back = _days_between(target, first - _timedelta(days=1)) if first else []
+    fwd = _days_between((last + _timedelta(days=1)) if last else target, today)
+    days = back + fwd
     total = 0
-    if first:  # backward gap: target .. first-1
-        day = target
-        while day < first:
-            total += save_index_bhavcopy_day(day)
-            day += _dt.timedelta(days=1)
-    day = (last + _dt.timedelta(days=1)) if last else target  # forward gap
-    while day <= today:
+    for i, day in enumerate(days, 1):
         total += save_index_bhavcopy_day(day)
-        day += _dt.timedelta(days=1)
+        _report(progress_cb, phase="Index history", done=i, total=len(days))
     logger.info("index history backfill: %d rows (target %s)", total, target)
     return total
 
 
-def refresh_all_stock_data() -> dict:
+def refresh_all_stock_data(*, progress_cb: Callable[..., None] | None = None) -> dict:
     """Full stock + index data refresh for the background task: bhavcopy stocks + indices, then
-    recompute stock metrics. Returns per-step counts for the outcome toast."""
-    stock_rows = refresh_stocks_via_bhavcopy()
-    index_rows = refresh_indices_via_bhavcopy()
+    recompute stock metrics. Reports live phase/progress via `progress_cb`. Returns per-step counts."""
+    stock_rows = refresh_stocks_via_bhavcopy(progress_cb=progress_cb)
+    index_rows = refresh_indices_via_bhavcopy(progress_cb=progress_cb)
+    _report(progress_cb, phase="Metrics", done=0, total=1)
     metrics = recompute_all_stock_metrics()
+    _report(progress_cb, phase="Metrics", done=1, total=1)
     return {"stock_rows": stock_rows, "index_rows": index_rows, "metrics": metrics}
 
 
