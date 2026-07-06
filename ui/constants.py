@@ -118,18 +118,48 @@ DATA_SOURCES_TABLE = pd.DataFrame(
             "Lands in": "(query-time only)",
         },
         {
-            "Source": "yfinance",
-            "What it returns": "Daily OHLCV bars (global tickers, indices including ^NSEI)",
-            "Input": "symbol + optional start/end dates",
-            "Example": 'ensure_stock_data("^NSEI", date(2020,1,1), date(2026,5,9))',
+            "Source": "NSE stock bhavcopy (jugaad-data)",
+            "What it returns": "Every cash-market stock's OHLCV for ONE day in a single download (+ turnover, "
+            "trade count). Handles both UDiFF (≥ 2024-07-08) and the legacy full-bhavcopy schema.",
+            "Input": "a single trading day",
+            "Example": "save_bhavcopy_day(date(2026,7,3))",
             "Lands in": "stock_ohlcv",
         },
         {
-            "Source": "jugaad-data (NSE bhavcopy)",
-            "What it returns": "OHLCV from NSE for Indian symbols (tried before yfinance for .NS)",
-            "Input": "symbol without .NS suffix, date range",
+            "Source": "NSE index bhavcopy (jugaad-data)",
+            "What it returns": "160+ indices for one day incl. factor/strategy indices (Quality/Value/Momentum/Alpha) "
+            "+ valuation (P/E, P/B, Div Yield, turnover). Primary index source.",
+            "Input": "a single trading day",
+            "Example": "save_index_bhavcopy_day(date(2026,7,3))",
+            "Lands in": "index_ohlcv",
+        },
+        {
+            "Source": "yfinance",
+            "What it returns": "Daily OHLCV — global tickers (AAPL) + foreign indices (^GSPC, ^NDX); NSE ^-symbols too",
+            "Input": "symbol + optional start/end dates",
+            "Example": 'ensure_index_data("^GSPC", date(2020,1,1), date(2026,7,3))',
+            "Lands in": "stock_ohlcv / index_ohlcv",
+        },
+        {
+            "Source": "jugaad-data (per-symbol)",
+            "What it returns": "OHLCV for one NSE stock (tried before yfinance for .NS)",
+            "Input": "bare symbol + date range",
             "Example": 'ensure_stock_data("RELIANCE", …)',
             "Lands in": "stock_ohlcv",
+        },
+        {
+            "Source": "screener.in",
+            "What it returns": "Stock fundamentals (P/E, ROE, market cap, quarterly P&L) + an index's constituent symbols",
+            "Input": "stock symbol or index slug",
+            "Example": 'fetch_company("RELIANCE") · fetch_index_constituents("CNXREALTY")',
+            "Lands in": "stock_metrics, stock_quarterly / (query-time)",
+        },
+        {
+            "Source": "Kuvera (fallback)",
+            "What it returns": "Fund metadata (AUM/TER/benchmark/manager) when AdvisorKhoj 404s or double-spaces the slug",
+            "Input": "scheme name / ISIN",
+            "Example": "kuvera fund lookup",
+            "Lands in": "mf_metadata",
         },
         {
             "Source": "Kite/Zerodha tradebook CSV",
@@ -146,6 +176,14 @@ DATA_SOURCES_TABLE = pd.DataFrame(
             "Input": "scheme_names list (or all NAV-having schemes); Nifty 50 loaded once as benchmark",
             "Example": 'recompute_metrics(["Parag Parikh…"])',
             "Lands in": "mf_scheme_metrics",
+        },
+        {
+            "Source": "services.stock_metrics.recompute_price_metrics",
+            "What it returns": "CAPM alpha/beta vs Nifty 50 + 1Y return/vol/R² per stock (from OHLCV), merged with "
+            "screener.in fundamentals",
+            "Input": "stock symbols",
+            "Example": 'recompute_price_metrics(["RELIANCE"])',
+            "Lands in": "stock_metrics",
         },
     ]
 )
@@ -210,11 +248,31 @@ SCHEMA_TABLES = pd.DataFrame(
             "Holds": "Kite/Zerodha trade rows. Resolution to scheme_name happens live via mf_tradebook.isin = amfi_schemes.isin_growth.",
             "FK targets": "(planned) amfi_schemes.scheme_code",
         },
-        # ----- Stock side -----
+        # ----- Stock / index side -----
         {
             "Table": "stock_ohlcv",
-            "PK": "(symbol, date)",
-            "Holds": "Daily OHLCV bars for Indian stocks + benchmark indices (^NSEI etc).",
+            "PK": "(date, symbol)",
+            "Holds": "Daily equity OHLCV, bare-symbol keyed (RELIANCE). Now carries turnover + num_trades from the bhavcopy.",
+            "FK targets": "—",
+        },
+        {
+            "Table": "index_ohlcv",
+            "PK": "(date, symbol)",
+            "Holds": "Index/FX OHLCV — NSE bhavcopy names ('Nifty 50', 'NIFTY200 Quality 30') + '^' foreign indices. "
+            "Carries P/E, P/B, Div Yield, turnover_cr.",
+            "FK targets": "—",
+        },
+        {
+            "Table": "stock_registry / index_registry",
+            "PK": "symbol",
+            "Holds": "Metadata + availability watermark (ohlcv_status / earliest floor / empty_streak) that stops "
+            "doomed re-fetches. The full NSE master lives here; OHLCV is only the fetched subset.",
+            "FK targets": "—",
+        },
+        {
+            "Table": "stock_metrics, stock_quarterly",
+            "PK": "symbol / (symbol, period_end)",
+            "Holds": "screener.in fundamentals + CAPM alpha/beta snapshot; quarterly P&L history.",
             "FK targets": "—",
         },
     ]
