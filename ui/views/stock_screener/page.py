@@ -95,8 +95,6 @@ def _add_index(symbol: str, label: str) -> None:
     st.toast(f"Added index {label}.", icon="✅")
 
 
-st.title("Stock Screener")
-
 with st.expander("Add ticker (stock or index)", expanded=False, icon=":material/add:"):
     _kind = st.radio("Type", ["Stock", "Index"], horizontal=True, key="add_ticker_kind")
     if _kind == "Stock":

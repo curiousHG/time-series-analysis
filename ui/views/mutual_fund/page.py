@@ -100,8 +100,6 @@ def _refresh_fund(name: str) -> None:
     )
 
 
-st.title("Mutual Fund Analysis")
-
 # Outcome toast from a just-completed per-fund refresh (set before the rerun).
 _refresh_msg = st.session_state.pop("_mf_refresh_msg", None)
 if _refresh_msg:
@@ -183,7 +181,8 @@ with _name_col:
     st.markdown(f"### {short_scheme_name(selected)}")
 with _refresh_col:
     if is_fund_stale([selected], [make_slug(selected)]) and st.button(
-        "🔄 Refresh", key="mf_refresh_fund", help="Refetch NAV, holdings & metadata and recompute metrics"
+        "", icon=":material/refresh:", key="mf_refresh_fund",
+        help="Refetch NAV, holdings & metadata and recompute metrics",
     ):
         _refresh_fund(selected)
         st.rerun()

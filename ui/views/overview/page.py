@@ -56,13 +56,14 @@ _REFRESH = BackgroundRefresh(
 )
 
 
-st.title("Overview")
-
 _REFRESH.consume()
 
-_hdr, _btn = st.columns([5, 1], vertical_alignment="center")
+_hdr, _btn = st.columns([12, 1], vertical_alignment="center")
 with _btn:
-    _REFRESH.start_button("🔄 Refresh data", _overview_refresh_task, key="ov_refresh", help="Update stock + index prices to today")
+    _REFRESH.start_button(
+        "", _overview_refresh_task, key="ov_refresh", icon=":material/refresh:",
+        help="Update stock + index prices to today", use_container_width=False,
+    )
 if _REFRESH.is_running():
     _REFRESH.poll()
 

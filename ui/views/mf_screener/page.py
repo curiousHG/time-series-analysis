@@ -43,8 +43,6 @@ def _render_universe_summary(amfi_count: int, filtered: pl.DataFrame) -> None:
         )
 
 
-st.title("Mutual Fund Screener")
-
 _amfi_count = get_scheme_count()
 if _amfi_count == 0:
     st.warning("AMFI master data not loaded. Run **Sync AMFI Master** from Settings first.")

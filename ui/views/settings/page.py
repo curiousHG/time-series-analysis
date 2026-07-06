@@ -60,7 +60,6 @@ def _inject_styles() -> None:
 
 def _render_header() -> None:
     st.markdown('<div class="settings-kicker">Operations</div>', unsafe_allow_html=True)
-    st.title("Settings")
     st.markdown(
         '<div class="settings-subtle">Keep portfolio inputs, fund data, cache jobs, and database health in one place.</div>',
         unsafe_allow_html=True,

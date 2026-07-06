@@ -84,13 +84,16 @@ def _render(txn_df: pl.DataFrame | None) -> None:
     if _REFRESH.is_running():
         _REFRESH.poll()
     elif is_fund_stale(active_names, active_slugs):
-        _REFRESH.start_button(
-            "🔄 Refresh portfolio data",
-            lambda: _portfolio_refresh_task(active_names, active_slugs),
-            key="pf_refresh",
-            help="Some holdings have stale NAV/holdings — refetch them and recompute metrics now",
-            use_container_width=False,
-        )
+        _, _btn = st.columns([12, 1], vertical_alignment="center")
+        with _btn:
+            _REFRESH.start_button(
+                "",
+                lambda: _portfolio_refresh_task(active_names, active_slugs),
+                key="pf_refresh",
+                icon=":material/refresh:",
+                help="Some holdings have stale NAV/holdings — refetch them and recompute metrics now",
+                use_container_width=False,
+            )
 
     holdings_df, sectors_df, assets_df = load_holdings_data(active_slugs)
     pv_series = build_portfolio_value_series(mapped, portfolio_nav)
@@ -109,5 +112,4 @@ def _render(txn_df: pl.DataFrame | None) -> None:
         flows_tab.render(mapped, portfolio_nav)
 
 
-st.title("Portfolio")
 _render(load_txn_data())
