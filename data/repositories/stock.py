@@ -28,6 +28,7 @@ from data.repositories.ohlcv_watermark import (
 from data.repositories.stock_ohlcv import (
     ensure_stock_data,
     last_stock_ohlcv_date,
+    list_registry_symbols,
     list_stock_symbols,
     load_stock_registry,
     refetch_stock_full,
@@ -49,6 +50,7 @@ __all__ = [
     "latest_index_valuation",
     "list_bhavcopy_index_names",
     "list_index_symbols",
+    "list_registry_symbols",
     "list_stock_symbols",
     "list_unavailable_stock_symbols",
     "load_stock_registry",

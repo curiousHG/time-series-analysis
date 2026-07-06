@@ -6,14 +6,14 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
-from data.repositories.stock import list_bhavcopy_index_names, list_stock_symbols
+from data.repositories.stock import list_bhavcopy_index_names, list_registry_symbols
 from indicators import INDICATOR_REGISTRY, compute_indicators
 from services.benchmarks import index_display_name
 from services.insights_service import INTERNATIONAL_INDEX_SYMBOLS
 from stocks.constants import to_bare_symbol
 from ui.components import index_detail
 from ui.components.notifications import render_toasts
-from ui.state.loaders import load_index_chart_ohlcv, load_stock_open_close
+from ui.state.loaders import load_index_chart_ohlcv, load_stock_open_close, load_stock_screener_df_cached
 from ui.views.stock_analysis import chart as chart_tab
 from ui.views.stock_analysis import fundamentals as fundamentals_tab
 from ui.views.stock_analysis import strategy_backtest as backtest_tab
@@ -30,11 +30,14 @@ def _chart_pdf(frame: pl.DataFrame, sym: str) -> pd.DataFrame:
 
 
 def _refresh_stock_on_open(ticker: str, frame: pl.DataFrame) -> None:
-    """On the first open of a stock this session, pull its OHLCV forward to today (cheap no-op when
-    already fresh); reload only if new bars actually arrived. Fundamentals are fetched by the tab."""
+    """On the first open of a stock this session: pull its OHLCV forward to today (cheap no-op when
+    already fresh) and make sure its CAPM/price metrics exist (compute if this is a brand-new stock).
+    Reloads only if new bars arrived. Screener.in fundamentals are fetched by the Fundamentals tab."""
     import contextlib  # noqa: PLC0415
 
     from data.repositories.stock import refresh_stock_to_today  # noqa: PLC0415 — defer off boot
+    from data.repositories.stock_fundamentals import load_stock_metrics  # noqa: PLC0415
+    from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
 
     bare = to_bare_symbol(ticker)
     opened = st.session_state.setdefault("_sa_opened", set())
@@ -44,8 +47,17 @@ def _refresh_stock_on_open(ticker: str, frame: pl.DataFrame) -> None:
     shown = frame.filter(pl.col("Symbol") == bare)
     shown_max = shown.select(pl.col("Date").max()).item() if shown.height else None
     new_max = None
-    with st.spinner(f"Refreshing {ticker}…"), contextlib.suppress(Exception):
-        _, new_max = refresh_stock_to_today(bare)
+    metrics_added = False
+    with st.spinner(f"Refreshing {ticker}…"):
+        with contextlib.suppress(Exception):
+            _, new_max = refresh_stock_to_today(bare)
+        # Metrics: pick from cache if present, else compute now for this newly-opened stock.
+        with contextlib.suppress(Exception):
+            if load_stock_metrics([bare]).is_empty():
+                recompute_price_metrics([bare])
+                metrics_added = True
+    if metrics_added:
+        load_stock_screener_df_cached.clear()
     if new_max is not None and (shown_max is None or new_max > shown_max):
         load_stock_open_close.clear()
         st.rerun()
@@ -110,18 +122,21 @@ def _index_view(ticker: str) -> None:
 _kind = st.radio("Type", ["Stock", "Index"], horizontal=True, key="sa_ticker_kind", label_visibility="collapsed")
 
 if _kind == "Stock":
-    _all_stocks = list_stock_symbols()
+    # Full NSE universe (stock_registry) — not just the fetched subset. Any stock not yet in the DB is
+    # fetched on demand the moment it's opened (load_stock_open_close → ensure_stock_data).
+    _all_stocks = list_registry_symbols()
     if not _all_stocks:
-        st.info("No stock data cached yet — populate the Nifty 500 / add stocks from the **Stock Screener**.")
+        st.info("Stock universe not synced yet — run **Sync AMFI / NSE master** in Settings.")
         st.stop()
     if st.session_state.get("stock_analysis_symbol") not in _all_stocks:
         st.session_state.pop("stock_analysis_symbol", None)
-    ticker = st.selectbox(f"Stock · {len(_all_stocks):,} available", _all_stocks, key="stock_analysis_symbol")
-    # Load only the selected stock's history (fast per-symbol cache key), not the whole universe.
-    frame = load_stock_open_close([ticker], pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
+    ticker = st.selectbox(f"Stock · {len(_all_stocks):,} in the NSE universe", _all_stocks, key="stock_analysis_symbol")
+    # Load the selected stock's history — fetching + storing it on demand if we don't have it yet.
+    with st.spinner(f"Loading {ticker}…"):
+        frame = load_stock_open_close([ticker], pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
     render_toasts()
     if frame.is_empty():
-        st.warning(f"No price data for **{ticker}** yet.")
+        st.warning(f"Couldn't fetch any price data for **{ticker}** (it may be delisted or unlisted).")
         st.stop()
     _stock_view(ticker, frame)
 else:

@@ -212,10 +212,17 @@ def refetch_stock_full(symbol: str, *, since=None) -> None:
 
 
 def list_stock_symbols() -> list[str]:
-    """Distinct equity symbols we hold OHLCV for (stock_ohlcv) — the full analysable set, not just
-    the small curated watchlist."""
+    """Distinct equity symbols we hold OHLCV for (stock_ohlcv) — the fetched set."""
     with get_session() as session:
         rows = session.exec(select(col(StockOhlcv.symbol)).distinct().order_by(col(StockOhlcv.symbol))).all()
+    return list(rows)
+
+
+def list_registry_symbols() -> list[str]:
+    """Every equity symbol in the NSE master (stock_registry) — the full pickable universe, including
+    ones we haven't fetched OHLCV for yet. Those are fetched on demand the first time they're opened."""
+    with get_session() as session:
+        rows = session.exec(select(col(StockRegistry.symbol)).distinct().order_by(col(StockRegistry.symbol))).all()
     return list(rows)
 
 
