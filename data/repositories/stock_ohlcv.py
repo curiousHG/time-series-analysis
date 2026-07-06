@@ -193,6 +193,14 @@ def refetch_stock_full(symbol: str, *, since=None) -> None:
     _fetch_and_save_stock(to_bare_symbol(symbol), since or _dt.date(2000, 1, 1), _dt.date.today())
 
 
+def list_stock_symbols() -> list[str]:
+    """Distinct equity symbols we hold OHLCV for (stock_ohlcv) — the full analysable set, not just
+    the small curated watchlist."""
+    with get_session() as session:
+        rows = session.exec(select(col(StockOhlcv.symbol)).distinct().order_by(col(StockOhlcv.symbol))).all()
+    return list(rows)
+
+
 def last_stock_ohlcv_date() -> date | None:
     """Most recent date present in stock_ohlcv (across all symbols), or None if empty."""
     with get_session() as session:

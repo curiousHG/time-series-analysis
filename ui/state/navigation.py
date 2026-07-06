@@ -36,4 +36,5 @@ def open_stock_in_analysis(symbol: str) -> None:
     st.session_state.selected_stocks = selected
     save_selection("selected_stocks", selected)
     st.session_state.stock_analysis_symbol = bare
+    st.session_state.sa_ticker_kind = "Stock"  # land on the Stock section of the picker
     st.switch_page(STOCK_ANALYSIS_PAGE)

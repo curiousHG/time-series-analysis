@@ -65,18 +65,24 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
     times = df["time"]
     has_volume = "Volume" in df.columns and bool(df["Volume"].notna().any())
 
-    # ---- Price pane: candles + overlay lines ----
+    # ---- Price pane: candles (or a close line when OHLC is incomplete) + overlay lines ----
     candles = [
         {"time": t, "open": float(o), "high": float(h), "low": float(low), "close": float(c)}
         for t, o, h, low, c in zip(times, df["Open"], df["High"], df["Low"], df["Close"], strict=False)
-        if pd.notna(c)
+        if pd.notna(o) and pd.notna(h) and pd.notna(low) and pd.notna(c)
     ]
-    price_series = [
-        {
+    if candles:
+        price = {
             "type": "Candlestick",
             "data": candles,
             "options": {"upColor": _UP, "downColor": _DOWN, "wickUpColor": _UP, "wickDownColor": _DOWN, "borderVisible": False},
-        },
+        }
+    else:
+        # Some indices (e.g. "CNX 100 Equal Weight") only carry close values — fall back to a line.
+        price = _line(times, df["Close"], _UP, "Close")
+        price["options"]["lineWidth"] = 2
+    price_series = [
+        price,
         *[
             _line(times, values, _OVERLAY_COLORS[i % len(_OVERLAY_COLORS)], name)
             for i, (name, values) in enumerate(overlays.items())
@@ -87,7 +93,7 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
     # ---- Volume pane ----
     if has_volume:
         vol = [
-            {"time": t, "value": float(v), "color": (_UP if c >= o else _DOWN)}
+            {"time": t, "value": float(v), "color": (_UP if (pd.notna(o) and pd.notna(c) and c >= o) else _DOWN)}
             for t, o, c, v in zip(times, df["Open"], df["Close"], df["Volume"], strict=False)
             if pd.notna(v)
         ]

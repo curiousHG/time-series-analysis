@@ -6,14 +6,13 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
-from data.repositories.stock import get_stock_ohlcv_statuses, list_bhavcopy_index_names
+from data.repositories.stock import list_bhavcopy_index_names, list_stock_symbols
 from indicators import INDICATOR_REGISTRY, compute_indicators
 from services.benchmarks import index_display_name
 from services.insights_service import INTERNATIONAL_INDEX_SYMBOLS
 from stocks.constants import to_bare_symbol
 from ui.components import index_detail
 from ui.components.notifications import render_toasts
-from ui.persistence.selections import load_selection, save_selection
 from ui.state.loaders import load_index_chart_ohlcv, load_stock_open_close
 from ui.views.stock_analysis import chart as chart_tab
 from ui.views.stock_analysis import fundamentals as fundamentals_tab
@@ -105,49 +104,26 @@ def _index_view(ticker: str) -> None:
             index_detail.render_constituents(ticker)
 
 
-# The watchlist is curated from the Stock Screener (search + add, or click a Symbol to open).
-# Seed it from disk, canonicalising to bare symbols (legacy entries were stored `.NS`).
-if "selected_stocks" not in st.session_state:
-    st.session_state.selected_stocks = sorted({to_bare_symbol(s) for s in load_selection("selected_stocks", [])})
-
-# Load the full available history; the chart opens focused on the last year and the
-# Daily/Weekly/Monthly buttons control candle aggregation (see chart tab).
-# `end` is normalized to midnight so this @st.cache_data loader gets a stable key within the
-# day — otherwise Timestamp.today()'s sub-second component busts the cache on every rerun and
-# the full per-symbol reload (spinner) runs again on each widget interaction.
-df = load_stock_open_close(
-    st.session_state.selected_stocks,
-    pd.to_datetime("2000-01-01"),
-    pd.Timestamp.today().normalize(),
-)
-render_toasts()  # surface any fetch errors pushed during the load
-
-symbols = df.select("Symbol").unique().to_series().to_list()
-
-# Auto-remove watchlist symbols confirmed to have no price data (2 empty fetches → unavailable).
-_missing = [s for s in st.session_state.selected_stocks if s not in symbols]
-if _missing:
-    _statuses = get_stock_ohlcv_statuses(_missing)
-    _dead = [s for s in _missing if _statuses.get(to_bare_symbol(s)) == "unavailable"]
-    if _dead:
-        st.session_state.selected_stocks = [s for s in st.session_state.selected_stocks if s not in _dead]
-        save_selection("selected_stocks", st.session_state.selected_stocks)
-        for s in _dead:
-            st.toast(f"Removed {s} — no price data (retry in Settings > Stock Data).", icon="🗑️")
-
 # Ticker picker — split into Stock vs Index sections (they were confusingly mixed in one list).
-# Stocks come from your watchlist (Stock Screener "Add ticker"); indices are the clean NSE-name set
-# (160+ incl. factor/strategy) + international, keyed off the index_ohlcv bhavcopy data.
+# Stocks are EVERY equity we hold OHLCV for (not just the small watchlist); the selected one is
+# loaded on demand. Indices are the clean NSE-name set (160+ incl. factor/strategy) + international.
 _kind = st.radio("Type", ["Stock", "Index"], horizontal=True, key="sa_ticker_kind", label_visibility="collapsed")
 
 if _kind == "Stock":
-    if not symbols:
-        st.info("No stocks in your watchlist yet — add some from the **Stock Screener**.")
+    _all_stocks = list_stock_symbols()
+    if not _all_stocks:
+        st.info("No stock data cached yet — populate the Nifty 500 / add stocks from the **Stock Screener**.")
         st.stop()
-    if st.session_state.get("sa_stock_sel") not in symbols:
-        st.session_state.pop("sa_stock_sel", None)
-    ticker = st.selectbox(f"Stock · {len(symbols)} in watchlist", symbols, key="sa_stock_sel")
-    _stock_view(ticker, df)
+    if st.session_state.get("stock_analysis_symbol") not in _all_stocks:
+        st.session_state.pop("stock_analysis_symbol", None)
+    ticker = st.selectbox(f"Stock · {len(_all_stocks):,} available", _all_stocks, key="stock_analysis_symbol")
+    # Load only the selected stock's history (fast per-symbol cache key), not the whole universe.
+    frame = load_stock_open_close([ticker], pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
+    render_toasts()
+    if frame.is_empty():
+        st.warning(f"No price data for **{ticker}** yet.")
+        st.stop()
+    _stock_view(ticker, frame)
 else:
     _nse = list_bhavcopy_index_names()
     _intl = [s for s, _, _ in INTERNATIONAL_INDEX_SYMBOLS]
