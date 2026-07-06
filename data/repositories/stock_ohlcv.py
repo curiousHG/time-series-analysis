@@ -10,16 +10,11 @@ from typing import TYPE_CHECKING
 import polars as pl
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import col, select
+from sqlmodel import col, delete, select
 
 from core.database import get_session
 from core.models import StockOhlcv, StockRegistry
-from data.fetchers.stock import (
-    fetch_nse_equity_list,
-    fetch_symbol_data,
-    fetch_symbol_data_jugaad,
-    query_stocks,
-)
+from data.fetchers.stock import fetch_nse_equity_list, fetch_symbol_data, query_stocks
 from data.repositories._ohlcv_io import _to_date, _upsert_ohlcv
 from data.repositories.index_ohlcv import ensure_index_data, refresh_index_to_today
 from data.repositories.ohlcv_watermark import _ensure_ohlcv, _get_stock_wm, _refresh_to_today, _set_stock_wm
@@ -80,15 +75,12 @@ def _yf_fetch_symbol(symbol: str) -> str:
 
 
 def _fetch_and_save_stock(symbol: str, start: date, end: date) -> None:
-    """Fetch an equity and upsert into stock_ohlcv keyed by `symbol`. NSE symbols try jugaad-data
-    first then yfinance; global symbols go straight to yfinance (fetched as-is)."""
-    yf_sym = _yf_fetch_symbol(symbol)
-    if yf_sym.endswith(".NS"):
-        data = fetch_symbol_data_jugaad(symbol, start, end)  # NSE only; strips .NS internally
-        if data is not None and not data.empty:
-            _upsert_ohlcv(StockOhlcv, symbol, pl.from_pandas(data.reset_index()))
-            return
-    data = fetch_symbol_data(yf_sym, start=start, end=end)
+    """Fetch an equity from yfinance — the single reliable source — and upsert into stock_ohlcv.
+
+    yfinance is split/dividend-adjusted and correctly dated. jugaad-data was dropped: its rows are
+    timestamped at IST midnight (18:30 UTC), so `.date()` shifted them a day forward — they landed on
+    the wrong date and never overwrote corrupt rows, and it occasionally returned spiky values."""
+    data = fetch_symbol_data(_yf_fetch_symbol(symbol), start=start, end=end)
     if data is not None and not data.empty:
         _upsert_ohlcv(StockOhlcv, symbol, pl.from_pandas(data.reset_index()))
 
@@ -185,12 +177,38 @@ def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
 
 
 def refetch_stock_full(symbol: str, *, since=None) -> None:
-    """Force a full re-fetch of an equity's history (fetch + UPSERT over existing rows) — repairs a
-    corrupt/mis-scaled series by overwriting it, WITHOUT deleting first, so it's safe to interrupt
-    (a partial overwrite still leaves valid rows; nothing is ever left empty)."""
+    """Replace an equity's entire stored history with a fresh yfinance pull, ATOMICALLY. Fetch first;
+    only if that succeeds, delete + re-insert in a single transaction. This fully cleans a corrupt or
+    mixed-scale series (a plain upsert would leave stale rows on dates the new pull happens to skip),
+    and it's interrupt-safe: a failed/empty fetch or a kill mid-transaction leaves the old rows intact."""
     import datetime as _dt  # noqa: PLC0415
 
-    _fetch_and_save_stock(to_bare_symbol(symbol), since or _dt.date(2000, 1, 1), _dt.date.today())
+    import pandas as pd  # noqa: PLC0415 — pandas only here; the repo is polars-native
+
+    bare = to_bare_symbol(symbol)
+    data = fetch_symbol_data(_yf_fetch_symbol(bare), start=(since or _dt.date(2000, 1, 1)), end=_dt.date.today())
+    if data is None or data.empty:
+        return  # never wipe on a failed/empty fetch
+
+    def _num(v: object) -> float | None:
+        return float(v) if pd.notna(v) else None
+
+    rows = [
+        {
+            "date": r.Date.date() if hasattr(r.Date, "date") else r.Date,
+            "symbol": bare,
+            "open": _num(r.Open),
+            "high": _num(r.High),
+            "low": _num(r.Low),
+            "close": _num(r.Close),
+            "volume": int(r.Volume) if pd.notna(r.Volume) else None,
+        }
+        for r in data.reset_index().itertuples(index=False)
+    ]
+    with get_session() as session:
+        session.exec(delete(StockOhlcv).where(col(StockOhlcv.symbol) == bare))
+        session.exec(pg_insert(StockOhlcv).values(rows))
+        session.commit()
 
 
 def list_stock_symbols() -> list[str]:

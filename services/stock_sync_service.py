@@ -221,6 +221,30 @@ def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] 
     return {"repaired": repaired, "failed": failed}
 
 
+def refetch_all_stocks(*, progress_cb: Callable[..., None] | None = None) -> int:
+    """Replace EVERY stock's OHLCV with a fresh yfinance pull (the single reliable source), then
+    recompute metrics. Cleans source-mixing corruption (jugaad IST-offset dates / spikes) across the
+    whole universe. Each stock is an atomic fetch-then-replace, so it's safe to interrupt. Returns
+    the number of stocks re-fetched."""
+    from data.repositories.stock import clear_stock_ohlcv_status, list_stock_symbols, refetch_stock_full  # noqa: PLC0415
+    from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
+
+    symbols = list_stock_symbols()
+    done: list[str] = []
+    for i, sym in enumerate(symbols, 1):
+        try:
+            clear_stock_ohlcv_status(sym)
+            refetch_stock_full(sym)
+            done.append(sym)
+        except Exception:
+            logger.debug("re-fetch failed for %s", sym)
+        _report(progress_cb, phase="Re-fetch", done=i, total=len(symbols))
+    if done:
+        recompute_price_metrics(done)
+    logger.info("refetch_all_stocks: re-fetched %d of %d", len(done), len(symbols))
+    return len(done)
+
+
 def sync_missing_fundamentals(*, progress_cb: Callable[..., None] | None = None) -> int:
     """Scrape screener.in fundamentals for universe stocks that don't have them yet (the Nifty 500
     seed loads price metrics only). Polite per-symbol scrape, then one metrics recompute. Returns
