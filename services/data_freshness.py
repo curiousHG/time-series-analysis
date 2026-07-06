@@ -5,13 +5,11 @@ from datetime import date, datetime
 from typing import Literal
 
 import numpy as np
-import polars as pl
 from sqlmodel import func, select
 
 from core.database import get_session
 from core.models import AmfiScheme, MfHolding, MfNav
 from data.repositories.holdings import _slug_to_code_map_cached
-from mutual_funds.display import make_slug
 from services.constants import HOLDINGS_STALE_DAYS, NAV_STALE_BUSINESS_DAYS, FreshnessStatus
 
 
@@ -173,19 +171,19 @@ def compute_holdings_freshness(scheme_names: list[str], scheme_slugs: list[str])
 
 def build_nav_status_rows(
     report: FreshnessReport,
-    nav_df: pl.DataFrame,
+    nav_stats: dict[str, tuple[int, object]],
     short_by_name: dict[str, str],
 ) -> list[dict]:
-    """One dict per fund: Fund · Records · First Date · Last Date · Days Old · Status."""
+    """One dict per fund: Fund · Records · First Date · Last Date · Days Old · Status.
+    `nav_stats` maps scheme name → (record_count, first_date) — see nav.nav_record_stats."""
     rows: list[dict] = []
     for r in report.rows:
-        scheme_nav = nav_df.filter(pl.col("schemeName") == r.scheme_name)
-        first_date = str(scheme_nav.select("date").to_series().min()) if scheme_nav.height > 0 else "-"
+        count, first_date = nav_stats.get(r.scheme_name, (0, None))
         rows.append(
             {
                 "Fund": short_by_name.get(r.scheme_name, r.scheme_name),
-                "Records": scheme_nav.height,
-                "First Date": first_date,
+                "Records": count,
+                "First Date": str(first_date) if first_date else "-",
                 "Last Date": str(r.last_date) if r.last_date else "-",
                 "Days Old": r.days_old,
                 "Status": r.status.capitalize(),
@@ -196,21 +194,18 @@ def build_nav_status_rows(
 
 def build_holdings_status_rows(
     report: FreshnessReport,
-    holdings_df: pl.DataFrame,
+    holdings_counts: dict[str, int],
     short_by_name: dict[str, str],
 ) -> list[dict]:
-    """One dict per fund: Fund · Holdings Count · Last Portfolio Date · Days Old · Status."""
-    rows: list[dict] = []
-    for r in report.rows:
-        slug = make_slug(r.scheme_name)
-        scheme_holdings = holdings_df.filter(pl.col("schemeSlug") == slug)
-        rows.append(
-            {
-                "Fund": short_by_name.get(r.scheme_name, r.scheme_name),
-                "Holdings Count": scheme_holdings.height,
-                "Last Portfolio Date": str(r.last_date) if r.last_date else "-",
-                "Days Old": r.days_old,
-                "Status": r.status.capitalize(),
-            }
-        )
-    return rows
+    """One dict per fund: Fund · Holdings Count · Last Portfolio Date · Days Old · Status.
+    `holdings_counts` maps scheme name → holding-row count — see holdings.holdings_count_by_scheme."""
+    return [
+        {
+            "Fund": short_by_name.get(r.scheme_name, r.scheme_name),
+            "Holdings Count": holdings_counts.get(r.scheme_name, 0),
+            "Last Portfolio Date": str(r.last_date) if r.last_date else "-",
+            "Days Old": r.days_old,
+            "Status": r.status.capitalize(),
+        }
+        for r in report.rows
+    ]

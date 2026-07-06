@@ -91,6 +91,21 @@ def save_nav_df(df: pl.DataFrame) -> None:
     logger.debug("Saved %d NAV rows to database", df.height)
 
 
+def nav_record_stats(scheme_names: list[str] | None = None) -> dict[str, tuple[int, object]]:
+    """Per-scheme NAV record count + earliest date, keyed by scheme name. An aggregate for the
+    Settings status tables — avoids loading the full NAV history (millions of rows) just to count."""
+    with get_session() as session:
+        stmt = (
+            select(AmfiScheme.scheme_name, func.count(col(MfNav.date)), func.min(col(MfNav.date)))
+            .join(AmfiScheme, MfNav.scheme_code == AmfiScheme.scheme_code)
+            .group_by(col(AmfiScheme.scheme_name))
+        )
+        if scheme_names:
+            stmt = stmt.where(col(AmfiScheme.scheme_name).in_(scheme_names))
+        rows = session.exec(stmt).all()
+    return {name: (count, first) for name, count, first in rows}
+
+
 def load_nav_df(scheme_names: list[str] | None = None) -> pl.DataFrame:
     """Load NAV as (date, nav, schemeName), JOINing mf_nav -> amfi_schemes for the name."""
     with get_session() as session:

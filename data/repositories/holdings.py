@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 
 import polars as pl
-from sqlmodel import col, delete, select
+from sqlmodel import col, delete, func, select
 
 from core.database import get_session
 from core.models import AmfiScheme, MfAssetAllocation, MfHolding, MfSectorAllocation
@@ -174,6 +174,21 @@ def _latest_per_scheme(df: pl.DataFrame, dedup_keys: list[str]) -> pl.DataFrame:
         .drop("_latest")
         .unique(subset=dedup_keys, keep="first")
     )
+
+
+def holdings_count_by_scheme(scheme_names: list[str] | None = None) -> dict[str, int]:
+    """Per-scheme holdings row count, keyed by scheme name. An aggregate for the Settings status
+    tables — avoids loading every holding row just to count them."""
+    with get_session() as session:
+        stmt = (
+            select(AmfiScheme.scheme_name, func.count(col(MfHolding.scheme_code)))
+            .join(AmfiScheme, MfHolding.scheme_code == AmfiScheme.scheme_code)
+            .group_by(col(AmfiScheme.scheme_name))
+        )
+        if scheme_names:
+            stmt = stmt.where(col(AmfiScheme.scheme_name).in_(scheme_names))
+        rows = session.exec(stmt).all()
+    return dict(rows)
 
 
 def load_holdings(slugs: list[str] | None = None) -> pl.DataFrame:

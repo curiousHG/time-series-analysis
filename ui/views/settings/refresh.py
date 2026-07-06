@@ -10,8 +10,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from data.repositories.holdings import load_holdings
-from data.repositories.nav import load_nav_df
+from data.repositories.holdings import holdings_count_by_scheme
+from data.repositories.nav import nav_record_stats
 from mutual_funds.display import make_slug
 from services.data_freshness import (
     build_holdings_status_rows,
@@ -82,7 +82,7 @@ def render() -> None:
         return
 
     fr = _fund_freshness()
-    names, slugs = fr["names"], fr["slugs"]
+    names = fr["names"]
     nav_report, holdings_report = fr["nav"], fr["holdings"]
     short_by_name = get_short_names(tuple(names))
 
@@ -108,18 +108,18 @@ def render() -> None:
 
     _render_retry_unavailable(short_by_name)
 
-    with st.expander("Status details", expanded=False):
-        nav_df = load_nav_df(names)
-        holdings_df = load_holdings(slugs)
+    if st.checkbox("Show per-fund status details", key="fund_status_details"):
+        nav_stats = nav_record_stats(names)
+        holdings_counts = holdings_count_by_scheme(names)
         _render_status_table(
             title="NAV",
             stale=f"{nav_report.stale_count} of {nav_report.total} tracked funds are stale.",
-            rows=build_nav_status_rows(nav_report, nav_df, short_by_name),
+            rows=build_nav_status_rows(nav_report, nav_stats, short_by_name),
         )
         _render_status_table(
             title="Holdings",
             stale=f"{holdings_report.stale_count} of {holdings_report.total} tracked funds are stale.",
-            rows=build_holdings_status_rows(holdings_report, holdings_df, short_by_name),
+            rows=build_holdings_status_rows(holdings_report, holdings_counts, short_by_name),
         )
 
 
