@@ -139,6 +139,15 @@ def save_company_fundamentals(symbol: str, data: dict | None) -> bool:
             session.commit()
             return False
 
+        m_row = _metrics_row(symbol, data)
+        # A page that loaded but carries no top-ratio values is a soft failure — a throttled/blocked
+        # response, or the empty consolidated page of a standalone-only reporter. Don't clobber
+        # existing good data with nulls and don't mark it "available"; leave it to be retried.
+        if all(m_row.get(f) is None for f in _TMAP.values()):
+            _mark_status(session, symbol, "unavailable", now)
+            session.commit()
+            return False
+
         q_rows = _quarterly_rows(symbol, data.get("quarters", {}))
         if q_rows:
             qstmt = pg_insert(StockQuarterly).values(q_rows)
@@ -148,7 +157,6 @@ def save_company_fundamentals(symbol: str, data: dict | None) -> bool:
             )
             session.exec(qstmt)
 
-        m_row = _metrics_row(symbol, data)
         mstmt = pg_insert(StockMetrics).values(m_row)
         mstmt = mstmt.on_conflict_do_update(
             index_elements=["symbol"],

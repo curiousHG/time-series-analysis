@@ -127,27 +127,8 @@ def _parse_table(section) -> dict[str, dict[str, float | None]]:
     return out
 
 
-def fetch_company(symbol: str, *, consolidated: bool = True) -> dict | None:
-    """Scrape a company's fundamentals page into a structured dict (None if not found).
-
-    Tries the consolidated page first, falling back to standalone (some companies have only
-    standalone). Returns top ratios + the quarter/annual/shareholding tables.
-    """
-    slug = _SLUG_OVERRIDES.get(symbol, symbol)
-    paths = [f"/company/{slug}/consolidated/", f"/company/{slug}/"]
-    if not consolidated:
-        paths.reverse()
-    with _client() as c:
-        html = None
-        for path in paths:
-            r = c.get(path)
-            if r.status_code == 200 and "/company/" in str(r.url):
-                html = r.text
-                break
-        if html is None:
-            logger.warning("screener.in: no company page for %s", symbol)
-            return None
-
+def _parse_company_page(html: str, symbol: str) -> dict:
+    """Parse a screener.in company page's HTML into the structured fundamentals dict."""
     soup = BeautifulSoup(html, "html.parser")
     name_el = soup.select_one("h1")
     top_ratios: dict[str, float | None] = {}
@@ -164,6 +145,34 @@ def fetch_company(symbol: str, *, consolidated: bool = True) -> dict | None:
         sec = soup.find(id=sec_id)
         data[key] = _parse_table(sec) if sec else {}
     return data
+
+
+def fetch_company(symbol: str, *, consolidated: bool = True) -> dict | None:
+    """Scrape a company's fundamentals page into a structured dict (None if not found).
+
+    Prefers the consolidated page, but companies that report only standalone financials (e.g. Hitachi
+    Energy India / POWERINDIA) still serve a consolidated page — it loads 200 with the ratio labels
+    present but every value blank. So we don't stop at the first page that loads: we keep the first one
+    whose top-ratios actually carry values, and only fall back to an empty page if none do.
+    """
+    slug = _SLUG_OVERRIDES.get(symbol, symbol)
+    paths = [f"/company/{slug}/consolidated/", f"/company/{slug}/"]
+    if not consolidated:
+        paths.reverse()
+    fallback: dict | None = None
+    with _client() as c:
+        for path in paths:
+            r = c.get(path)
+            if r.status_code != 200 or "/company/" not in str(r.url):
+                continue
+            data = _parse_company_page(r.text, symbol)
+            if any(v is not None for v in data["top_ratios"].values()):
+                return data  # a page with real ratio values — prefer it
+            fallback = fallback or data  # loaded but ratios blank — remember, keep trying
+    if fallback is not None:
+        return fallback
+    logger.warning("screener.in: no company page for %s", symbol)
+    return None
 
 
 def run_screen(
