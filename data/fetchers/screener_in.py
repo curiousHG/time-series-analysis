@@ -30,7 +30,8 @@ HEADERS = {
     "Accept": "text/html,application/json,application/xhtml+xml",
 }
 # NSE symbol → screener.in slug, for names that differ (corporate-action renames etc.).
-_SLUG_OVERRIDES = {"TATAMOTORS": "TMCV"}
+# NSE symbol → screener.in slug, where they diverge (mergers/renames keep the old URL).
+_SLUG_OVERRIDES = {"TATAMOTORS": "TMCV", "LTIM": "MINDTREE"}
 # Company-page section ids → the structured key we expose.
 _SECTIONS = {
     "quarters": "quarters",
