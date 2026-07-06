@@ -48,11 +48,12 @@ def render_trailing(idf: pl.DataFrame) -> None:
 
 
 def render_constituents(index_name: str) -> None:
-    """Constituent stocks of an NSE index (screener.in), enriched with universe metrics where held."""
+    """Constituent stocks of an NSE index (NSE list → screener.in), enriched with universe metrics."""
+    st.subheader(f"Constituents · {index_name}")
     consts = load_index_constituents_cached(index_name)
     if not consts:
+        st.info(f"No published constituent list for **{index_name}** (common for factor/strategy indices).")
         return
-    st.subheader(f"Constituents · {index_name}")
     universe = load_stock_screener_df_cached()
     if not universe.is_empty() and "symbol" in universe.columns:
         sub = universe.filter(pl.col("symbol").is_in(consts))

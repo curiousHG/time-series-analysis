@@ -193,6 +193,25 @@ def fetch_nse_index_bhavcopy(day: date) -> pd.DataFrame | None:
     return out[out["Close"].notna() & out["Date"].notna()]
 
 
+def fetch_nse_index_constituents(index_name: str) -> list[str]:
+    """Constituent symbols of an NSE index from its published `ind_<name>list.csv` (full official
+    list — covers broad/sectoral indices incl. midcap/smallcap). Factor/strategy indices use
+    irregular file names and 404 here; the caller falls back to screener.in. Returns [] on any miss."""
+    slug = "".join(c for c in index_name.lower() if c.isalnum())
+    url = f"https://nsearchives.nseindia.com/content/indices/ind_{slug}list.csv"
+    try:
+        r = httpx.get(url, headers=NSE_HEADERS, timeout=20, follow_redirects=True)
+        r.raise_for_status()
+        df = pd.read_csv(StringIO(r.text))
+    except Exception as e:
+        logger.debug("NSE constituents miss for %s (%s): %s", index_name, slug, e)
+        return []
+    df.columns = [c.strip() for c in df.columns]
+    if "Symbol" not in df.columns:
+        return []
+    return [str(s).strip() for s in df["Symbol"] if str(s).strip()]
+
+
 def fetch_nifty500_symbols() -> list[str]:
     """Bare NSE symbols of the Nifty 500 constituents (from NSE's published index CSV)."""
     r = httpx.get(NIFTY500_LIST_URL, headers=NSE_HEADERS, timeout=30, follow_redirects=True)

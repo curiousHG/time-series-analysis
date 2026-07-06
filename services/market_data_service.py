@@ -29,7 +29,13 @@ _INDEX_NAME_SLUG = {
 
 
 def index_constituents(index_name: str) -> list[str]:
-    """Constituent NSE symbols of an index (via screener.in), best-effort. Resolves the NSE index
-    name to a screener slug, falling back to a squashed-uppercase heuristic for factor indices."""
+    """Constituent NSE symbols of an index. Prefers NSE's official `ind_<name>list.csv` (full lists
+    for broad/sectoral indices), then falls back to screener.in (sectoral + Nifty 50). Returns [] for
+    indices neither source lists (many factor/strategy indices)."""
+    from data.fetchers.stock import fetch_nse_index_constituents  # noqa: PLC0415 — defer off boot
+
+    nse = fetch_nse_index_constituents(index_name)
+    if nse:
+        return nse
     slug = _INDEX_NAME_SLUG.get(index_name.strip().lower()) or re.sub(r"[^A-Za-z0-9]", "", index_name).upper()
     return fetch_index_constituents(slug)

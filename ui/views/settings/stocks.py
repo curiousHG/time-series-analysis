@@ -13,8 +13,8 @@ from services.stock_sync_service import (
     backfill_indices_history,
     list_unavailable_stocks,
     recompute_all_stock_metrics,
+    refetch_all_stocks,
     refresh_all_stock_data,
-    repair_corrupt_ohlcv,
     retry_stock_ohlcv,
     stock_data_health,
     sync_missing_fundamentals,
@@ -54,10 +54,10 @@ _BACKFILL = BackgroundRefresh(
     summarize=lambda r: f"{r:,} rows",
 )
 _REPAIR = BackgroundRefresh(
-    "stock_ohlcv_repair",
-    "Repair corrupt prices",
+    "stock_ohlcv_refetch",
+    "Price re-fetch",
     cache_clearers=(_clear_caches,),
-    summarize=lambda r: f"repaired {len(r['repaired'])}, {len(r['failed'])} failed" if isinstance(r, dict) else str(r),
+    summarize=lambda r: f"{r:,} stocks re-fetched" if isinstance(r, int) else str(r),
 )
 _FUNDA = BackgroundRefresh(
     "stock_fundamentals_sync",
@@ -117,13 +117,13 @@ def render() -> None:
             st.toast(f"Recomputed metrics for {n:,} stocks.", icon="✅")
             st.rerun()
 
-    st.caption("Repair fixes stocks whose stored history has a bad price-scale jump (corrupts returns/CAPM). "
-               "Fundamentals scrapes screener.in for universe stocks that don't have any yet.")
+    st.caption("Re-fetch replaces every stock's full history from yfinance (the single reliable source) — "
+               "fixes any source-mixing corruption. Fundamentals scrapes screener.in for universe stocks that lack it.")
     b4, b5 = st.columns(2)
     with b4:
         _REPAIR.start_button(
-            "🩺 Repair corrupt price data",
-            lambda: repair_corrupt_ohlcv(progress_cb=progress_cb(_REPAIR.key)),
+            "🩺 Re-fetch all prices (yfinance)",
+            lambda: refetch_all_stocks(progress_cb=progress_cb(_REPAIR.key)),
         )
     with b5:
         _FUNDA.start_button(
