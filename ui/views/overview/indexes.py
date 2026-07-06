@@ -11,15 +11,10 @@ from data.repositories.stock import list_bhavcopy_index_names
 from indicators import INDICATOR_REGISTRY, compute_indicators
 from services.benchmarks import index_display_name
 from services.insights_service import INTERNATIONAL_INDEX_SYMBOLS
+from ui.components import index_detail
 from ui.components.metric_tiles import EM_DASH, fmt_pct
 from ui.state.filter_persistence import hydrate_filters, make_persist_callback
-from ui.state.loaders import (
-    load_index_chart_ohlcv,
-    load_index_constituents_cached,
-    load_index_valuation_cached,
-    load_international_pulse_cached,
-    load_stock_screener_df_cached,
-)
+from ui.state.loaders import load_index_chart_ohlcv, load_international_pulse_cached
 from ui.views.overview import sector_performance
 from ui.views.stock_analysis import chart as chart_tab
 
@@ -40,7 +35,7 @@ def render() -> None:
     sel = _render_chart()
     if sel and not sel.startswith("^"):
         st.divider()
-        _render_constituents(sel)
+        index_detail.render_constituents(sel)
     st.divider()
     sector_performance.render()
 
@@ -76,11 +71,12 @@ def _render_chart() -> str | None:
         key="ov_idx_sel",
         on_change=_persist,
     )
-    _render_valuation(sel)
+    index_detail.render_valuation(sel)
     idf = load_index_chart_ohlcv(sel, pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
     if idf.is_empty():
         st.warning("No price history for this index yet — it fills in as the bhavcopy backfills.")
         return sel
+    index_detail.render_trailing(idf)
 
     sdf = idf.sort("Date").with_columns(pl.col("Date").cast(pl.Utf8).alias("time")).to_pandas()
     interval = (
@@ -102,33 +98,3 @@ def _render_chart() -> str | None:
     overlays, panels = compute_indicators(chart_df, overlays_sel + panels_sel)
     chart_tab.render(chart_df, overlays, panels, panels_sel, index_display_name(sel) if sel.startswith("^") else sel)
     return sel
-
-
-def _render_valuation(symbol: str) -> None:
-    """Latest P/E · P/B · Div Yield · turnover for the selected index (NSE bhavcopy). Foreign `^`
-    indices have none — the row is simply skipped."""
-    val = load_index_valuation_cached(symbol)
-    if not val:
-        return
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("P/E", f"{val['pe']:.1f}" if val.get("pe") is not None else EM_DASH)
-    c2.metric("P/B", f"{val['pb']:.2f}" if val.get("pb") is not None else EM_DASH)
-    c3.metric("Div Yield", f"{val['div_yield']:.2f}%" if val.get("div_yield") is not None else EM_DASH)
-    c4.metric("Turnover", f"₹{val['turnover_cr']:,.0f} Cr" if val.get("turnover_cr") is not None else EM_DASH)
-
-
-def _render_constituents(index_name: str) -> None:
-    consts = load_index_constituents_cached(index_name)
-    if not consts:
-        return
-    st.subheader(f"Constituents · {index_name}")
-    universe = load_stock_screener_df_cached()
-    if not universe.is_empty() and "symbol" in universe.columns:
-        sub = universe.filter(pl.col("symbol").is_in(consts))
-        cols = [c for c in ("symbol", "current_price", "return_1y", "alpha_1y", "stock_pe", "roe") if c in sub.columns]
-        if sub.height and cols:
-            st.dataframe(sub.select(cols).to_pandas(), use_container_width=True, hide_index=True, height=320)
-            st.caption(f"{len(consts)} constituents (via screener.in).")
-            return
-    st.write(", ".join(consts))
-    st.caption(f"{len(consts)} constituents (via screener.in).")

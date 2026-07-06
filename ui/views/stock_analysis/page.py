@@ -6,13 +6,15 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
-from data.repositories.stock import get_stock_ohlcv_statuses, list_index_symbols
+from data.repositories.stock import get_stock_ohlcv_statuses, list_bhavcopy_index_names
 from indicators import INDICATOR_REGISTRY, compute_indicators
 from services.benchmarks import index_display_name
-from stocks.constants import is_index_symbol, to_bare_symbol
+from services.insights_service import INTERNATIONAL_INDEX_SYMBOLS
+from stocks.constants import to_bare_symbol
+from ui.components import index_detail
 from ui.components.notifications import render_toasts
 from ui.persistence.selections import load_selection, save_selection
-from ui.state.loaders import load_index_ohlcv, load_stock_open_close
+from ui.state.loaders import load_index_chart_ohlcv, load_stock_open_close
 from ui.views.stock_analysis import chart as chart_tab
 from ui.views.stock_analysis import fundamentals as fundamentals_tab
 from ui.views.stock_analysis import strategy_backtest as backtest_tab
@@ -67,6 +69,42 @@ def _render_chart(sdf: pd.DataFrame, label: str) -> None:
     overlays, panels = compute_indicators(chart_df, selected_overlays + selected_panels)
     chart_tab.render(chart_df, overlays, panels, selected_panels, label)
 
+
+def _stock_view(ticker: str, frame: pl.DataFrame) -> None:
+    """Equity view: chart · fundamentals · backtest. Refreshes OHLCV on first open."""
+    _refresh_stock_on_open(ticker, frame)
+    sdf = _chart_pdf(frame, ticker)
+    tab_chart, tab_fundamentals, tab_backtest = st.tabs(["Chart", "Fundamentals", "Strategy Backtest"])
+    with tab_chart:
+        _render_chart(sdf, ticker)
+    with tab_fundamentals:
+        fundamentals_tab.render(ticker)
+    with tab_backtest:
+        backtest_tab.render(sdf, ticker)
+
+
+def _index_view(ticker: str) -> None:
+    """Index view: valuation (P/E·P/B·Div-Yield·turnover) + trailing return + chart + constituents.
+    Screener.in fundamentals / CAPM backtest are equity-only, so those tabs are replaced here."""
+    label = index_display_name(ticker) if ticker.startswith("^") else ticker
+    idf = load_index_chart_ohlcv(ticker, pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
+    render_toasts()
+    st.subheader(label)
+    index_detail.render_valuation(ticker)
+    if idf.is_empty():
+        st.warning(f"No price history for **{label}** yet.")
+        return
+    index_detail.render_trailing(idf)
+    tab_chart, tab_constituents = st.tabs(["Chart", "Constituents"])
+    with tab_chart:
+        _render_chart(_chart_pdf(idf, ticker), label)
+    with tab_constituents:
+        if ticker.startswith("^"):
+            st.caption("Constituent breakdown isn't available for foreign indices.")
+        else:
+            index_detail.render_constituents(ticker)
+
+
 # The watchlist is curated from the Stock Screener (search + add, or click a Symbol to open).
 # Seed it from disk, canonicalising to bare symbols (legacy entries were stored `.NS`).
 if "selected_stocks" not in st.session_state:
@@ -97,35 +135,32 @@ if _missing:
         for s in _dead:
             st.toast(f"Removed {s} — no price data (retry in Settings > Stock Data).", icon="🗑️")
 
-# Combined ticker picker: watchlist stocks + indices we hold data for, in one selector.
-# (Tickers are added from the Stock Screener's "Add ticker" control.)
-_ticker_opts = symbols + list_index_symbols()
-if st.session_state.get("stock_analysis_symbol") not in _ticker_opts:
-    st.session_state.pop("stock_analysis_symbol", None)
+# Ticker picker — split into Stock vs Index sections (they were confusingly mixed in one list).
+# Stocks come from your watchlist (Stock Screener "Add ticker"); indices are the clean NSE-name set
+# (160+ incl. factor/strategy) + international, keyed off the index_ohlcv bhavcopy data.
+_kind = st.radio("Type", ["Stock", "Index"], horizontal=True, key="sa_ticker_kind", label_visibility="collapsed")
 
-ticker = st.selectbox(
-    "Ticker (stock or index)",
-    _ticker_opts,
-    format_func=lambda t: f"{index_display_name(t)}  ·  index" if is_index_symbol(t) else t,
-    key="stock_analysis_symbol",
-)
-
-if ticker and is_index_symbol(ticker):
-    # Index view — chart only (screener.in fundamentals / CAPM backtest are equity-only).
-    idf = load_index_ohlcv(ticker, pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
-    render_toasts()
-    if idf.is_empty():
-        st.warning(f"No price history for **{index_display_name(ticker)}**.")
-    else:
-        st.caption(f"Viewing index **{index_display_name(ticker)}** ({ticker}) — chart only.")
-        _render_chart(_chart_pdf(idf, ticker), index_display_name(ticker))
-elif ticker:
-    _refresh_stock_on_open(ticker, df)  # pull this stock's OHLCV forward to today on first open
-    sdf = _chart_pdf(df, ticker)
-    tab_chart, tab_fundamentals, tab_backtest = st.tabs(["Chart", "Fundamentals", "Strategy Backtest"])
-    with tab_chart:
-        _render_chart(sdf, ticker)
-    with tab_fundamentals:
-        fundamentals_tab.render(ticker)
-    with tab_backtest:
-        backtest_tab.render(sdf, ticker)
+if _kind == "Stock":
+    if not symbols:
+        st.info("No stocks in your watchlist yet — add some from the **Stock Screener**.")
+        st.stop()
+    if st.session_state.get("sa_stock_sel") not in symbols:
+        st.session_state.pop("sa_stock_sel", None)
+    ticker = st.selectbox(f"Stock · {len(symbols)} in watchlist", symbols, key="sa_stock_sel")
+    _stock_view(ticker, df)
+else:
+    _nse = list_bhavcopy_index_names()
+    _intl = [s for s, _, _ in INTERNATIONAL_INDEX_SYMBOLS]
+    _idx_opts = _nse + _intl
+    if not _idx_opts:
+        st.info("No index data yet — refresh from **Settings > Stock Data**.")
+        st.stop()
+    if st.session_state.get("sa_index_sel") not in _idx_opts:
+        st.session_state.pop("sa_index_sel", None)
+    ticker = st.selectbox(
+        f"Index · {len(_nse)} NSE + {len(_intl)} international",
+        _idx_opts,
+        format_func=lambda s: index_display_name(s) if s.startswith("^") else s,
+        key="sa_index_sel",
+    )
+    _index_view(ticker)
