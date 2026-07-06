@@ -1,14 +1,14 @@
-"""Chart tab — Plotly candlestick with indicator overlays + panels.
+"""Chart tab — TradingView Lightweight Charts candlestick with indicator overlays + panes.
 
-Full history is plotted; the view opens focused on the last year (zoom/pan or
-double-click to autoscale for the whole series). Candle interval (Daily / Weekly /
-Monthly) is chosen upstream in page.py via `resample_ohlc`.
+Uses the `streamlit-lightweight-charts` component (proper financial charting: crosshair, scroll/zoom,
+fixed bar spacing) instead of a static Plotly figure. Layout: a price pane (candles + overlay lines),
+an optional volume pane, and one stacked pane per selected panel indicator (RSI/MACD/…). Candle
+interval (Daily/Weekly/Monthly) is chosen upstream via `resample_ohlc`.
 """
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
-from plotly.subplots import make_subplots
+from streamlit_lightweight_charts import renderLightweightCharts
 
 from indicators import INDICATOR_REGISTRY
 
@@ -17,7 +17,6 @@ _PANEL_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444"]
 _UP, _DOWN = "#26a69a", "#ef5350"
 _BG, _FG, _GRID = "#0f1117", "#e2e8f0", "#1e293b"
 
-# pandas resample rules — "MS"/"W" are valid across pandas versions (avoids the "M" deprecation).
 _RESAMPLE_RULE = {"Weekly": "W", "Monthly": "MS"}
 
 
@@ -38,122 +37,91 @@ def resample_ohlc(sdf: pd.DataFrame, interval: str) -> pd.DataFrame:
     return agg
 
 
+def _chart_opts(height: int) -> dict:
+    """Shared dark-theme chart options (a TradingView-style pane)."""
+    return {
+        "height": height,
+        "layout": {"background": {"type": "solid", "color": _BG}, "textColor": _FG},
+        "grid": {"vertLines": {"color": _GRID}, "horzLines": {"color": _GRID}},
+        "timeScale": {"borderColor": _GRID, "barSpacing": 7, "rightOffset": 4},
+        "rightPriceScale": {"borderColor": _GRID},
+        "crosshair": {"mode": 0},
+    }
+
+
+def _line(times, values, color: str, title: str) -> dict:
+    data = [{"time": t, "value": float(v)} for t, v in zip(times, values, strict=False) if pd.notna(v)]
+    return {
+        "type": "Line",
+        "data": data,
+        "options": {"color": color, "lineWidth": 1, "priceLineVisible": False, "lastValueVisible": False, "title": title},
+    }
+
+
 def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: list[str], symbol: str):
     df = sdf.reset_index(drop=True)
-    dates = pd.to_datetime(df["Date"])
+    if "time" not in df.columns:
+        df = df.assign(time=pd.to_datetime(df["Date"]).dt.strftime("%Y-%m-%d"))
+    times = df["time"]
     has_volume = "Volume" in df.columns and bool(df["Volume"].notna().any())
 
-    # Rows: price (tall) + optional volume + one per panel. Weights → normalized heights.
-    specs = [("price", 3.0)]
+    # ---- Price pane: candles + overlay lines ----
+    candles = [
+        {"time": t, "open": float(o), "high": float(h), "low": float(low), "close": float(c)}
+        for t, o, h, low, c in zip(times, df["Open"], df["High"], df["Low"], df["Close"], strict=False)
+        if pd.notna(c)
+    ]
+    price_series = [
+        {
+            "type": "Candlestick",
+            "data": candles,
+            "options": {"upColor": _UP, "downColor": _DOWN, "wickUpColor": _UP, "wickDownColor": _DOWN, "borderVisible": False},
+        },
+        *[
+            _line(times, values, _OVERLAY_COLORS[i % len(_OVERLAY_COLORS)], name)
+            for i, (name, values) in enumerate(overlays.items())
+        ],
+    ]
+    charts = [{"chart": _chart_opts(430), "series": price_series}]
+
+    # ---- Volume pane ----
     if has_volume:
-        specs.append(("volume", 1.0))
-    specs += [(p, 1.5) for p in selected_panels]
-    total_w = sum(w for _, w in specs)
-    row_of = {name: i + 1 for i, (name, _) in enumerate(specs)}
-
-    fig = make_subplots(
-        rows=len(specs),
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.02,
-        row_heights=[w / total_w for _, w in specs],
-    )
-
-    fig.add_trace(
-        go.Candlestick(
-            x=dates,
-            open=df["Open"],
-            high=df["High"],
-            low=df["Low"],
-            close=df["Close"],
-            name=symbol,
-            increasing_line_color=_UP,
-            decreasing_line_color=_DOWN,
-            increasing_fillcolor=_UP,
-            decreasing_fillcolor=_DOWN,
-        ),
-        row=1,
-        col=1,
-    )
-
-    for idx, (name, values) in enumerate(overlays.items()):
-        fig.add_trace(
-            go.Scatter(
-                x=dates,
-                y=values,
-                mode="lines",
-                name=name,
-                line=dict(color=_OVERLAY_COLORS[idx % len(_OVERLAY_COLORS)], width=1.2),
-            ),
-            row=1,
-            col=1,
+        vol = [
+            {"time": t, "value": float(v), "color": (_UP if c >= o else _DOWN)}
+            for t, o, c, v in zip(times, df["Open"], df["Close"], df["Volume"], strict=False)
+            if pd.notna(v)
+        ]
+        charts.append(
+            {"chart": _chart_opts(120), "series": [{"type": "Histogram", "data": vol, "options": {"priceFormat": {"type": "volume"}}}]}
         )
 
-    if has_volume:
-        vol_colors = [_UP if c >= o else _DOWN for o, c in zip(df["Open"], df["Close"], strict=False)]
-        fig.add_trace(
-            go.Bar(x=dates, y=df["Volume"], marker_color=vol_colors, name="Volume", showlegend=False),
-            row=row_of["volume"],
-            col=1,
-        )
-        fig.update_yaxes(title_text="Vol", row=row_of["volume"], col=1)
-
-    # Panel indicators — recompute per indicator so multi-series (MACD etc.) group together.
+    # ---- Panel panes (recompute per indicator so multi-series like MACD group together) ----
     for ind_name in selected_panels:
         result = INDICATOR_REGISTRY[ind_name]["fn"](df)
-        r = row_of[ind_name]
+        series = []
         for i, (series_name, values) in enumerate(result.items()):
             if series_name == "Histogram":
-                fig.add_trace(
-                    go.Bar(
-                        x=dates,
-                        y=values,
-                        name=series_name,
-                        marker_color=[_UP if v >= 0 else _DOWN for v in values.fillna(0)],
-                        showlegend=False,
-                    ),
-                    row=r,
-                    col=1,
+                series.append(
+                    {
+                        "type": "Histogram",
+                        "data": [
+                            {"time": t, "value": float(v), "color": (_UP if v >= 0 else _DOWN)}
+                            for t, v in zip(times, values, strict=False)
+                            if pd.notna(v)
+                        ],
+                        "options": {},
+                    }
                 )
             else:
-                fig.add_trace(
-                    go.Scatter(
-                        x=dates,
-                        y=values,
-                        mode="lines",
-                        name=series_name,
-                        line=dict(color=_PANEL_COLORS[i % len(_PANEL_COLORS)], width=1.3),
-                    ),
-                    row=r,
-                    col=1,
-                )
-        if ind_name == "RSI":
-            for level in (30, 70):
-                fig.add_hline(y=level, line_dash="dash", line_color="#475569", row=r, col=1)
-        fig.update_yaxes(title_text=ind_name, row=r, col=1)
-
-    # Open focused on the last year; y fit to that window so candles aren't squashed by
-    # all-time extremes. Double-click / autoscale reveals the full series.
-    last = dates.max()
-    start = max(last - pd.DateOffset(years=1), dates.min())
-    fig.update_xaxes(range=[start, last], gridcolor=_GRID)
-    fig.update_yaxes(gridcolor=_GRID)
-    window = df[dates >= start]
-    if not window.empty:
-        lo, hi = float(window["Low"].min()), float(window["High"].max())
-        pad = (hi - lo) * 0.05 or abs(hi) * 0.01
-        fig.update_yaxes(range=[lo - pad, hi + pad], row=1, col=1)
-
-    fig.update_layout(
-        height=420 + (120 if has_volume else 0) + 180 * len(selected_panels),
-        margin=dict(l=40, r=20, t=20, b=20),
-        paper_bgcolor=_BG,
-        plot_bgcolor=_BG,
-        font=dict(color=_FG),
-        xaxis_rangeslider_visible=False,
-        dragmode="pan",
-        legend=dict(orientation="h", y=1.02, yanchor="bottom"),
-    )
+                series.append(_line(times, values, _PANEL_COLORS[i % len(_PANEL_COLORS)], series_name))
+        if ind_name == "RSI" and series:
+            series[0]["priceLines"] = [
+                {"price": 70, "color": "#475569", "lineStyle": 2, "lineWidth": 1},
+                {"price": 30, "color": "#475569", "lineStyle": 2, "lineWidth": 1},
+            ]
+        opts = _chart_opts(150)
+        opts["watermark"] = {"visible": True, "text": ind_name, "color": "rgba(148,163,184,0.25)", "fontSize": 12, "horzAlign": "left", "vertAlign": "top"}
+        charts.append({"chart": opts, "series": series})
 
     st.subheader(symbol)
-    st.plotly_chart(fig, use_container_width=True, key=f"chart_{symbol}")
+    renderLightweightCharts(charts, key=f"lwc_{symbol}")

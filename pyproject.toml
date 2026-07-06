@@ -21,6 +21,7 @@ dependencies = [
     "quantstats>=0.0.77",
     "scipy>=1.13",
     "jugaad-data>=0.30",
+    "streamlit-lightweight-charts>=0.7",
     "watchdog>=6.0.0",
     "streamlit-aggrid>=1.2.1.post2",
 ]
