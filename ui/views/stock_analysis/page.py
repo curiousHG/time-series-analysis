@@ -6,14 +6,17 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
-from data.repositories.stock import list_bhavcopy_index_names, list_registry_symbols
 from indicators import INDICATOR_REGISTRY, compute_indicators
 from services.benchmarks import index_display_name
-from services.insights_service import INTERNATIONAL_INDEX_SYMBOLS
 from stocks.constants import to_bare_symbol
-from ui.components import index_detail
+from ui.components import etf_detail, index_detail
 from ui.components.notifications import render_toasts
-from ui.state.loaders import load_index_chart_ohlcv, load_stock_open_close, load_stock_screener_df_cached
+from ui.state.loaders import (
+    load_analysis_catalog_cached,
+    load_index_chart_ohlcv,
+    load_stock_open_close,
+    load_stock_screener_df_cached,
+)
 from ui.views.stock_analysis import chart as chart_tab
 from ui.views.stock_analysis import fundamentals as fundamentals_tab
 from ui.views.stock_analysis import strategy_backtest as backtest_tab
@@ -100,7 +103,6 @@ def _index_view(ticker: str) -> None:
     label = index_display_name(ticker) if ticker.startswith("^") else ticker
     idf = load_index_chart_ohlcv(ticker, pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
     render_toasts()
-    st.subheader(label)
     index_detail.render_valuation(ticker)
     if idf.is_empty():
         st.warning(f"No price history for **{label}** yet.")
@@ -116,42 +118,68 @@ def _index_view(ticker: str) -> None:
             index_detail.render_constituents(ticker)
 
 
-# Ticker picker — split into Stock vs Index sections (they were confusingly mixed in one list).
-# Stocks are EVERY equity we hold OHLCV for (not just the small watchlist); the selected one is
-# loaded on demand. Indices are the clean NSE-name set (160+ incl. factor/strategy) + international.
-_kind = st.radio("Type", ["Stock", "Index"], horizontal=True, key="sa_ticker_kind", label_visibility="collapsed")
+def _etf_view(ticker: str, frame: pl.DataFrame) -> None:
+    """ETF view: live NAV / premium-discount / underlying header + candlestick chart + backtest. ETFs
+    trade like equities (OHLCV via the same path); screener fundamentals / CAPM don't apply."""
+    _refresh_stock_on_open(ticker, frame)
+    etf_detail.render_header(ticker)
+    sdf = _chart_pdf(frame, ticker)
+    tab_chart, tab_backtest = st.tabs(["Chart", "Strategy Backtest"])
+    with tab_chart:
+        _render_chart(sdf, ticker)
+    with tab_backtest:
+        backtest_tab.render(sdf, ticker)
 
-if _kind == "Stock":
-    # Full NSE universe (stock_registry) — not just the fetched subset. Any stock not yet in the DB is
-    # fetched on demand the moment it's opened (load_stock_open_close → ensure_stock_data).
-    _all_stocks = list_registry_symbols()
-    if not _all_stocks:
-        st.info("Stock universe not synced yet — run **Sync AMFI / NSE master** in Settings.")
-        st.stop()
-    if st.session_state.get("stock_analysis_symbol") not in _all_stocks:
-        st.session_state.pop("stock_analysis_symbol", None)
-    ticker = st.selectbox(f"Stock · {len(_all_stocks):,} in the NSE universe", _all_stocks, key="stock_analysis_symbol")
-    # Load the selected stock's history — fetching + storing it on demand if we don't have it yet.
+
+# Unified ticker picker — one search across stocks, ETFs and indices (previously a confusing split).
+# The selected item's kind drives which view renders; every ticker is loaded on demand.
+_BADGE = {"stock": "📈 Stock", "etf": "🧺 ETF", "index": "📊 Index"}
+_catalog = load_analysis_catalog_cached()
+if not _catalog:
+    st.info("Universe not synced yet — run **Sync NSE master** / **Sync ETF list** in Settings.")
+    st.stop()
+_KIND_OF = {c["id"]: c["kind"] for c in _catalog}
+_NAME_OF = {c["id"]: c["name"] for c in _catalog}
+
+
+def _opt_label(cid: str) -> str:
+    kind = _KIND_OF.get(cid, "stock")
+    if kind == "index":
+        disp = index_display_name(cid) if cid.startswith("^") else cid
+        return f"{disp}  ·  Index"
+    tag = "ETF" if kind == "etf" else "Stock"
+    name = _NAME_OF.get(cid) or ""
+    suffix = f"  ·  {name[:40]}" if name and name != cid else ""
+    return f"{cid}  ·  {tag}{suffix}"
+
+
+_options = [c["id"] for c in _catalog]
+_n_stock = sum(1 for c in _catalog if c["kind"] == "stock")
+_n_etf = sum(1 for c in _catalog if c["kind"] == "etf")
+_n_index = sum(1 for c in _catalog if c["kind"] == "index")
+if st.session_state.get("sa_ticker") not in _options:
+    st.session_state.pop("sa_ticker", None)
+ticker = st.selectbox(
+    f"Search · {_n_stock:,} stocks · {_n_etf} ETFs · {_n_index} indices",
+    _options,
+    format_func=_opt_label,
+    key="sa_ticker",
+)
+_kind = _KIND_OF.get(ticker, "stock")
+_disp = index_display_name(ticker) if (_kind == "index" and ticker.startswith("^")) else ticker
+st.markdown(f"### {_disp} &nbsp;·&nbsp; {_BADGE[_kind]}")  # show what's being displayed
+
+if _kind == "index":
+    _index_view(ticker)
+else:
+    # Stock/ETF: load the selected ticker's history — fetched + stored on demand if we don't have it.
     with st.spinner(f"Loading {ticker}…"):
         frame = load_stock_open_close([ticker], pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
     render_toasts()
     if frame.is_empty():
         st.warning(f"Couldn't fetch any price data for **{ticker}** (it may be delisted or unlisted).")
         st.stop()
-    _stock_view(ticker, frame)
-else:
-    _nse = list_bhavcopy_index_names()
-    _intl = [s for s, _, _ in INTERNATIONAL_INDEX_SYMBOLS]
-    _idx_opts = _nse + _intl
-    if not _idx_opts:
-        st.info("No index data yet — refresh from **Settings > Stock Data**.")
-        st.stop()
-    if st.session_state.get("sa_index_sel") not in _idx_opts:
-        st.session_state.pop("sa_index_sel", None)
-    ticker = st.selectbox(
-        f"Index · {len(_nse)} NSE + {len(_intl)} international",
-        _idx_opts,
-        format_func=lambda s: index_display_name(s) if s.startswith("^") else s,
-        key="sa_index_sel",
-    )
-    _index_view(ticker)
+    if _kind == "etf":
+        _etf_view(ticker, frame)
+    else:
+        _stock_view(ticker, frame)

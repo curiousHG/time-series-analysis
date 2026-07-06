@@ -204,6 +204,23 @@ def load_index_constituents_cached(index_name: str) -> list[str]:
     return index_constituents(index_name)
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def load_analysis_catalog_cached() -> list[dict]:
+    """Unified picker universe (stocks + ETFs + indices), each tagged with its kind. Long-cached; the
+    ETF-classification sync (Settings) clears it."""
+    from services.market_data_service import analysis_catalog  # noqa: PLC0415 — defer off boot
+
+    return analysis_catalog()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_etf_metadata_cached() -> dict:
+    """Live NSE ETF metadata keyed by symbol (underlying, NAV, 52-week range, 30d/1Y perf)."""
+    from services.market_data_service import etf_metadata  # noqa: PLC0415 — defer off boot
+
+    return etf_metadata()
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def load_fund_movers_cached() -> pl.DataFrame:
     from services.insights_service import fund_movers  # noqa: PLC0415 — defer heavy import off boot

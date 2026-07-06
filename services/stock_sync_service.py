@@ -126,12 +126,17 @@ def backfill_indices_history(*, years: int = 12, progress_cb: Callable[..., None
 def refresh_all_stock_data(*, progress_cb: Callable[..., None] | None = None) -> dict:
     """Full stock + index data refresh for the background task: bhavcopy stocks + indices, then
     recompute stock metrics. Reports live phase/progress via `progress_cb`. Returns per-step counts."""
+    from data.repositories.stock import sync_nse_etf_universe  # noqa: PLC0415 — defer off boot
+
     stock_rows = refresh_stocks_via_bhavcopy(progress_cb=progress_cb)
     index_rows = refresh_indices_via_bhavcopy(progress_cb=progress_cb)
+    _report(progress_cb, phase="ETF list", done=0, total=1)
+    etfs = sync_nse_etf_universe()  # keep the ETF classification current for the analysis picker
+    _report(progress_cb, phase="ETF list", done=1, total=1)
     _report(progress_cb, phase="Metrics", done=0, total=1)
     metrics = recompute_all_stock_metrics()
     _report(progress_cb, phase="Metrics", done=1, total=1)
-    return {"stock_rows": stock_rows, "index_rows": index_rows, "metrics": metrics}
+    return {"stock_rows": stock_rows, "index_rows": index_rows, "etfs": etfs, "metrics": metrics}
 
 
 def stock_data_health() -> dict:
@@ -226,7 +231,11 @@ def refetch_all_stocks(*, progress_cb: Callable[..., None] | None = None) -> int
     recompute metrics. Cleans source-mixing corruption (jugaad IST-offset dates / spikes) across the
     whole universe. Each stock is an atomic fetch-then-replace, so it's safe to interrupt. Returns
     the number of stocks re-fetched."""
-    from data.repositories.stock import clear_stock_ohlcv_status, list_stock_symbols, refetch_stock_full  # noqa: PLC0415
+    from data.repositories.stock import (  # noqa: PLC0415
+        clear_stock_ohlcv_status,
+        list_stock_symbols,
+        refetch_stock_full,
+    )
     from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
 
     symbols = list_stock_symbols()

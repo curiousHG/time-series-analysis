@@ -28,6 +28,30 @@ _INDEX_NAME_SLUG = {
 }
 
 
+def analysis_catalog() -> list[dict]:
+    """The unified Stock-Analysis picker universe: every equity + ETF (from stock_registry) and every
+    index (NSE bhavcopy names + international), each tagged with its kind so the UI can badge it and
+    route to the right view. Entry: {id, kind: 'stock'|'etf'|'index', name}."""
+    from data.repositories.stock import list_bhavcopy_index_names, load_registry_catalog  # noqa: PLC0415
+    from services.insights_service import INTERNATIONAL_INDEX_SYMBOLS  # noqa: PLC0415
+
+    entries: list[dict] = [
+        {"id": row["symbol"], "kind": "etf" if row["quote_type"] == "ETF" else "stock", "name": row["name"] or ""}
+        for row in load_registry_catalog().iter_rows(named=True)
+    ]
+    entries.extend({"id": name, "kind": "index", "name": name} for name in list_bhavcopy_index_names())
+    entries.extend({"id": sym, "kind": "index", "name": disp} for sym, disp, _region in INTERNATIONAL_INDEX_SYMBOLS)
+    return entries
+
+
+def etf_metadata() -> dict[str, dict]:
+    """Live NSE ETF metadata keyed by symbol (underlying, NAV, last price, 52-week range, 30d/1Y
+    performance) — one call to the NSE ETF API. Empty dict on failure."""
+    from data.fetchers.stock import fetch_nse_etf_list  # noqa: PLC0415 — defer heavy import off boot
+
+    return {e["symbol"]: e for e in fetch_nse_etf_list()}
+
+
 def index_constituents(index_name: str) -> list[str]:
     """Constituent NSE symbols of an index. Prefers NSE's official `ind_<name>list.csv` (full lists
     for broad/sectoral indices), then falls back to screener.in (sectoral + Nifty 50). Returns [] for

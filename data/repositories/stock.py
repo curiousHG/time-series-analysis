@@ -30,12 +30,14 @@ from data.repositories.stock_ohlcv import (
     last_stock_ohlcv_date,
     list_registry_symbols,
     list_stock_symbols,
+    load_registry_catalog,
     load_stock_registry,
     refetch_stock_full,
     refresh_stock_to_today,
     register_stock,
     save_bhavcopy_day,
     search_stock_symbols,
+    sync_nse_etf_universe,
     sync_nse_universe,
 )
 
@@ -53,6 +55,7 @@ __all__ = [
     "list_registry_symbols",
     "list_stock_symbols",
     "list_unavailable_stock_symbols",
+    "load_registry_catalog",
     "load_stock_registry",
     "read_index_ohlcv",
     "refetch_stock_full",
@@ -62,5 +65,6 @@ __all__ = [
     "save_bhavcopy_day",
     "save_index_bhavcopy_day",
     "search_stock_symbols",
+    "sync_nse_etf_universe",
     "sync_nse_universe",
 ]

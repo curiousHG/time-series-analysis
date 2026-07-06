@@ -21,7 +21,7 @@ from services.stock_sync_service import (
 )
 from ui.components.background_refresh import BackgroundRefresh, BackgroundRefreshGroup, progress_cb
 from ui.persistence.selections import load_selection, save_selection
-from ui.state.loaders import load_stock_open_close, load_stock_screener_df_cached
+from ui.state.loaders import load_analysis_catalog_cached, load_stock_open_close, load_stock_screener_df_cached
 
 _STALE_BDAYS = 2  # more than this many business days behind → stale
 
@@ -35,6 +35,7 @@ def _clear_caches() -> None:
     _health.clear()
     load_stock_open_close.clear()
     load_stock_screener_df_cached.clear()
+    load_analysis_catalog_cached.clear()  # ETF/stock/index classification may have changed
 
 
 _REFRESH = BackgroundRefresh(

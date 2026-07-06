@@ -61,6 +61,33 @@ def sync_nse_universe() -> int:
     return len(payload)
 
 
+def sync_nse_etf_universe() -> int:
+    """Tag the NSE-listed ETF universe in stock_registry (quote_type='ETF'), registering any not yet
+    known. This is what lets the analysis picker classify a symbol as an ETF vs a plain equity — the
+    live NAV/underlying/performance metadata is fetched on demand for the ETF view, not stored here.
+    Returns the ETF count."""
+    from data.fetchers.stock import fetch_nse_etf_list  # noqa: PLC0415 — defer heavy import off boot
+
+    etfs = fetch_nse_etf_list()
+    if not etfs:
+        return 0
+    payload = [
+        {"symbol": e["symbol"], "stock_name": e["name"], "exchange": "NSE", "quote_type": "ETF"}
+        for e in etfs
+        if e["symbol"]
+    ]
+    with get_session() as session:
+        stmt = pg_insert(StockRegistry).values(payload)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["symbol"],
+            set_={"quote_type": stmt.excluded.quote_type, "stock_name": stmt.excluded.stock_name},
+        )
+        session.exec(stmt)
+        session.commit()
+    logger.info("tagged %d NSE ETFs in stock_registry", len(payload))
+    return len(payload)
+
+
 def _yf_fetch_symbol(symbol: str) -> str:
     """yfinance symbol to fetch for a stored stock symbol. NSE bare symbols get `.NS`; symbols
     that already carry an exchange qualifier (`.` / `^`) or are registered on a non-NSE exchange
@@ -224,6 +251,25 @@ def list_registry_symbols() -> list[str]:
     with get_session() as session:
         rows = session.exec(select(col(StockRegistry.symbol)).distinct().order_by(col(StockRegistry.symbol))).all()
     return list(rows)
+
+
+def load_registry_catalog() -> pl.DataFrame:
+    """symbol · name · quote_type for the whole registry. The analysis picker reads quote_type to tell
+    ETFs (quote_type='ETF') from plain equities so it can badge them and route to the right view."""
+    with get_session() as session:
+        rows = session.exec(
+            select(StockRegistry.symbol, StockRegistry.stock_name, StockRegistry.quote_type).order_by(
+                col(StockRegistry.symbol)
+            )
+        ).all()
+    return pl.DataFrame(
+        {
+            "symbol": [r[0] for r in rows],
+            "name": [r[1] for r in rows],
+            "quote_type": [r[2] for r in rows],
+        },
+        schema={"symbol": pl.Utf8, "name": pl.Utf8, "quote_type": pl.Utf8},
+    )
 
 
 def last_stock_ohlcv_date() -> date | None:

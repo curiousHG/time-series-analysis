@@ -90,6 +90,49 @@ def fetch_nse_equity_list() -> list[dict]:
     ]
 
 
+def fetch_nse_etf_list() -> list[dict]:
+    """The NSE-listed ETF universe from the live /api/etf endpoint → one dict per ETF with its
+    classification key + display metadata. Underlying (`assets`), NAV, last price, 52-week range and
+    30d/1Y performance all come in this single call. Returns [] on any failure (best-effort)."""
+
+    def _f(v: object) -> float | None:
+        try:
+            return float(str(v).replace(",", "")) if v not in (None, "", "-") else None
+        except (TypeError, ValueError):
+            return None
+
+    try:
+        with httpx.Client(timeout=30, follow_redirects=True, headers=NSE_HEADERS) as client:
+            client.get("https://www.nseindia.com/market-data/exchange-traded-funds-etf")  # prime cookies
+            r = client.get("https://www.nseindia.com/api/etf")
+            r.raise_for_status()
+            rows = r.json().get("data", [])
+    except Exception as e:
+        logger.warning("NSE ETF list fetch failed: %s", e)
+        return []
+    out = []
+    for x in rows:
+        sym = str(x.get("symbol", "")).strip()
+        if not sym:
+            continue
+        meta = x.get("meta") or {}
+        out.append(
+            {
+                "symbol": sym,
+                "name": str(meta.get("companyName") or x.get("assets") or sym).strip(),
+                "underlying": str(x.get("assets") or "").strip() or None,
+                "nav": _f(x.get("nav")),
+                "ltp": _f(x.get("ltP")),
+                "week_high": _f(x.get("wkhi")),
+                "week_low": _f(x.get("wklo")),
+                "change_30d_pct": _f(x.get("perChange30d")),
+                "change_365d_pct": _f(x.get("perChange365d")),
+                "qty": _f(x.get("qty")),
+            }
+        )
+    return out
+
+
 def fetch_nse_bhavcopy(day: date) -> pd.DataFrame | None:
     """All NSE cash-market equity OHLCV for a single day in one download.
 
