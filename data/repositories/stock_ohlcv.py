@@ -184,6 +184,15 @@ def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
     return _refresh_to_today(sym, model=StockOhlcv, fetch_fn=_fetch_and_save_stock)
 
 
+def refetch_stock_full(symbol: str, *, since=None) -> None:
+    """Force a full re-fetch of an equity's history (fetch + UPSERT over existing rows) — repairs a
+    corrupt/mis-scaled series by overwriting it, WITHOUT deleting first, so it's safe to interrupt
+    (a partial overwrite still leaves valid rows; nothing is ever left empty)."""
+    import datetime as _dt  # noqa: PLC0415
+
+    _fetch_and_save_stock(to_bare_symbol(symbol), since or _dt.date(2000, 1, 1), _dt.date.today())
+
+
 def last_stock_ohlcv_date() -> date | None:
     """Most recent date present in stock_ohlcv (across all symbols), or None if empty."""
     with get_session() as session:

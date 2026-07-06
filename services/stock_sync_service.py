@@ -198,14 +198,10 @@ def find_corrupt_ohlcv_symbols(*, jump: float = 5.0) -> list[str]:
 
 
 def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] | None = None) -> dict:
-    """Delete + re-fetch full history for stocks whose OHLCV has a corrupt scale discontinuity, then
-    recompute their metrics. Returns {'repaired': [...], 'failed': [...]}."""
-    import datetime as _dt  # noqa: PLC0415
-
-    from sqlmodel import text  # noqa: PLC0415
-
-    from core.database import get_session  # noqa: PLC0415
-    from data.repositories.stock import clear_stock_ohlcv_status, ensure_stock_data  # noqa: PLC0415
+    """Re-fetch full history for stocks whose OHLCV has a corrupt scale discontinuity, overwriting the
+    bad rows in place (UPSERT, no delete — safe to interrupt), then recompute their metrics. Returns
+    {'repaired': [...], 'failed': [...]}."""
+    from data.repositories.stock import clear_stock_ohlcv_status, refetch_stock_full  # noqa: PLC0415
     from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
 
     symbols = find_corrupt_ohlcv_symbols(jump=jump)
@@ -213,11 +209,8 @@ def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] 
     failed: list[str] = []
     for i, sym in enumerate(symbols, 1):
         try:
-            with get_session() as session:
-                session.exec(text("DELETE FROM stock_ohlcv WHERE symbol = :x"), params={"x": sym})
-                session.commit()
-            clear_stock_ohlcv_status(sym)  # reset the watermark so the full history re-fetches
-            ensure_stock_data(sym, _dt.date(2000, 1, 1), _dt.date.today())
+            clear_stock_ohlcv_status(sym)  # reset the watermark (floor/streak) before the re-fetch
+            refetch_stock_full(sym)  # fetch + upsert full history over the corrupt rows (no delete)
             repaired.append(sym)
         except Exception:
             failed.append(sym)
