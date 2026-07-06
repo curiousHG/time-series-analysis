@@ -173,6 +173,93 @@ def stock_data_health() -> dict:
     }
 
 
+def find_corrupt_ohlcv_symbols(*, jump: float = 5.0) -> list[str]:
+    """Symbols whose stored OHLCV has an implausible ADJACENT-DAY close jump (> `jump`x or < 1/jump)
+    - a scale discontinuity from a bad historical fetch (a stale yfinance-adjusted series spliced
+    onto raw bhavcopy rows). A ~600x splice corrupts return/CAPM metrics (PAGEIND showed return_1y
+    ~ 26,775%). Adjacent-jump detection avoids flagging legit long-history growth (a real 20x over
+    years has no single-day 5x gap)."""
+    from sqlmodel import text  # noqa: PLC0415
+
+    from core.database import get_session  # noqa: PLC0415
+
+    with get_session() as session:
+        rows = session.exec(
+            text(
+                "WITH r AS (SELECT symbol, close, "
+                "LAG(close) OVER (PARTITION BY symbol ORDER BY date) AS prev "
+                "FROM stock_ohlcv WHERE close > 0) "
+                "SELECT DISTINCT symbol FROM r "
+                "WHERE prev > 0 AND (close / prev > :j OR close / prev < :inv) ORDER BY symbol"
+            ),
+            params={"j": jump, "inv": 1.0 / jump},
+        ).all()
+    return [r[0] for r in rows]
+
+
+def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] | None = None) -> dict:
+    """Delete + re-fetch full history for stocks whose OHLCV has a corrupt scale discontinuity, then
+    recompute their metrics. Returns {'repaired': [...], 'failed': [...]}."""
+    import datetime as _dt  # noqa: PLC0415
+
+    from sqlmodel import text  # noqa: PLC0415
+
+    from core.database import get_session  # noqa: PLC0415
+    from data.repositories.stock import clear_stock_ohlcv_status, ensure_stock_data  # noqa: PLC0415
+    from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
+
+    symbols = find_corrupt_ohlcv_symbols(jump=jump)
+    repaired: list[str] = []
+    failed: list[str] = []
+    for i, sym in enumerate(symbols, 1):
+        try:
+            with get_session() as session:
+                session.exec(text("DELETE FROM stock_ohlcv WHERE symbol = :x"), params={"x": sym})
+                session.commit()
+            clear_stock_ohlcv_status(sym)  # reset the watermark so the full history re-fetches
+            ensure_stock_data(sym, _dt.date(2000, 1, 1), _dt.date.today())
+            repaired.append(sym)
+        except Exception:
+            failed.append(sym)
+        _report(progress_cb, phase="Repair", done=i, total=len(symbols))
+    if repaired:
+        recompute_price_metrics(repaired)
+    logger.info("repair_corrupt_ohlcv: repaired %d, failed %d", len(repaired), len(failed))
+    return {"repaired": repaired, "failed": failed}
+
+
+def sync_missing_fundamentals(*, progress_cb: Callable[..., None] | None = None) -> int:
+    """Scrape screener.in fundamentals for universe stocks that don't have them yet (the Nifty 500
+    seed loads price metrics only). Polite per-symbol scrape, then one metrics recompute. Returns
+    the number of symbols attempted."""
+    from sqlmodel import text  # noqa: PLC0415
+
+    from core.database import get_session  # noqa: PLC0415
+    from data.repositories.stock_fundamentals import ensure_stock_fundamentals  # noqa: PLC0415
+    from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
+
+    with get_session() as session:
+        symbols = [
+            r[0]
+            for r in session.exec(
+                text(
+                    "SELECT m.symbol FROM stock_metrics m LEFT JOIN stock_registry r ON r.symbol = m.symbol "
+                    "WHERE coalesce(r.fundamentals_status, '') <> 'available' ORDER BY m.symbol"
+                )
+            ).all()
+        ]
+    for i, sym in enumerate(symbols, 1):
+        try:
+            ensure_stock_fundamentals([sym])
+        except Exception:
+            logger.debug("fundamentals scrape failed for %s", sym)
+        _report(progress_cb, phase="Fundamentals", done=i, total=len(symbols))
+    if symbols:
+        recompute_price_metrics(symbols)
+    logger.info("sync_missing_fundamentals: attempted %d symbols", len(symbols))
+    return len(symbols)
+
+
 def recompute_all_stock_metrics() -> int:
     """Recompute CAPM price metrics for the whole tracked stock universe (uses cached OHLCV)."""
     from data.repositories.stock_fundamentals import load_stock_metrics  # noqa: PLC0415

@@ -14,8 +14,10 @@ from services.stock_sync_service import (
     list_unavailable_stocks,
     recompute_all_stock_metrics,
     refresh_all_stock_data,
+    repair_corrupt_ohlcv,
     retry_stock_ohlcv,
     stock_data_health,
+    sync_missing_fundamentals,
 )
 from ui.components.background_refresh import BackgroundRefresh, BackgroundRefreshGroup, progress_cb
 from ui.persistence.selections import load_selection, save_selection
@@ -51,7 +53,19 @@ _BACKFILL = BackgroundRefresh(
     cache_clearers=(_clear_caches,),
     summarize=lambda r: f"{r:,} rows",
 )
-_GROUP = BackgroundRefreshGroup((_REFRESH, _BACKFILL))
+_REPAIR = BackgroundRefresh(
+    "stock_ohlcv_repair",
+    "Repair corrupt prices",
+    cache_clearers=(_clear_caches,),
+    summarize=lambda r: f"repaired {len(r['repaired'])}, {len(r['failed'])} failed" if isinstance(r, dict) else str(r),
+)
+_FUNDA = BackgroundRefresh(
+    "stock_fundamentals_sync",
+    "Fundamentals sync",
+    cache_clearers=(_clear_caches,),
+    summarize=lambda r: f"{r:,} symbols scraped" if isinstance(r, int) else str(r),
+)
+_GROUP = BackgroundRefreshGroup((_REFRESH, _BACKFILL, _REPAIR, _FUNDA))
 
 
 def _freshness_caption(col, last, stale_days: int | None) -> None:
@@ -102,6 +116,20 @@ def render() -> None:
             _clear_caches()
             st.toast(f"Recomputed metrics for {n:,} stocks.", icon="✅")
             st.rerun()
+
+    st.caption("Repair fixes stocks whose stored history has a bad price-scale jump (corrupts returns/CAPM). "
+               "Fundamentals scrapes screener.in for universe stocks that don't have any yet.")
+    b4, b5 = st.columns(2)
+    with b4:
+        _REPAIR.start_button(
+            "🩺 Repair corrupt price data",
+            lambda: repair_corrupt_ohlcv(progress_cb=progress_cb(_REPAIR.key)),
+        )
+    with b5:
+        _FUNDA.start_button(
+            "Fetch missing fundamentals",
+            lambda: sync_missing_fundamentals(progress_cb=progress_cb(_FUNDA.key)),
+        )
 
     st.divider()
     _render_retry_unavailable()

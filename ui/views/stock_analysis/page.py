@@ -28,6 +28,28 @@ def _chart_pdf(frame: pl.DataFrame, sym: str) -> pd.DataFrame:
     )
 
 
+def _refresh_stock_on_open(ticker: str, frame: pl.DataFrame) -> None:
+    """On the first open of a stock this session, pull its OHLCV forward to today (cheap no-op when
+    already fresh); reload only if new bars actually arrived. Fundamentals are fetched by the tab."""
+    import contextlib  # noqa: PLC0415
+
+    from data.repositories.stock import refresh_stock_to_today  # noqa: PLC0415 — defer off boot
+
+    bare = to_bare_symbol(ticker)
+    opened = st.session_state.setdefault("_sa_opened", set())
+    if bare in opened:
+        return
+    opened.add(bare)
+    shown = frame.filter(pl.col("Symbol") == bare)
+    shown_max = shown.select(pl.col("Date").max()).item() if shown.height else None
+    new_max = None
+    with st.spinner(f"Refreshing {ticker}…"), contextlib.suppress(Exception):
+        _, new_max = refresh_stock_to_today(bare)
+    if new_max is not None and (shown_max is None or new_max > shown_max):
+        load_stock_open_close.clear()
+        st.rerun()
+
+
 def _render_chart(sdf: pd.DataFrame, label: str) -> None:
     """Candle-interval control + indicator sidebar + chart. Shared by stocks and indices."""
     interval = st.segmented_control(
@@ -98,6 +120,7 @@ if ticker and is_index_symbol(ticker):
         st.caption(f"Viewing index **{index_display_name(ticker)}** ({ticker}) — chart only.")
         _render_chart(_chart_pdf(idf, ticker), index_display_name(ticker))
 elif ticker:
+    _refresh_stock_on_open(ticker, df)  # pull this stock's OHLCV forward to today on first open
     sdf = _chart_pdf(df, ticker)
     tab_chart, tab_fundamentals, tab_backtest = st.tabs(["Chart", "Fundamentals", "Strategy Backtest"])
     with tab_chart:
