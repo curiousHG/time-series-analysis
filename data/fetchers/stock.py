@@ -148,6 +148,110 @@ def fetch_nifty500_symbols() -> list[str]:
     return [str(s).strip() for s in df["Symbol"] if str(s).strip()]
 
 
+def search_global_tickers(query: str, *, max_results: int = 8) -> list[dict]:
+    """Search Yahoo Finance for tradable tickers worldwide → [{symbol, name, exchange, quote_type}].
+
+    yf.Search gives clean (symbol, name, exchange-display) triples across every exchange; when it's
+    throttled/empty we fall back to yf.Lookup. Only EQUITY/ETF quote types are returned — indices and
+    crypto have their own routing. Best-effort: [] on failure."""
+    try:
+        quotes = yf.Search(query, max_results=max_results).quotes
+    except Exception as e:
+        logger.debug("yf.Search failed for %r: %s", query, e)
+        quotes = []
+    out = [
+        {
+            "symbol": str(q.get("symbol", "")).strip(),
+            "name": str(q.get("shortname") or q.get("longname") or "").strip(),
+            "exchange": str(q.get("exchDisp") or q.get("exchange") or "").strip(),
+            "quote_type": str(q.get("quoteType") or "EQUITY").strip().upper(),
+        }
+        for q in quotes
+        if q.get("symbol") and str(q.get("quoteType", "")).upper() in {"EQUITY", "ETF"}
+    ]
+    if out:
+        return out
+    lookup = query_stocks(query)  # Lookup fallback (equities only)
+    return [
+        {
+            "symbol": str(sym),
+            "name": str(row.get("shortName") or ""),
+            "exchange": str(row.get("exchange") or ""),
+            "quote_type": "EQUITY",
+        }
+        for sym, row in lookup.iterrows()
+    ][:max_results]
+
+
+def fetch_global_fundamentals(symbol: str) -> dict | None:
+    """Fundamentals for an INTERNATIONAL ticker from yfinance — the `.info` snapshot (valuation and
+    quality ratios in the listing currency) + `quarterly_income_stmt` (quarterly Sales / Net Profit /
+    EPS). The NSE path scrapes screener.in instead, which is far richer for Indian companies.
+    Ratio fields arrive as fractions (returnOnEquity 0.14 = 14%) and are converted to percentages;
+    dividendYield already comes as a percentage. None when yahoo doesn't know the symbol."""
+    ticker = yf.Ticker(symbol)
+    try:
+        info = ticker.info or {}
+    except Exception as e:
+        logger.warning("yfinance info failed for %s: %s", symbol, e)
+        return None
+    if not info.get("longName") and not info.get("shortName") and info.get("regularMarketPrice") is None:
+        return None
+
+    quarters: list[dict] = []
+    try:
+        qis = ticker.quarterly_income_stmt
+        if qis is not None and not qis.empty:
+
+            def _at(row_name: str, quarter) -> float | None:
+                if row_name not in qis.index:
+                    return None
+                v = qis.at[row_name, quarter]
+                return float(v) if pd.notna(v) else None
+
+            for q in sorted(qis.columns):
+                revenue = _at("Total Revenue", q)
+                op = _at("Operating Income", q)
+                quarters.append(
+                    {
+                        "period_end": q.date() if hasattr(q, "date") else q,
+                        "label": q.strftime("%b %Y") if hasattr(q, "strftime") else str(q),
+                        "sales": revenue,
+                        "net_profit": _at("Net Income", q),
+                        "opm_pct": (op / revenue * 100) if op is not None and revenue else None,
+                        "eps": _at("Diluted EPS", q),
+                    }
+                )
+    except Exception as e:
+        logger.debug("quarterly income stmt failed for %s: %s", symbol, e)
+
+    def _pct(v: float | None) -> float | None:
+        return v * 100 if v is not None else None
+
+    return {
+        "symbol": symbol,
+        "name": info.get("longName") or info.get("shortName") or symbol,
+        "currency": info.get("currency"),
+        "exchange": info.get("fullExchangeName") or info.get("exchange"),
+        "sector": info.get("sector"),
+        "industry": info.get("industry"),
+        "market_cap": info.get("marketCap"),
+        "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
+        "pe": info.get("trailingPE"),
+        "forward_pe": info.get("forwardPE"),
+        "pb": info.get("priceToBook"),
+        "dividend_yield": info.get("dividendYield"),
+        "roe": _pct(info.get("returnOnEquity")),
+        "profit_margin": _pct(info.get("profitMargins")),
+        "revenue_growth": _pct(info.get("revenueGrowth")),
+        "beta": info.get("beta"),
+        "week52_high": info.get("fiftyTwoWeekHigh"),
+        "week52_low": info.get("fiftyTwoWeekLow"),
+        "summary": info.get("longBusinessSummary"),
+        "quarters": quarters,
+    }
+
+
 def query_stocks(query: str) -> pd.DataFrame:
     """Return equity symbols matching the query (any exchange — Indian or global), indexed by symbol.
 

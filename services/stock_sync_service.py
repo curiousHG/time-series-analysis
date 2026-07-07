@@ -275,8 +275,11 @@ def sync_missing_fundamentals(*, progress_cb: Callable[..., None] | None = None)
             r[0]
             for r in session.exec(
                 text(
+                    # NSE listings only — international stocks aren't on screener.in (their
+                    # fundamentals come live from yfinance in the analysis view instead).
                     "SELECT m.symbol FROM stock_metrics m LEFT JOIN stock_registry r ON r.symbol = m.symbol "
-                    "WHERE coalesce(r.fundamentals_status, '') <> 'available' ORDER BY m.symbol"
+                    "WHERE coalesce(r.fundamentals_status, '') <> 'available' "
+                    "AND upper(coalesce(r.exchange, 'NSE')) IN ('NSE','NSI','BSE','BO') ORDER BY m.symbol"
                 )
             ).all()
         ]

@@ -1,7 +1,9 @@
 """Stock Analysis · Fundamentals tab — momentum, valuation percentiles, quarterly trend.
 
-Data: stock_ohlcv (momentum) + screener.in snapshots (stock_metrics / stock_quarterly).
-Percentiles are vs the screened universe — the data has no sector classification.
+Data is routed by listing market: NSE stocks use screener.in snapshots (stock_metrics /
+stock_quarterly; percentile badges vs the screened universe), international stocks use a live
+yfinance snapshot (.info + quarterly income statement — screener.in only covers India).
+Momentum comes from our own OHLCV either way.
 """
 
 from __future__ import annotations
@@ -12,19 +14,121 @@ import polars as pl
 import streamlit as st
 
 from services.stock_fundamentals_service import fundamentals_percentiles, momentum_stats, quarterly_trend
-from stocks.constants import to_bare_symbol
+from stocks.constants import is_nse_exchange, to_bare_symbol
 from ui.charts import theme
-from ui.components.metric_tiles import Kpi, fmt_pct, render_kpi_row
-from ui.state.loaders import load_stock_screener_df_cached
+from ui.components.metric_tiles import EM_DASH, Kpi, fmt_pct, render_kpi_row
+from ui.state.loaders import load_global_fundamentals_cached, load_stock_screener_df_cached
 
 
-def render(symbol: str) -> None:
+def render(symbol: str, *, exchange: str | None = None) -> None:
     bare = to_bare_symbol(symbol)
     _render_momentum(symbol)
     st.divider()
+    if not is_nse_exchange(exchange):
+        _render_global(bare)
+        return
     _render_valuation(bare)
     st.divider()
     _render_quarterly(bare)
+
+
+def _render_global(symbol: str) -> None:
+    """Valuation/quality + quarterly income for an international ticker, live from yfinance."""
+    st.subheader("Valuation & quality (Yahoo Finance)")
+    with st.spinner(f"Fetching {symbol} fundamentals…"):
+        g = load_global_fundamentals_cached(symbol)
+    if not g:
+        st.info(f"Yahoo Finance has no fundamentals for **{symbol}**.")
+        return
+    ccy = g.get("currency") or ""
+    if g.get("sector"):
+        st.caption(f"**{g['name']}** · {g['sector']} · {g.get('industry') or ''} · {g.get('exchange') or ''}")
+
+    def _big(v: float | None) -> str | None:
+        if v is None:
+            return None
+        for div, suf in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
+            if abs(v) >= div:
+                return f"{v / div:,.2f}{suf} {ccy}"
+        return f"{v:,.0f} {ccy}"
+
+    render_kpi_row(
+        [
+            Kpi("Market cap", _big(g.get("market_cap"))),
+            Kpi("Price", f"{g['current_price']:,.2f} {ccy}" if g.get("current_price") is not None else EM_DASH),
+            Kpi(
+                "P/E",
+                g.get("pe"),
+                fmt="ratio",
+                help=f"Forward P/E: {g['forward_pe']:.1f}" if g.get("forward_pe") else None,
+            ),
+            Kpi("P/B", g.get("pb"), fmt="ratio"),
+            Kpi("Beta", g.get("beta"), fmt="ratio", help="vs the listing market's index"),
+        ]
+    )
+    render_kpi_row(
+        [
+            Kpi("ROE %", g.get("roe"), fmt="ratio"),
+            Kpi("Profit margin %", g.get("profit_margin"), fmt="ratio"),
+            Kpi("Revenue growth %", g.get("revenue_growth"), fmt="ratio", help="Latest quarter, YoY"),
+            Kpi("Dividend yield %", g.get("dividend_yield"), fmt="ratio"),
+        ]
+    )
+    lo, hi = g.get("week52_low"), g.get("week52_high")
+    if lo is not None and hi is not None:
+        st.caption(f"52-week range: {lo:,.2f} to {hi:,.2f} {ccy}")
+    if g.get("summary"):
+        with st.expander("About the company"):
+            st.write(g["summary"])
+    _render_global_quarters(g.get("quarters") or [], ccy)
+
+
+def _render_global_quarters(quarters: list[dict], ccy: str) -> None:
+    st.subheader("Quarterly results (Yahoo Finance)")
+    rows = [q for q in quarters if q.get("sales") is not None]
+    if not rows:
+        st.caption("No quarterly income statement available for this symbol.")
+        return
+
+    import plotly.graph_objects as go  # noqa: PLC0415 — heavy viz dep; deferred to render time
+    from plotly.subplots import make_subplots  # noqa: PLC0415 — heavy viz dep
+
+    labels = [q["label"] for q in rows]
+    scale = 1e9 if max(q["sales"] for q in rows) >= 1e9 else 1e6
+    unit = "B" if scale == 1e9 else "M"
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=[q["sales"] / scale for q in rows],
+            name=f"Revenue ({unit} {ccy})",
+            marker_color=theme.ACCENT,
+            opacity=0.75,
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=[(q["net_profit"] or 0) / scale for q in rows],
+            name=f"Net profit ({unit} {ccy})",
+            marker_color=theme.POSITIVE,
+            opacity=0.9,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=labels,
+            y=[q.get("opm_pct") for q in rows],
+            name="Op margin %",
+            mode="lines+markers",
+            line={"color": theme.WARNING, "width": 2},
+        ),
+        secondary_y=True,
+    )
+    fig.update_layout(height=380, barmode="group", legend={"orientation": "h", "y": 1.08})
+    fig.update_yaxes(title_text=f"{unit} {ccy}", secondary_y=False)
+    fig.update_yaxes(title_text="Op margin %", secondary_y=True, showgrid=False)
+    st.plotly_chart(fig, use_container_width=True, key="stock-quarterly-global")
 
 
 def _render_momentum(symbol: str) -> None:

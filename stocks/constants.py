@@ -62,6 +62,18 @@ ALPHA_POSITIVE = 0.0
 BETA_MARKET = 1.0
 
 
+# Exchange codes that mean "Indian market" for symbol routing: bare NSE symbols get a `.NS`
+# yfinance suffix and screener.in fundamentals; anything else (NASDAQ/NYSE/XETRA/…) is an
+# international ticker — fetched as-is, fundamentals via yfinance, CAPM benchmarked vs S&P 500.
+NSE_EXCHANGES = frozenset({"NSE", "NSI", "BSE", "BO"})
+
+
+def is_nse_exchange(exchange: str | None) -> bool:
+    """True when a registry exchange value denotes the Indian market (None defaults to NSE —
+    the registry's NSE-master rows historically carried no exchange)."""
+    return (exchange or "NSE").upper() in NSE_EXCHANGES
+
+
 # Index tickers that aren't caught by the `^…` / space / `=` rules — MSCI ETF proxies used as
 # benchmark indices. Kept here (not imported from services) to avoid a domain→services dependency.
 _EXTRA_INDEX_SYMBOLS = frozenset({"URTH", "ACWI"})

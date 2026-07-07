@@ -8,11 +8,12 @@ import streamlit as st
 
 from indicators import INDICATOR_REGISTRY, compute_indicators
 from services.benchmarks import index_display_name
-from stocks.constants import to_bare_symbol
+from stocks.constants import is_nse_exchange, to_bare_symbol
 from ui.components import etf_detail, index_detail
 from ui.components.notifications import render_toasts
 from ui.state.loaders import (
     load_analysis_catalog_cached,
+    load_global_search_cached,
     load_index_chart_ohlcv,
     load_stock_open_close,
     load_stock_screener_df_cached,
@@ -84,15 +85,16 @@ def _render_chart(sdf: pd.DataFrame, label: str) -> None:
     chart_tab.render(chart_df, overlays, panels, selected_panels, label)
 
 
-def _stock_view(ticker: str, frame: pl.DataFrame) -> None:
-    """Equity view: chart · fundamentals · backtest. Refreshes OHLCV on first open."""
+def _stock_view(ticker: str, frame: pl.DataFrame, exchange: str | None = None) -> None:
+    """Equity view: chart · fundamentals · backtest. Refreshes OHLCV on first open. `exchange`
+    routes the fundamentals source (NSE → screener.in, international → yfinance)."""
     _refresh_stock_on_open(ticker, frame)
     sdf = _chart_pdf(frame, ticker)
     tab_chart, tab_fundamentals, tab_backtest = st.tabs(["Chart", "Fundamentals", "Strategy Backtest"])
     with tab_chart:
         _render_chart(sdf, ticker)
     with tab_fundamentals:
-        fundamentals_tab.render(ticker)
+        fundamentals_tab.render(ticker, exchange=exchange)
     with tab_backtest:
         backtest_tab.render(sdf, ticker)
 
@@ -140,6 +142,7 @@ if not _catalog:
     st.stop()
 _KIND_OF = {c["id"]: c["kind"] for c in _catalog}
 _NAME_OF = {c["id"]: c["name"] for c in _catalog}
+_EXCH_OF = {c["id"]: c.get("exchange") for c in _catalog}
 
 
 def _opt_label(cid: str) -> str:
@@ -147,10 +150,48 @@ def _opt_label(cid: str) -> str:
     if kind == "index":
         disp = index_display_name(cid) if cid.startswith("^") else cid
         return f"{disp}  ·  Index"
-    tag = "ETF" if kind == "etf" else "Stock"
+    if kind == "etf":
+        tag = "ETF"
+    elif is_nse_exchange(_EXCH_OF.get(cid)):
+        tag = "Stock"
+    else:
+        tag = f"Global · {_EXCH_OF.get(cid)}"
     name = _NAME_OF.get(cid) or ""
     suffix = f"  ·  {name[:40]}" if name and name != cid else ""
     return f"{cid}  ·  {tag}{suffix}"
+
+
+def _render_add_international() -> None:
+    """Search Yahoo Finance for any world ticker and register it into the universe. Once added it's
+    a first-class stock: OHLCV on demand (as-is symbol), yfinance fundamentals, CAPM vs S&P 500."""
+    with st.expander("🌍 Can't find it? Add an international ticker", expanded=False, icon=":material/public:"):
+        q = st.text_input(
+            "Search Yahoo Finance", key="sa_intl_q", placeholder="e.g. apple, tesla, 7203.T, ASML.AS"
+        )
+        if not q or len(q) < 2:
+            return
+        with st.spinner("Searching…"):
+            results = load_global_search_cached(q)
+        fresh = [r for r in results if r["symbol"] not in _KIND_OF and not r["symbol"].endswith(".NS")]
+        if not fresh:
+            st.caption("No new matches — NSE listings are already in the search box above.")
+            return
+        pick = st.selectbox(
+            "Match",
+            fresh,
+            format_func=lambda r: f"{r['symbol']} — {r['name']}  ·  {r['exchange']}",
+            key="sa_intl_pick",
+        )
+        if st.button("Add & open", type="primary", key="sa_intl_add"):
+            from data.repositories.stock import register_stock  # noqa: PLC0415 — defer off boot
+
+            register_stock(
+                pick["symbol"], name=pick["name"], exchange=pick["exchange"], quote_type=pick["quote_type"]
+            )
+            load_analysis_catalog_cached.clear()
+            st.session_state.sa_ticker = pick["symbol"]
+            st.toast(f"Added {pick['symbol']} ({pick['exchange']}).", icon="🌍")
+            st.rerun()
 
 
 _options = [c["id"] for c in _catalog]
@@ -165,9 +206,17 @@ ticker = st.selectbox(
     format_func=_opt_label,
     key="sa_ticker",
 )
+_render_add_international()
 _kind = _KIND_OF.get(ticker, "stock")
-_disp = index_display_name(ticker) if (_kind == "index" and ticker.startswith("^")) else ticker
-st.markdown(f"### {_disp} &nbsp;·&nbsp; {_BADGE[_kind]}")  # show what's being displayed
+_exchange = _EXCH_OF.get(ticker)
+if _kind == "index" and ticker.startswith("^"):
+    _disp = index_display_name(ticker)
+else:
+    _disp = ticker
+_badge = _BADGE[_kind]
+if _kind == "stock" and not is_nse_exchange(_exchange):
+    _badge = f"🌍 Stock · {_exchange}"  # international listing — yfinance fundamentals, S&P 500 CAPM
+st.markdown(f"### {_disp} &nbsp;·&nbsp; {_badge}")  # show what's being displayed
 
 if _kind == "index":
     _index_view(ticker)
@@ -182,4 +231,4 @@ else:
     if _kind == "etf":
         _etf_view(ticker, frame)
     else:
-        _stock_view(ticker, frame)
+        _stock_view(ticker, frame, _exchange)

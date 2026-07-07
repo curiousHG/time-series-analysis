@@ -18,14 +18,13 @@ from data.fetchers.stock import fetch_nse_equity_list, fetch_symbol_data, query_
 from data.repositories._ohlcv_io import _to_date, _upsert_ohlcv
 from data.repositories.index_ohlcv import ensure_index_data, refresh_index_to_today
 from data.repositories.ohlcv_watermark import _ensure_ohlcv, _get_stock_wm, _refresh_to_today, _set_stock_wm
+from stocks.constants import NSE_EXCHANGES as _NSE_EXCHANGES
 from stocks.constants import is_index_symbol, to_bare_symbol
 
 if TYPE_CHECKING:
     from datetime import date, datetime
 
 logger = logging.getLogger(__name__)
-
-_NSE_EXCHANGES = {"NSE", "NSI", "BSE", "BO"}
 
 
 def sync_nse_universe() -> int:
@@ -264,21 +263,23 @@ def list_registry_symbols() -> list[str]:
 
 
 def load_registry_catalog() -> pl.DataFrame:
-    """symbol · name · quote_type for the whole registry. The analysis picker reads quote_type to tell
-    ETFs (quote_type='ETF') from plain equities so it can badge them and route to the right view."""
+    """symbol · name · quote_type · exchange for the whole registry. The analysis picker reads
+    quote_type to tell ETFs from plain equities, and exchange to badge/route international stocks
+    (non-NSE exchange → yfinance fundamentals, S&P 500 CAPM benchmark)."""
     with get_session() as session:
         rows = session.exec(
-            select(StockRegistry.symbol, StockRegistry.stock_name, StockRegistry.quote_type).order_by(
-                col(StockRegistry.symbol)
-            )
+            select(
+                StockRegistry.symbol, StockRegistry.stock_name, StockRegistry.quote_type, StockRegistry.exchange
+            ).order_by(col(StockRegistry.symbol))
         ).all()
     return pl.DataFrame(
         {
             "symbol": [r[0] for r in rows],
             "name": [r[1] for r in rows],
             "quote_type": [r[2] for r in rows],
+            "exchange": [r[3] for r in rows],
         },
-        schema={"symbol": pl.Utf8, "name": pl.Utf8, "quote_type": pl.Utf8},
+        schema={"symbol": pl.Utf8, "name": pl.Utf8, "quote_type": pl.Utf8, "exchange": pl.Utf8},
     )
 
 

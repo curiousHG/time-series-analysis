@@ -16,20 +16,25 @@ def test_analysis_catalog_classifies_stock_etf_index(monkeypatch):
         "data.repositories.stock.load_registry_catalog",
         lambda: pl.DataFrame(
             {
-                "symbol": ["RELIANCE", "GOLDBEES", "POWERINDIA"],
-                "name": ["Reliance Industries", "Gold ETF", "Hitachi Energy India"],
-                "quote_type": [None, "ETF", None],
+                "symbol": ["RELIANCE", "GOLDBEES", "POWERINDIA", "AAPL"],
+                "name": ["Reliance Industries", "Gold ETF", "Hitachi Energy India", "Apple Inc."],
+                "quote_type": [None, "ETF", None, "EQUITY"],
+                "exchange": ["NSE", "NSE", "NSE", "NASDAQ"],
             }
         ),
     )
     monkeypatch.setattr("data.repositories.stock.list_bhavcopy_index_names", lambda: ["Nifty 50", "Nifty Bank"])
     monkeypatch.setattr("services.insights_service.INTERNATIONAL_INDEX_SYMBOLS", [("^GSPC", "S&P 500", "US")])
 
-    kind = {c["id"]: c["kind"] for c in mds.analysis_catalog()}
+    cat = mds.analysis_catalog()
+    kind = {c["id"]: c["kind"] for c in cat}
+    exch = {c["id"]: c["exchange"] for c in cat}
 
     assert kind["RELIANCE"] == "stock"
     assert kind["POWERINDIA"] == "stock"
     assert kind["GOLDBEES"] == "etf"  # quote_type='ETF' → ETF, not a plain equity
+    assert kind["AAPL"] == "stock"
+    assert exch["AAPL"] == "NASDAQ"  # exchange rides along → the page badges it 🌍 and routes fundamentals
     assert kind["Nifty 50"] == "index"
     assert kind["Nifty Bank"] == "index"
     assert kind["^GSPC"] == "index"  # international symbols are indices too
@@ -38,7 +43,9 @@ def test_analysis_catalog_classifies_stock_etf_index(monkeypatch):
 def test_analysis_catalog_carries_display_names(monkeypatch):
     monkeypatch.setattr(
         "data.repositories.stock.load_registry_catalog",
-        lambda: pl.DataFrame({"symbol": ["GOLDBEES"], "name": ["Gold ETF"], "quote_type": ["ETF"]}),
+        lambda: pl.DataFrame(
+            {"symbol": ["GOLDBEES"], "name": ["Gold ETF"], "quote_type": ["ETF"], "exchange": ["NSE"]}
+        ),
     )
     monkeypatch.setattr("data.repositories.stock.list_bhavcopy_index_names", lambda: [])
     monkeypatch.setattr("services.insights_service.INTERNATIONAL_INDEX_SYMBOLS", [("^GSPC", "S&P 500", "US")])

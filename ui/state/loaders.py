@@ -221,6 +221,23 @@ def load_etf_metadata_cached() -> dict:
     return etf_metadata()
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def load_global_search_cached(query: str) -> list[dict]:
+    """Yahoo-wide ticker search results for the add-international flow (short-cached per query)."""
+    from services.market_data_service import global_ticker_search  # noqa: PLC0415 — defer off boot
+
+    return global_ticker_search(query)
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def load_global_fundamentals_cached(symbol: str) -> dict | None:
+    """yfinance fundamentals snapshot for an international ticker (live source, day-cached —
+    mirrors the ETF-metadata pattern; not persisted to the screener tables, which are NSE/INR-based)."""
+    from services.market_data_service import global_fundamentals  # noqa: PLC0415 — defer off boot
+
+    return global_fundamentals(symbol)
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def load_fund_movers_cached() -> pl.DataFrame:
     from services.insights_service import fund_movers  # noqa: PLC0415 — defer heavy import off boot
