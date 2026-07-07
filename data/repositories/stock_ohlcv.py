@@ -1,6 +1,6 @@
 """Stock (equity) OHLCV repository — the stock_ohlcv + stock_registry tables. Keyed by the bare NSE
-symbol (RELIANCE); index symbols are delegated to index_ohlcv. Sources: the NSE stock bhavcopy (bulk),
-jugaad-data (NSE), and yfinance (global tickers)."""
+symbol (RELIANCE); index symbols are delegated to index_ohlcv. Sources: yfinance (adjusted per-symbol
+history; the single OHLCV source of truth) and the NSE stock bhavcopy (bulk one-day snapshots)."""
 
 from __future__ import annotations
 
@@ -203,11 +203,33 @@ def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
     return _refresh_to_today(sym, model=StockOhlcv, fetch_fn=_fetch_and_save_stock)
 
 
+def _despike(rows: list[dict]) -> list[dict]:
+    """Drop one-day glitch rows: a close >5x away from BOTH neighbours' closes. Yahoo's early-2000s
+    .NS history has days where values spike (or swap between tickers) and recover the next session —
+    e.g. CIPLA 2003-04-14: 49.3 → 3.9 → 49.5. Real splits are level SHIFTS (the new level persists),
+    so they never match the both-neighbours pattern. `rows` must be date-sorted with positive closes."""
+
+    def _spiky(a: float, b: float) -> bool:
+        return a / b > 5 or b / a > 5
+
+    keep = rows[:1]
+    for i in range(1, len(rows) - 1):
+        c, p, n = rows[i]["close"], rows[i - 1]["close"], rows[i + 1]["close"]
+        if _spiky(c, p) and _spiky(c, n):
+            logger.info("despike %s %s: close=%.2f vs neighbours %.2f / %.2f", rows[i]["symbol"], rows[i]["date"], c, p, n)
+            continue
+        keep.append(rows[i])
+    if len(rows) > 1:
+        keep.append(rows[-1])
+    return keep
+
+
 def refetch_stock_full(symbol: str, *, since=None) -> None:
     """Replace an equity's entire stored history with a fresh yfinance pull, ATOMICALLY. Fetch first;
     only if that succeeds, delete + re-insert in a single transaction. This fully cleans a corrupt or
     mixed-scale series (a plain upsert would leave stale rows on dates the new pull happens to skip),
-    and it's interrupt-safe: a failed/empty fetch or a kill mid-transaction leaves the old rows intact."""
+    and it's interrupt-safe: a failed/empty fetch or a kill mid-transaction leaves the old rows intact.
+    Zero-close rows are dropped and one-day glitches despiked before insert."""
     import datetime as _dt  # noqa: PLC0415
 
     import pandas as pd  # noqa: PLC0415 — pandas only here; the repo is polars-native
@@ -232,6 +254,9 @@ def refetch_stock_full(symbol: str, *, since=None) -> None:
         }
         for r in data.reset_index().itertuples(index=False)
     ]
+    rows = _despike([r for r in rows if r["close"] and r["close"] > 0])
+    if not rows:
+        return
     with get_session() as session:
         session.exec(delete(StockOhlcv).where(col(StockOhlcv.symbol) == bare))
         session.exec(pg_insert(StockOhlcv).values(rows))

@@ -18,12 +18,13 @@ BENCHMARK_SYMBOL_MAP: dict[str, str] = {
     "nifty 500": "^CRSLDX",
     "nifty next 50": "^NSMIDCP",
     "nifty midcap 50": "^NSEMDCP50",
-    "nifty midcap 100": "NIFTY_MIDCAP_100.NS",
-    # yfinance delisted NIFTY_MIDCAP_150.NS / NIFTY_SMLCAP_250.NS (0 rows since 2025) —
-    # use the niftyindices source (space-form symbols route there in ensure_stock_data).
-    "nifty midcap 150": "NIFTY MIDCAP 150",
+    # The midcap/smallcap families aren't reliably on yfinance (the .NS index tickers got delisted)
+    # and niftyindices.com is dead — they resolve to the NSE index-bhavcopy names, which the daily
+    # bulk refresh maintains in index_ohlcv. NOTE: values are the EXACT (inconsistent) NSE spellings.
+    "nifty midcap 100": "NIFTY Midcap 100",
+    "nifty midcap 150": "Nifty Midcap 150",
     "nifty smallcap 100": "^CNXSC",
-    "nifty smallcap 250": "NIFTY SMALLCAP 250",
+    "nifty smallcap 250": "Nifty Smallcap 250",
     "nifty bank": "^NSEBANK",
     "bank nifty": "^NSEBANK",
     "s&p bse sensex": "^BSESN",
@@ -61,10 +62,10 @@ BENCHMARK_CHOICES: dict[str, str] = {
     "Nifty 100": "^CNX100",
     "Nifty 500": "^CRSLDX",
     "Nifty Next 50": "^NSMIDCP",
-    "Nifty Midcap 100": "NIFTY_MIDCAP_100.NS",
-    "Nifty Midcap 150": "NIFTY MIDCAP 150",
+    "Nifty Midcap 100": "NIFTY Midcap 100",
+    "Nifty Midcap 150": "Nifty Midcap 150",
     "Nifty Smallcap 100": "^CNXSC",
-    "Nifty Smallcap 250": "NIFTY SMALLCAP 250",
+    "Nifty Smallcap 250": "Nifty Smallcap 250",
     "BSE Sensex": "^BSESN",
     "Nifty Bank": "^NSEBANK",
     "Nifty IT": "^CNXIT",
@@ -89,12 +90,8 @@ INDEX_DISPLAY_NAMES: dict[str, str] = {
     "^CRSLDX": "Nifty 500",
     "^NSMIDCP": "Nifty Next 50",
     "^NSEMDCP50": "Nifty Midcap 50",
-    "NIFTY_MIDCAP_100.NS": "Nifty Midcap 100",
-    "NIFTY MIDCAP 150": "Nifty Midcap 150",
-    "NIFTY_MIDCAP_150.NS": "Nifty Midcap 150 (legacy)",
+    "NIFTY Midcap 100": "Nifty Midcap 100",
     "^CNXSC": "Nifty Smallcap 100",
-    "NIFTY SMALLCAP 250": "Nifty Smallcap 250",
-    "NIFTY_SMLCAP_250.NS": "Nifty Smallcap 250 (legacy)",
     "^NSEBANK": "Nifty Bank",
     "^BSESN": "BSE Sensex",
     "^CNXIT": "Nifty IT",
@@ -131,8 +128,8 @@ SUBCATEGORY_BENCHMARK: dict[str, str] = {
     # Equity — each maps to its SEBI benchmark (or the closest fetchable proxy).
     "Large Cap Fund": "^CNX100",  # Nifty 100
     "Large & Mid Cap Fund": "^CNX200",  # Nifty 200 (proxy for LargeMidcap 250)
-    "Mid Cap Fund": "NIFTY MIDCAP 150",  # niftyindices (yfinance lacks it)
-    "Small Cap Fund": "NIFTY SMALLCAP 250",  # niftyindices
+    "Mid Cap Fund": "Nifty Midcap 150",  # NSE index bhavcopy (yfinance lacks it)
+    "Small Cap Fund": "Nifty Smallcap 250",  # NSE index bhavcopy
     "Multi Cap Fund": "^CRSLDX",  # Nifty 500
     "Flexi Cap Fund": "^CRSLDX",
     "ELSS": "^CRSLDX",

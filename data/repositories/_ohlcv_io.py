@@ -18,8 +18,8 @@ from data.constants import EMPTY_OHLCV
 logger = logging.getLogger(__name__)
 
 # Negative cache for symbols that returned zero rows. Without this, a symbol yfinance can
-# never serve (e.g. the NIFTY_MIDCAP_150.NS index benchmark) keeps `_date_range` returning None,
-# so ensure_* re-runs a slow doomed fetch on every call/rerun — which hangs pages like MF Analysis.
+# never serve (e.g. a delisted ticker) keeps `_date_range` returning None, so ensure_* re-runs a
+# slow doomed fetch on every call/rerun — which hangs pages like MF Analysis.
 # In-process, short TTL so transient outages still retry.
 _EMPTY_FETCH_TTL = timedelta(hours=1)
 _empty_fetch_cache: dict[str, datetime] = {}
@@ -30,7 +30,12 @@ def _to_date(d: datetime | date) -> date:
 
 
 def _upsert_ohlcv(model: type, symbol: str, df: pl.DataFrame) -> None:
-    """Upsert OHLCV rows into `model`'s table (StockOhlcv or IndexOhlcv)."""
+    """Upsert OHLCV rows into `model`'s table (StockOhlcv or IndexOhlcv). Rows without a positive
+    close are dropped — yahoo's early-2000s .NS history contains zero/null-close days that would
+    otherwise poison return calculations."""
+    if df.height == 0:
+        return
+    df = df.filter(pl.col("Close").is_not_null() & (pl.col("Close") > 0))
     if df.height == 0:
         return
     with get_session() as session:

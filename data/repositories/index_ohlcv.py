@@ -1,9 +1,12 @@
 """Index OHLCV repository — the index_ohlcv table. Sources: the NSE index bhavcopy (bulk, name-keyed,
-incl. valuation P/E·P/B·Div-Yield), niftyindices.com (space-form "NIFTY …"), and yfinance (^-symbols)."""
+incl. valuation P/E·P/B·Div-Yield) and yfinance (literal symbols: ^GSPC, INR=X, URTH). Name-keyed
+NSE indices are maintained ONLY by the bulk bhavcopy refresh — niftyindices.com (the old per-name
+on-demand source) went dead mid-2026 and was removed."""
 
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import polars as pl
@@ -13,7 +16,7 @@ from sqlmodel import col, select
 
 from core.database import get_session
 from core.models import IndexOhlcv
-from data.fetchers.stock import fetch_nse_index, fetch_symbol_data
+from data.fetchers.stock import fetch_symbol_data
 from data.repositories._ohlcv_io import _load_ohlcv, _to_date, _upsert_ohlcv
 from data.repositories.ohlcv_watermark import _ensure_ohlcv, _get_index_wm, _refresh_to_today, _set_index_wm
 
@@ -78,12 +81,13 @@ def first_index_bhavcopy_date() -> date | None:
 
 
 def _fetch_and_save_index(symbol: str, start: date, end: date) -> None:
-    """Fetch an index — niftyindices.com for "NIFTY …" space-form (yfinance lacks Smallcap 250 /
-    Midcap 150), yfinance otherwise — and upsert into index_ohlcv."""
-    if symbol.startswith("NIFTY "):
-        data = fetch_nse_index(symbol, start, end)
-    else:
-        data = fetch_symbol_data(symbol, start=start, end=end)
+    """Fetch an index by its literal yfinance symbol (^GSPC, INR=X, URTH) and upsert. Name-keyed NSE
+    indices ("Nifty Midcap 150") have no on-demand source — the daily index-bhavcopy refresh maintains
+    them in bulk — so they no-op here and serve whatever is already stored."""
+    if " " in symbol:
+        logger.debug("index %r is bhavcopy-maintained (bulk); no on-demand fetch", symbol)
+        return
+    data = fetch_symbol_data(symbol, start=start, end=end)
     if data is not None and not data.empty:
         _upsert_ohlcv(IndexOhlcv, symbol, pl.from_pandas(data.reset_index()))
 
@@ -139,15 +143,22 @@ def list_index_symbols() -> list[str]:
 
 
 def list_bhavcopy_index_names() -> list[str]:
-    """Distinct NSE-name indices from the index bhavcopy (excludes the ^-symbol / space-form
-    yfinance indices) — the comprehensive 160-index set incl. factor/strategy indices."""
+    """Distinct LIVE NSE-name indices from the index bhavcopy — the comprehensive 160+ set incl.
+    factor/strategy indices. 'Live' = published within ~45 days of the newest bhavcopy day, so
+    matured target-maturity indices and renamed/retired ones (which stop appearing in the file)
+    drop out of pickers instead of lingering as frozen entries. All-caps official names like
+    'NIFTY SME EMERGE' are live indices and stay in."""
     with get_session() as session:
+        newest = session.exec(
+            select(func.max(col(IndexOhlcv.date))).where(~col(IndexOhlcv.symbol).startswith("^"))
+        ).one()
+        if newest is None:
+            return []
         rows = session.exec(
             select(col(IndexOhlcv.symbol))
             .where(~col(IndexOhlcv.symbol).startswith("^"), ~col(IndexOhlcv.symbol).contains("="))
-            .distinct()
+            .group_by(col(IndexOhlcv.symbol))
+            .having(func.max(col(IndexOhlcv.date)) >= newest - timedelta(days=45))
             .order_by(col(IndexOhlcv.symbol))
         ).all()
-    # The legacy niftyindices space-form entries ("NIFTY SMALLCAP 250") are ALL-CAPS; the bhavcopy
-    # names are title-case ("Nifty Smallcap 250"). Keep the bhavcopy (title-case) set.
-    return [r for r in rows if not r.isupper()]
+    return list(rows)

@@ -62,7 +62,8 @@ def _num(text: str | None) -> float | None:
     return float(m.group()) if m else None
 
 
-# Index symbol → screener.in slug (its /company/<slug>/ page lists constituents).
+# Index symbol → screener.in slug (its /company/<slug>/ page lists constituents). Keys are
+# UPPER-CASE; lookup upper-cases the input so both 'Nifty Midcap 150' and legacy forms resolve.
 _INDEX_SCREENER_SLUG = {
     "^NSEI": "NIFTY",
     "^NSEBANK": "BANKNIFTY",
@@ -74,7 +75,7 @@ _INDEX_SCREENER_SLUG = {
 
 def index_screener_slug(symbol: str) -> str:
     """Map an index symbol to its screener.in slug (^CNXREALTY → CNXREALTY, ^NSEI → NIFTY)."""
-    return _INDEX_SCREENER_SLUG.get(symbol) or symbol.lstrip("^")
+    return _INDEX_SCREENER_SLUG.get(symbol.upper()) or symbol.lstrip("^")
 
 
 def fetch_index_constituents(slug: str) -> list[str]:

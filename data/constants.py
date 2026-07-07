@@ -22,19 +22,6 @@ NSE_EQUITY_LIST_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_
 NIFTY500_LIST_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv"
 NSE_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"}
 
-# niftyindices.com — authoritative source for Nifty index history (incl. Smallcap 250 /
-# Midcap 150 that yfinance lacks). Params must be wrapped in a `cinfo` JSON string.
-NIFTYINDICES_PAGE_URL = "https://niftyindices.com/reports/historical-data"
-NIFTYINDICES_HISTORY_URL = "https://niftyindices.com/Backpage.aspx/getHistoricaldatatabletoString"
-NIFTYINDICES_HEADERS = {
-    "Referer": NIFTYINDICES_PAGE_URL,
-    "Origin": "https://niftyindices.com",
-    "X-Requested-With": "XMLHttpRequest",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0 Safari/537.36",
-    "Accept": "*/*",
-    "Content-Type": "application/json; charset=UTF-8",
-}
-
 # Stock OHLCV (data.repositories.stock).
 MIN_FETCH_DAYS = 5  # don't fetch ranges shorter than 5 days (avoids holiday/weekend gaps)
 EMPTY_OHLCV = pl.DataFrame(
