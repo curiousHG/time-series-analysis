@@ -64,21 +64,26 @@ def _report(progress_cb: Callable[..., None] | None, **fields: object) -> None:
         progress_cb(**fields)
 
 
-def refresh_stocks_via_bhavcopy(*, max_days: int = 90, progress_cb: Callable[..., None] | None = None) -> int:
-    """Append every NSE bhavcopy day from the last stored date up to today for tracked stocks
-    (weekends/holidays are simply empty). One bulk download per day beats a yfinance call per
-    symbol. `max_days` caps a cold-start backfill. Returns rows upserted."""
-    from data.repositories.stock import last_stock_ohlcv_date, save_bhavcopy_day  # noqa: PLC0415 — defer off boot
+def refresh_stocks_via_yfinance(*, window_days: int = 7, chunk: int = 200, progress_cb: Callable[..., None] | None = None) -> int:
+    """Daily forward-fill for every tracked equity (NSE + international) via batched yfinance
+    downloads — the SAME adjusted source as full-history fetches, so daily rows can never drift
+    from stored history (raw bhavcopy appends diverged after every split/dividend). Re-writes the
+    trailing `window_days` too, absorbing any late corporate-action adjustments and evening out
+    ragged per-symbol tails. Returns rows upserted."""
+    from data.repositories.stock import last_stock_ohlcv_date, list_stock_symbols, refresh_stocks_batch  # noqa: PLC0415
 
-    today = _date.today()
     last = last_stock_ohlcv_date()
-    start = max(last + _timedelta(days=1), today - _timedelta(days=max_days)) if last else today - _timedelta(days=max_days)
-    days = _days_between(start, today)
+    if last is None:
+        return 0  # nothing tracked yet — the seed/backfill paths populate first
+    today = _date.today()
+    start = min(last - _timedelta(days=2), today - _timedelta(days=window_days))
+    symbols = list_stock_symbols()
+    chunks = [symbols[i : i + chunk] for i in range(0, len(symbols), chunk)]
     total = 0
-    for i, day in enumerate(days, 1):
-        total += save_bhavcopy_day(day, only_existing=True)
-        _report(progress_cb, phase="Stocks", done=i, total=len(days))
-    logger.info("bhavcopy refresh: %d rows from %s to %s", total, start, today)
+    for i, ch in enumerate(chunks, 1):
+        total += refresh_stocks_batch(ch, start, today + _timedelta(days=1))
+        _report(progress_cb, phase="Stocks", done=i, total=len(chunks))
+    logger.info("yfinance stock refresh: %d rows from %s for %d symbols", total, start, len(symbols))
     return total
 
 
@@ -124,11 +129,12 @@ def backfill_indices_history(*, years: int = 12, progress_cb: Callable[..., None
 
 
 def refresh_all_stock_data(*, progress_cb: Callable[..., None] | None = None) -> dict:
-    """Full stock + index data refresh for the background task: bhavcopy stocks + indices, then
-    recompute stock metrics. Reports live phase/progress via `progress_cb`. Returns per-step counts."""
+    """Full stock + index data refresh for the background task: batched-yfinance stocks (adjusted,
+    single source of truth) + bhavcopy indices (the only source with factor indices + valuation),
+    then recompute stock metrics. Reports live phase/progress. Returns per-step counts."""
     from data.repositories.stock import sync_nse_etf_universe  # noqa: PLC0415 — defer off boot
 
-    stock_rows = refresh_stocks_via_bhavcopy(progress_cb=progress_cb)
+    stock_rows = refresh_stocks_via_yfinance(progress_cb=progress_cb)
     index_rows = refresh_indices_via_bhavcopy(progress_cb=progress_cb)
     _report(progress_cb, phase="ETF list", done=0, total=1)
     etfs = sync_nse_etf_universe()  # keep the ETF classification current for the analysis picker

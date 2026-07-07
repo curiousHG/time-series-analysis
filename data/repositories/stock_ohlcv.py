@@ -129,54 +129,39 @@ def register_stock(symbol: str, *, name: str | None = None, exchange: str | None
         session.commit()
 
 
-def save_bhavcopy_day(day: date, *, only_existing: bool = True) -> int:
-    """Fetch the NSE bhavcopy for `day` and bulk-upsert equity OHLCV into stock_ohlcv — one
-    download covers every cash-market stock. When only_existing, limits to symbols already in
-    stock_ohlcv (extends their series); else stores the whole universe. Returns rows upserted."""
-    import pandas as pd  # noqa: PLC0415 — pandas only here; the repo is polars-native
+def refresh_stocks_batch(symbols: list[str], start: date, end_exclusive: date) -> int:
+    """Upsert a recent OHLCV window for many equities from ONE batched yfinance download. `symbols`
+    are bare keys (RELIANCE, AAPL); each is suffixed per its registry exchange like the per-symbol
+    path, so NSE and international stocks refresh through the same call. Returns rows saved."""
+    from data.fetchers.stock import fetch_symbols_batch  # noqa: PLC0415 — defer heavy import off boot
 
-    from data.fetchers.stock import fetch_nse_bhavcopy  # noqa: PLC0415 — defer heavy import off boot
-
-    df = fetch_nse_bhavcopy(day)
-    if df is None or df.empty:
+    if not symbols:
         return 0
-    if only_existing:
-        with get_session() as session:
-            existing = set(session.exec(select(col(StockOhlcv.symbol)).distinct()).all())
-        df = df[df["Symbol"].isin(existing)]
-        if df.empty:
-            return 0
-
-    def _num(v: object) -> float | None:
-        return float(v) if pd.notna(v) else None
-
-    def _int(v: object) -> int | None:
-        return int(v) if pd.notna(v) else None
-
-    rows = [
-        {
-            "date": r.Date,
-            "symbol": r.Symbol,
-            "open": _num(r.Open),
-            "high": _num(r.High),
-            "low": _num(r.Low),
-            "close": _num(r.Close),
-            "volume": _int(r.Volume),
-            "turnover": _num(r.Turnover),
-            "num_trades": _int(r.NumTrades),
-        }
-        for r in df.itertuples(index=False)
-    ]
     with get_session() as session:
-        stmt = pg_insert(StockOhlcv).values(rows)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["date", "symbol"],
-            set_={c: stmt.excluded[c] for c in ("open", "high", "low", "close", "volume", "turnover", "num_trades")},
-        )
-        session.exec(stmt)
-        session.commit()
-    logger.info("bhavcopy %s: upserted %d rows (only_existing=%s)", day, len(rows), only_existing)
-    return len(rows)
+        rows = session.exec(
+            select(StockRegistry.symbol, StockRegistry.exchange).where(col(StockRegistry.symbol).in_(symbols))
+        ).all()
+    exchange_of = dict(rows)
+
+    def _yf(bare: str) -> str:
+        if "." in bare or bare.startswith("^"):
+            return bare
+        exch = (exchange_of.get(bare) or "NSE").upper()
+        return bare if exch not in _NSE_EXCHANGES else f"{bare}.NS"
+
+    # A registry row with NULL exchange means the symbol left the NSE master (delisted/renamed in a
+    # demerger — e.g. TATAMOTORS → TMCV/TMPV). Its history is static; skip it instead of 404ing daily.
+    live = [b for b in symbols if not (b in exchange_of and exchange_of[b] is None)]
+    yf_to_bare = {_yf(b): b for b in live}
+    total = 0
+    for ticker, df in fetch_symbols_batch(list(yf_to_bare), start, end_exclusive).items():
+        bare = yf_to_bare.get(ticker)
+        if bare is None:
+            continue
+        frame = pl.from_pandas(df.reset_index())
+        _upsert_ohlcv(StockOhlcv, bare, frame)
+        total += frame.height
+    return total
 
 
 def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:

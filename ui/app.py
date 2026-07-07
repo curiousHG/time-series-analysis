@@ -32,9 +32,9 @@ def _boot_refreshed_today() -> bool:
 @st.cache_resource(show_spinner=False)
 def _kickoff_background_refresh() -> bool:
     """Kick off a once-per-day background pass that keeps market data fresh: seed the Nifty 500
-    (DB-first, resumable) + append the latest NSE bhavcopy for the whole stock+index universe +
-    recompute metrics. Routed through core.background under the shared stock-refresh key so it can't
-    race a user-triggered Settings refresh, and guarded to run at most once per calendar day."""
+    (DB-first, resumable) + batched-yfinance forward-fill for tracked stocks + the NSE index
+    bhavcopy + recompute metrics. Routed through core.background under the shared stock-refresh key
+    so it can't race a user-triggered Settings refresh, and guarded to run at most once per day."""
     import datetime  # noqa: PLC0415 — keep boot imports minimal
     import logging  # noqa: PLC0415
 
@@ -47,7 +47,7 @@ def _kickoff_background_refresh() -> bool:
         from services.stock_sync_service import refresh_all_stock_data, seed_nifty500  # noqa: PLC0415
 
         seed_nifty500()  # fill any missing Nifty 500 constituents (no-op once populated)
-        result = refresh_all_stock_data()  # bulk bhavcopy stocks + 160 indices + recompute metrics
+        result = refresh_all_stock_data()  # batched-yfinance stocks + 160 bhavcopy indices + metrics
         _BOOT_GUARD.parent.mkdir(parents=True, exist_ok=True)
         _BOOT_GUARD.write_text(datetime.date.today().isoformat())
         logging.getLogger("boot").info("boot data refresh done: %s", result)

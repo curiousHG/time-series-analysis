@@ -76,67 +76,6 @@ def fetch_nse_etf_list() -> list[dict]:
     return out
 
 
-def fetch_nse_bhavcopy(day: date) -> pd.DataFrame | None:
-    """All NSE cash-market equity OHLCV for a single day in one download.
-
-    Handles BOTH bhavcopy schemas jugaad returns: the UDiFF CM format (>= 2024-07-08) and the older
-    sec_bhavdata_full format (< 2024-07-08) that jugaad silently falls back to. Returns
-    Date/Symbol/Open/High/Low/Close/Volume (bare symbols) for the EQ/BE/BZ series, or None on a
-    holiday/weekend/future date (no file), a fetch failure, or an unrecognized schema.
-    """
-    from jugaad_data.nse import bhavcopy_raw  # noqa: PLC0415 — heavy optional dep, only on this path
-
-    try:
-        raw = bhavcopy_raw(day)
-    except Exception as e:
-        logger.debug("bhavcopy unavailable for %s: %s", day, e)
-        return None
-    try:
-        df = pd.read_csv(StringIO(raw))
-    except Exception:
-        return None
-    df.columns = [c.strip() for c in df.columns]
-
-    if "TckrSymb" in df.columns:  # UDiFF CM format (>= 2024-07-08)
-        eq = df[(df["Sgmt"] == "CM") & (df["SctySrs"].isin(["EQ", "BE", "BZ"]))]
-        if eq.empty:
-            return None
-        return pd.DataFrame(
-            {
-                "Date": pd.to_datetime(eq["TradDt"]).dt.date,
-                "Symbol": eq["TckrSymb"].astype(str).str.strip(),
-                "Open": eq["OpnPric"],
-                "High": eq["HghPric"],
-                "Low": eq["LwPric"],
-                "Close": eq["ClsPric"],
-                "Volume": eq["TtlTradgVol"],
-                "Turnover": eq["TtlTrfVal"],  # traded value in ₹
-                "NumTrades": eq["TtlNbOfTxsExctd"],
-            }
-        )
-
-    if "SYMBOL" in df.columns and "SERIES" in df.columns:  # sec_bhavdata_full format (< 2024-07-08)
-        eq = df[df["SERIES"].astype(str).str.strip().isin(["EQ", "BE", "BZ"])]
-        if eq.empty:
-            return None
-        return pd.DataFrame(
-            {
-                "Date": pd.to_datetime(eq["DATE1"].astype(str).str.strip(), format="%d-%b-%Y").dt.date,
-                "Symbol": eq["SYMBOL"].astype(str).str.strip(),
-                "Open": eq["OPEN_PRICE"],
-                "High": eq["HIGH_PRICE"],
-                "Low": eq["LOW_PRICE"],
-                "Close": eq["CLOSE_PRICE"],
-                "Volume": eq["TTL_TRD_QNTY"],
-                "Turnover": pd.to_numeric(eq["TURNOVER_LACS"], errors="coerce") * 1e5,  # lakhs → ₹
-                "NumTrades": eq["NO_OF_TRADES"],
-            }
-        )
-
-    logger.debug("bhavcopy %s: unrecognized schema (cols=%s)", day, list(df.columns)[:6])
-    return None
-
-
 def fetch_nse_index_bhavcopy(day: date) -> pd.DataFrame | None:
     """All NSE index OHLCV for a single day in one download (ind_close_all) — 160+ indices incl.
     sectoral + factor/strategy indices (Quality/Value/Momentum/Alpha/Low-Vol), which yfinance and
@@ -225,6 +164,44 @@ def query_stocks(query: str) -> pd.DataFrame:
     if df is None or df.empty or "quoteType" not in df.columns:
         return empty
     return df[df["quoteType"] == "equity"]
+
+
+def fetch_symbols_batch(symbols: list[str], start: date, end_exclusive: date) -> dict[str, pd.DataFrame]:
+    """One threaded yf.download for MANY tickers → {ticker: OHLCV frame}. Same auto-adjusted basis
+    as fetch_symbol_data, so bulk daily refreshes land on the identical price basis as full-history
+    fetches (mixing an unadjusted daily source with adjusted history drifts after every corporate
+    action). Tickers with no rows in the window are omitted; `end_exclusive` follows yfinance's
+    exclusive-end convention."""
+    if not symbols:
+        return {}
+    try:
+        raw = yf.download(
+            symbols,
+            start=start,
+            end=end_exclusive,
+            interval="1d",
+            auto_adjust=True,
+            group_by="ticker",
+            threads=True,
+            progress=False,
+        )
+    except Exception as e:
+        logger.error("batch price fetch failed for %d tickers: %s", len(symbols), e)
+        push_notice(f"Batch price refresh failed: {e}", level="error", key="fetch:batch")
+        return {}
+    if raw is None or raw.empty:
+        return {}
+    out: dict[str, pd.DataFrame] = {}
+    if not isinstance(raw.columns, pd.MultiIndex):  # single ticker → flat columns
+        df = raw.dropna(how="all")
+        if not df.empty:
+            out[symbols[0]] = df
+        return out
+    for ticker in raw.columns.get_level_values(0).unique():
+        df = raw[ticker].dropna(how="all")
+        if not df.empty:
+            out[str(ticker)] = df
+    return out
 
 
 def fetch_symbol_data(symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame | None:
