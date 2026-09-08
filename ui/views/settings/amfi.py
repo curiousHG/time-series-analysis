@@ -1,40 +1,25 @@
-"""Settings → AMFI Master Data section."""
+"""Settings → AMFI universe: size, freshness, and the sync action."""
 
 from __future__ import annotations
 
 import streamlit as st
 
-from data.repositories.amfi import get_scheme_count, load_recent_additions, sync_amfi_master
+from data.repositories.amfi import get_scheme_count, latest_amfi_nav_date, sync_amfi_master
+from ui.components.chrome import section_header
+from ui.views.settings.format import fmt_date, plural
 
 
 def render() -> None:
-    st.markdown("#### AMFI Master")
+    actions = section_header("AMFI universe")
+    with actions:
+        if st.button("Sync AMFI master", use_container_width=True):
+            with st.spinner("Downloading NAVAll.txt…"):
+                count = sync_amfi_master()
+            st.toast(f"Synced {count:,} schemes from AMFI.", icon="✅")
+            st.rerun()
 
-    amfi_count = get_scheme_count()
-    st.caption(f"{amfi_count:,} schemes in the local universe used for search and ISIN matching.")
-
-    if st.button("Sync AMFI Master", type="secondary", use_container_width=False):
-        with st.spinner("Downloading AMFI NAVAll.txt..."):
-            count = sync_amfi_master()
-        st.success(f"Synced **{count:,}** schemes from AMFI")
-        st.rerun()
-
-    recent = load_recent_additions(limit=25)
-    if recent.is_empty():
-        st.caption("No AMFI additions have been timestamped yet. Future syncs will record newly inserted schemes here.")
+    count = get_scheme_count()
+    if count == 0:
+        st.markdown("Not synced yet. The master list is what search and ISIN matching run on.")
         return
-
-    st.markdown("**Recently added to local DB**")
-    st.dataframe(
-        recent.to_pandas(),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "schemeCode": st.column_config.NumberColumn("Code", format="%d"),
-            "schemeName": st.column_config.TextColumn("Scheme"),
-            "fundHouse": st.column_config.TextColumn("AMC"),
-            "category": st.column_config.TextColumn("Category"),
-            "isinGrowth": st.column_config.TextColumn("ISIN"),
-            "dbAddedAt": st.column_config.DatetimeColumn("Added to DB"),
-        },
-    )
+    st.markdown(f"{plural(count, 'scheme')}, NAVs as of {fmt_date(latest_amfi_nav_date())}.")

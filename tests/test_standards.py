@@ -136,7 +136,6 @@ def test_views_import_data_via_seam():
             "ui/views/portfolio/growth.py",
             "ui/views/portfolio/page.py",
             "ui/views/settings/amfi.py",
-            "ui/views/settings/page.py",
             "ui/views/settings/refresh.py",
             "ui/views/settings/tradebook.py",
             "ui/views/stock_analysis/fundamentals.py",

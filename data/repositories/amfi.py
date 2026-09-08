@@ -9,7 +9,7 @@ Process-level caches:
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import polars as pl
 from sqlalchemy import select as sa_select
@@ -341,6 +341,12 @@ def get_scheme_details_by_name(scheme_name: str) -> dict | None:
         "fund_house": row[6],
         "category": row[7],
     }
+
+
+def latest_amfi_nav_date() -> date | None:
+    """The most recent NAV date AMFI has published across the master."""
+    with get_session() as session:
+        return session.exec(select(func.max(AmfiScheme.nav_date))).one()
 
 
 def get_scheme_count() -> int:
