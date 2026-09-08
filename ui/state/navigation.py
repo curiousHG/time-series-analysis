@@ -35,5 +35,7 @@ def open_stock_in_analysis(symbol: str) -> None:
     selected = sorted(existing | {bare})
     st.session_state.selected_stocks = selected
     save_selection("selected_stocks", selected)
-    st.session_state.sa_ticker = bare  # preselect in the unified Stock Analysis picker
+    # Staged (not set directly): the analysis page applies it before its sa_ticker widget
+    # instantiates — writing a widget key after the widget rendered raises in Streamlit.
+    st.session_state.sa_ticker_pending = bare
     st.switch_page(STOCK_ANALYSIS_PAGE)

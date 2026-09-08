@@ -20,6 +20,7 @@ from services.data_freshness import (
     compute_nav_freshness,
 )
 from services.registry_service import (
+    list_active,
     list_tracked,
     list_unavailable_funds,
     retry_unavailable,
@@ -39,7 +40,7 @@ def _color_status(val: str) -> str:
 def _fund_freshness() -> dict:
     """Freshness reports for every tracked fund — cached so the view keeps showing the last-known
     state while a background refresh runs (cleared when the refresh finishes)."""
-    names = list_tracked()["schemeName"].to_list()
+    names = list_active()["schemeName"].to_list()
     slugs = [make_slug(n) for n in names]
     return {
         "names": names,
@@ -80,6 +81,7 @@ def render() -> None:
     if tracked.height == 0:
         st.info("No tracked funds yet. Add some via the **MF Screener** page.")
         return
+    dormant_count = int(tracked["dormant"].sum())
 
     fr = _fund_freshness()
     names = fr["names"]
@@ -90,7 +92,11 @@ def render() -> None:
         _REFRESH.poll()  # live phase/progress banner; full-rerun when the task finishes
 
     h1, h2, h3, h4 = st.columns(4)
-    h1.metric("Tracked funds", f"{len(names):,}")
+    h1.metric(
+        "Tracked funds",
+        f"{len(names):,}",
+        help=f"{dormant_count:,} dormant scheme(s) (no AMFI NAV for {90}+ days) excluded from refreshes",
+    )
     h2.metric("Stale NAV", f"{nav_report.stale_count:,}", help=f"Current date: {nav_report.current_date}")
     h3.metric("Stale holdings", f"{holdings_report.stale_count:,}")
     h4.metric("Unresolved sources", f"{list_unavailable_funds().height:,}")

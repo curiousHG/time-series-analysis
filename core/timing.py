@@ -13,7 +13,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from typing import TypeVar
 
-from core.constants import DEFAULT_SLOW_MS
+from core.constants import DEFAULT_SLOW_MS, PERF_LOG_ENABLED
 
 logger = logging.getLogger("perf")
 
@@ -22,7 +22,14 @@ T = TypeVar("T")
 
 @contextmanager
 def timed(label: str, *, slow_threshold_ms: float = DEFAULT_SLOW_MS):
-    """Time a block; logs INFO if >= slow_threshold_ms else DEBUG. Always logs on error."""
+    """Time a block; logs INFO if >= slow_threshold_ms else DEBUG. Always logs on error.
+
+    A no-op passthrough unless `PERF_LOG=1` — every Streamlit rerun re-enters these blocks, and
+    the timing was only ever read while chasing a slow page.
+    """
+    if not PERF_LOG_ENABLED:
+        yield
+        return
     t0 = time.perf_counter()
     try:
         yield

@@ -22,20 +22,56 @@ For a view driving several tasks, wrap them in a `BackgroundRefreshGroup`.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import streamlit as st
 
-from core.background import consume_if_finished, is_running, set_task_progress, start_task, task_state
+from core.background import (
+    append_task_log,
+    consume_if_finished,
+    is_running,
+    set_task_progress,
+    start_task,
+    task_log,
+    task_state,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+# Rows of the running log shown at once; the rest stays scrollable in the same box.
+_LOG_VIEW_HEIGHT_PX = 220
+
 
 def progress_cb(key: str) -> Callable[..., None]:
-    """Adapter turning a service's `progress_cb(**fields)` into `set_task_progress(key, ...)`."""
-    return lambda **fields: set_task_progress(key, **fields)
+    """Adapter turning a service's `progress_cb(**fields)` into task progress + log lines.
+
+    `message=` is appended to the task's rolling log; every other field merges into `meta`
+    (phase / done / total), which drives the banner and progress bar.
+    """
+
+    def _cb(**fields: Any) -> None:
+        message = fields.pop("message", None)
+        if fields:
+            set_task_progress(key, **fields)
+        if message:
+            append_task_log(key, str(message))
+
+    return _cb
+
+
+def _render_log(key: str) -> None:
+    """Live activity log for a running task — newest first, so the latest line is always visible
+    without the poll fragment having to restore scroll position."""
+    lines = task_log(key)
+    if not lines:
+        return
+    body = "\n".join(f"{time.strftime('%H:%M:%S', time.localtime(ts))}  {line}" for ts, line in reversed(lines))
+    with st.container(height=_LOG_VIEW_HEIGHT_PX, border=True):
+        st.code(body, language=None)
+    st.caption(f"{len(lines)} recent event(s), newest first.")
 
 
 def _render_status(key: str, label: str) -> None:
@@ -47,6 +83,7 @@ def _render_status(key: str, label: str) -> None:
         st.progress(min(done / total, 1.0))
     else:
         st.info(f"🔄 {label} running in the background — showing the last-cached data; updates when ready.")
+    _render_log(key)
 
 
 @dataclass

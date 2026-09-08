@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 _LOCK = threading.Lock()
+
+# Per-task rolling log depth. Deep enough to follow a long fund refresh, bounded so a 5K-scheme
+# run can't grow without limit in a process that may stay up for days.
+LOG_CAPACITY = 400
 
 
 @dataclass
@@ -26,6 +31,7 @@ class TaskState:
     result: Any = None
     error: str | None = None
     meta: dict = field(default_factory=dict)
+    log: deque[tuple[float, str]] = field(default_factory=lambda: deque(maxlen=LOG_CAPACITY))
 
 
 _TASKS: dict[str, TaskState] = {}
@@ -66,7 +72,7 @@ def task_state(key: str) -> TaskState:
         state = _TASKS.get(key)
         if state is None:
             return TaskState()
-        return replace(state, meta=dict(state.meta))
+        return replace(state, meta=dict(state.meta), log=deque(state.log, maxlen=LOG_CAPACITY))
 
 
 def is_running(key: str) -> bool:
@@ -80,6 +86,23 @@ def set_task_progress(key: str, **fields: Any) -> None:
         state = _TASKS.get(key)
         if state and state.status == "running":
             state.meta.update(fields)
+
+
+def append_task_log(key: str, line: str) -> None:
+    """Append one timestamped line to a running task's rolling log (oldest dropped past
+    `LOG_CAPACITY`). Lines are what the task did — one per fund fetched, phase transitions,
+    failures — so the UI can show the run as it happens rather than only a progress bar."""
+    with _LOCK:
+        state = _TASKS.get(key)
+        if state and state.status == "running":
+            state.log.append((time.time(), line))
+
+
+def task_log(key: str) -> list[tuple[float, str]]:
+    """Snapshot of a task's log as (epoch seconds, line), oldest first."""
+    with _LOCK:
+        state = _TASKS.get(key)
+        return list(state.log) if state else []
 
 
 def consume_if_finished(key: str) -> TaskState | None:

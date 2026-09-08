@@ -13,8 +13,10 @@ from core.constants import (
     LOG_FILES,
     LOG_FORMAT,
     LOG_HANDLER_MARKER,
+    LOG_LEVEL,
     LOG_MAX_BYTES,
     LOGS_DIR,
+    PERF_LOG_ENABLED,
 )
 
 # Streamlit re-imports modules on hot reload, which makes SQLModel re-register classes
@@ -40,13 +42,21 @@ def _mark(handler: logging.Handler) -> logging.Handler:
     return handler
 
 
-def setup_logging(level: int = logging.INFO):
+def setup_logging(level: int | None = None, *, perf: bool | None = None):
     """Configure rotating file handlers. Idempotent across Streamlit hot reloads.
 
     Guards on actual logger state (a marker attr on handlers), not a module-level flag:
     Streamlit re-imports modules and resets globals, so a flag would let handlers pile up
     on every save (N-fold log duplication).
+
+    `level` defaults to the LOG_LEVEL env var (INFO, or DEBUG when DEBUG_LOG=1); `perf` defaults
+    to the PERF_LOG env var (off). Explicit arguments win, so a script can force either.
     """
+    level = logging.getLevelName(LOG_LEVEL) if level is None else level
+    if not isinstance(level, int):  # unknown LOG_LEVEL string
+        level = logging.INFO
+    perf = PERF_LOG_ENABLED if perf is None else perf
+
     root = logging.getLogger()
     if _has_marked_handler(root):
         return
@@ -93,14 +103,19 @@ def setup_logging(level: int = logging.INFO):
     # (it was ~25% of app.log). Warnings and errors still get through.
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    # perf.log — startup/page timing from core.timing.timed()
+    # perf.log — startup/page timing from core.timing.timed(). Opt-in (PERF_LOG=1): the timers
+    # fire on every Streamlit rerun, so left on they dominate the log volume.
+    perf_logger = logging.getLogger("perf")
+    perf_logger.propagate = False  # don't double-log into app.log
+    if not perf:
+        perf_logger.disabled = True
+        return
+    perf_logger.disabled = False
     perf_handler = RotatingFileHandler(
         LOGS_DIR / LOG_FILES["perf"], maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT
     )
     perf_handler.setLevel(logging.DEBUG)
     perf_handler.setFormatter(formatter)
-    perf_logger = logging.getLogger("perf")
     perf_logger.setLevel(logging.DEBUG)
-    perf_logger.propagate = False  # don't double-log into app.log
     if not _has_marked_handler(perf_logger):
         perf_logger.addHandler(_mark(perf_handler))

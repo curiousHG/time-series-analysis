@@ -27,5 +27,24 @@ LOG_FILES = {
 # a live hot-reload session (old-marked handlers stay); a restart picks up new layouts anyway.
 LOG_HANDLER_MARKER = "_app_logging_v1"
 
+
+def _env_flag(name: str, *, default: bool) -> bool:
+    """Read a boolean env var. Accepts 1/true/yes/on (and their negatives), case-insensitive."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+# Log verbosity, all overridable from the environment.
+#   LOG_LEVEL=DEBUG   raise the file-log level (default INFO)
+#   PERF_LOG=1        write logs/perf.log and time the blocks core.timing wraps (default off)
+#   DEBUG_LOG=1       shorthand for LOG_LEVEL=DEBUG
+# perf timing is off by default: it logged every wrapped call on every Streamlit rerun, which
+# filled 5 MB of perf.log per session while only ever being read when chasing a slow page.
+DEBUG_LOG = _env_flag("DEBUG_LOG", default=False)
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "DEBUG" if DEBUG_LOG else "INFO").upper()
+PERF_LOG_ENABLED = _env_flag("PERF_LOG", default=False)
+
 # Timing (core.timing): calls slower than this log at INFO, faster ones at DEBUG.
 DEFAULT_SLOW_MS = 100.0
