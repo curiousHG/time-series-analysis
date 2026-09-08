@@ -9,7 +9,7 @@ import logging
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import polars as pl
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -26,7 +26,7 @@ from core.models import (
     MfSectorAllocation,
 )
 from data.repositories.holdings import (
-    fetch_holdings_frames,
+    fetch_holdings_for_scheme,
     load_holdings,
     save_assets,
     save_holdings,
@@ -37,7 +37,7 @@ from data.repositories.metadata import load_metadata
 from data.repositories.nav import fetch_single_nav, save_nav_df
 from data.repositories.scheme_codes import resolve_or_mint_code
 from mutual_funds.display import make_slug, short_scheme_name
-from services.constants import BackfillSource, SourceStatus
+from services.constants import DORMANT_AFTER_DAYS, BackfillSource, SourceStatus
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,9 @@ def list_tracked() -> pl.DataFrame:
                 MfRegistry.metadata_status,
                 MfRegistry.added_at,
                 MfRegistry.last_attempted_at,
+                AmfiScheme.nav_date,
+                MfRegistry.advisorkhoj_slug,
+                AmfiScheme.nav,
             )
             .join(AmfiScheme, MfRegistry.scheme_code == AmfiScheme.scheme_code)
             .order_by(AmfiScheme.scheme_name)
@@ -71,8 +74,11 @@ def list_tracked() -> pl.DataFrame:
                 "metadataStatus": pl.Utf8,
                 "addedAt": pl.Datetime,
                 "lastAttemptedAt": pl.Datetime,
+                "dormant": pl.Boolean,
+                "advisorkhojSlug": pl.Utf8,
             }
         )
+    cutoff = date.today() - timedelta(days=DORMANT_AFTER_DAYS)
     return pl.DataFrame(
         {
             "schemeName": [r[0] for r in rows],
@@ -82,8 +88,16 @@ def list_tracked() -> pl.DataFrame:
             "metadataStatus": [r[4] for r in rows],
             "addedAt": [r[5] for r in rows],
             "lastAttemptedAt": [r[6] for r in rows],
+            "dormant": [(r[7] is not None and r[7] < cutoff) or (r[9] is not None and r[9] <= 0) for r in rows],
+            "advisorkhojSlug": [r[8] for r in rows],
         }
     )
+
+
+def list_active() -> pl.DataFrame:
+    """`list_tracked` minus dormant schemes — the set every fetch and freshness path works on."""
+    df = list_tracked()
+    return df if df.is_empty() else df.filter(~pl.col("dormant"))
 
 
 # ---- Status helpers ----
@@ -149,14 +163,16 @@ def _fetch_nav(scheme_name: str) -> SourceStatus:
 
 
 def _fetch_holdings(scheme_name: str) -> SourceStatus:
-    slug = make_slug(scheme_name)
+    code = _resolve_scheme_code(scheme_name)
+    if code is None:
+        return "unavailable"
     try:
-        h, s, a = fetch_holdings_frames(slug)
+        h, s, a = fetch_holdings_for_scheme(code)
         if h.height == 0 and s.height == 0 and a.height == 0:
             return "unavailable"
-        save_holdings(h)
-        save_sectors(s)
-        save_assets(a)
+        save_holdings(h, scheme_code=code)
+        save_sectors(s, scheme_code=code)
+        save_assets(a, scheme_code=code)
         return "available"
     except Exception as e:
         logger.warning("Holdings fetch failed for %s: %s", scheme_name, e)
@@ -247,6 +263,8 @@ def backfill_missing(
     todo: list[tuple[str, str]] = []
     for row in ordered_rows:
         name = row["schemeName"]
+        if row["dormant"]:
+            continue
         if "nav" in sources and _needs(row["navStatus"]):
             todo.append((name, "nav"))
         if "metadata" in sources and _needs(row["metadataStatus"]):
@@ -345,7 +363,7 @@ def save_to_registry(scheme_names: list[str]) -> None:
 def list_unavailable_funds() -> pl.DataFrame:
     """Tracked funds with at least one source still marked 'unavailable'.
     Drives the Settings → "Retry unavailable sources" picker."""
-    df = list_tracked()
+    df = list_active()
     if df.is_empty():
         return df
     return df.filter(

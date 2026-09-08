@@ -46,6 +46,9 @@ def load_metrics(scheme_names: list[str] | None = None) -> pl.DataFrame:
     )
 
 
+_UPSERT_CHUNK = 500
+
+
 @timeit("scheme_metrics.upsert_many")
 def upsert_metrics(rows: list[dict[str, Any]]) -> int:
     """Bulk-upsert metric rows. Each must carry `scheme_name`, resolved to scheme_code via
@@ -68,14 +71,20 @@ def upsert_metrics(rows: list[dict[str, Any]]) -> int:
         d["computed_at_nav_date"] = r.get("computed_at_nav_date") or r.get("last_nav_date")
         payload.append(d)
 
+    # Names are not unique across plan/option siblings, so two input rows can resolve to one
+    # scheme_code; ON CONFLICT refuses to touch a row twice in one statement. Last write wins.
+    payload = list({d["scheme_code"]: d for d in payload}.values())
     if not payload:
         return 0
 
+    # One statement per chunk: ~70 columns x a full-universe recompute (3-4K rows) is well past
+    # PostgreSQL's 65,535 bind-parameter limit, which silently killed the whole save.
     with get_session() as session:
-        stmt = pg_insert(MfSchemeMetrics).values(payload)
-        update_cols = {c: getattr(stmt.excluded, c) for c in payload[0] if c != "scheme_code"}
-        stmt = stmt.on_conflict_do_update(index_elements=["scheme_code"], set_=update_cols)
-        session.exec(stmt)
+        for i in range(0, len(payload), _UPSERT_CHUNK):
+            chunk = payload[i : i + _UPSERT_CHUNK]
+            stmt = pg_insert(MfSchemeMetrics).values(chunk)
+            update_cols = {c: getattr(stmt.excluded, c) for c in chunk[0] if c != "scheme_code"}
+            session.exec(stmt.on_conflict_do_update(index_elements=["scheme_code"], set_=update_cols))
         session.commit()
 
     logger.info("upserted %d scheme_metrics rows", len(payload))

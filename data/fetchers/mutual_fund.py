@@ -10,8 +10,18 @@ import polars as pl
 from bs4 import BeautifulSoup
 
 from data.constants import AMFI_NAV_ALL_URL, BASE_OVERVIEW_URL, HEADERS, MFAPI_BASE_URL, NAV_URL
+from data.exceptions import SourceNotFound, UpstreamFormatError
 
 logger = logging.getLogger("data.fetchers.mutual_fund")
+
+
+def _shape_of(payload: object) -> str:
+    """Short description of an unexpected payload, for `UpstreamFormatError` messages."""
+    if isinstance(payload, dict):
+        return f"object with keys {sorted(payload)[:8]}"
+    if isinstance(payload, list):
+        return f"list of {len(payload)}"
+    return type(payload).__name__
 
 
 def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
@@ -23,10 +33,15 @@ def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
     resp.raise_for_status()
 
     raw = resp.json()
-    data = raw.get("data", [])
+    if not isinstance(raw, dict) or "data" not in raw:
+        raise UpstreamFormatError("MFAPI", f"expected an object with a 'data' key, got {_shape_of(raw)}")
+    data = raw["data"]
     if not data:
         logger.warning("Empty NAV response from MFAPI for code=%s", scheme_code)
         raise ValueError(f"No NAV data from MFAPI for scheme code {scheme_code}")
+    missing = {"date", "nav"} - set(data[0])
+    if missing:
+        raise UpstreamFormatError("MFAPI", f"NAV rows lost the {sorted(missing)} key(s); got {sorted(data[0])}")
 
     df = pl.DataFrame(data)
     result = df.with_columns(
@@ -45,7 +60,12 @@ def search_mfapi(query: str) -> list[dict]:
 
     resp = httpx.get(f"{MFAPI_BASE_URL}/search", params={"q": query}, timeout=15)
     resp.raise_for_status()
-    return resp.json()
+    results = resp.json()
+    if not isinstance(results, list):
+        raise UpstreamFormatError("MFAPI search", f"expected a list of schemes, got {_shape_of(results)}")
+    if results and not {"schemeCode", "schemeName"} <= set(results[0]):
+        raise UpstreamFormatError("MFAPI search", f"result rows lost schemeCode/schemeName; got {sorted(results[0])}")
+    return results
 
 
 def _normalize_for_match(s: str) -> str:
@@ -105,9 +125,17 @@ def fetch_portfolio_by_slug(slug: str):
     )
 
     resp.raise_for_status()
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError as e:
+        # An unknown slug is answered with HTTP 200 and the HTML homepage.
+        raise SourceNotFound("AdvisorKhoj portfolio", slug) from e
     if not data:
         raise ValueError(f"Empty portfolio response from AdvisorKhoj for slug '{slug}'")
+    if not isinstance(data, dict) or "schemePortfolioAnalysisResponse" not in data:
+        raise UpstreamFormatError(
+            "AdvisorKhoj portfolio", f"expected a 'schemePortfolioAnalysisResponse' envelope, got {_shape_of(data)}"
+        )
     return data
 
 
@@ -139,11 +167,17 @@ def fetch_nav_from_advisorkhoj(
     }
 
 
-def fetch_fund_metadata(scheme_name: str) -> dict:
-    """Scrape AdvisorKhoj fund overview page → metadata dict (missing fields = None)."""
-    html = fetch_fund_overview_html(scheme_name)
+def fetch_fund_metadata(scheme_name: str, *, lookup_key: str | None = None) -> dict:
+    """Scrape AdvisorKhoj fund overview page → metadata dict (missing fields = None).
+
+    `lookup_key` is the URL key when it differs from the record's name — the verified
+    AdvisorKhoj slug from the holdings resolver, which the overview page accepts where a
+    current AMFI name gets the homepage. The returned dict is still keyed on `scheme_name`.
+    """
+    key = lookup_key or scheme_name
+    html = fetch_fund_overview_html(key)
     soup = BeautifulSoup(html, "html.parser")
-    url = BASE_OVERVIEW_URL.format(scheme_name=quote(scheme_name))
+    url = BASE_OVERVIEW_URL.format(scheme_name=quote(key))
 
     out: dict = {
         "scheme_name": scheme_name,
@@ -270,6 +304,10 @@ def fetch_fund_overview_html(scheme_name: str) -> str:
 
     resp = httpx.get(url, headers=HEADERS, timeout=20, follow_redirects=True)
     resp.raise_for_status()
+    if "sch_over_table" not in resp.text:
+        # Unknown scheme names get HTTP 200 + the site homepage, not a 404. Parsing that
+        # yields a row of Nones which the repo used to store and mark "available".
+        raise SourceNotFound("AdvisorKhoj overview", scheme_name)
     return resp.text
 
 
@@ -303,26 +341,84 @@ _AMFI_CATEGORY_RE = re.compile(
     r"^\s*(?:Open Ended|Close Ended|Interval Fund)\s+Schemes?\s*\((?P<inner>.+)\)\s*$",
     re.IGNORECASE,
 )
-# Legacy/close-ended headers without a "<Class> Scheme - <Sub>" split (e.g. "Income", "Growth").
-_LEGACY_CLASS = {
-    "income": "Debt",
+
+# Canonical asset classes. AMFI spells each class several ways across headers — singular and
+# plural ("Equity Scheme" / "Equity Schemes"), footnote-marked ("Solution Oriented Schemes **"),
+# and legacy close-ended wording ("Income", "Growth") — which previously landed in the category
+# dim as distinct values. Keys here are post-`_normalise_class` (lowercased) forms.
+_ASSET_CLASSES = frozenset({"Equity", "Debt", "Hybrid", "Solution Oriented", "Index", "ETF", "Fund of Funds", "Other"})
+_ASSET_CLASS_ALIASES = {
+    "equity": "Equity",
+    "growth": "Equity",
+    "elss": "Equity",
     "debt": "Debt",
+    "income": "Debt",
+    "income/debt oriented": "Debt",
     "liquid": "Debt",
     "gilt": "Debt",
     "money market": "Debt",
-    "growth": "Equity",
-    "equity": "Equity",
-    "elss": "Equity",
+    "hybrid": "Hybrid",
     "balanced": "Hybrid",
+    "solution oriented": "Solution Oriented",
+    "children's fund": "Solution Oriented",
+    "childrens' fund": "Solution Oriented",
+    "childrens fund": "Solution Oriented",
+    "retirement fund": "Solution Oriented",
+    "life cycle funds": "Solution Oriented",
+    "index funds": "Index",
+    "index": "Index",
+    "exchange traded funds (etfs)": "ETF",
+    "etfs": "ETF",
+    "etf": "ETF",
+    "fund of funds (domestic)": "Fund of Funds",
+    "overseas fund of funds": "Fund of Funds",
+    "fund of funds": "Fund of Funds",
+    "other": "Other",
 }
+
+# SEBI files index funds, ETFs and FoFs under the catch-all class "Other Scheme", naming the real
+# class only in the sub-category — while the very same funds also arrive under dedicated
+# "Index Funds" / "Exchange Traded Funds (ETFs)" / "Fund of Funds Scheme (Domestic)" headers.
+# Refining "Other" by its sub-category keeps both routes landing on one category.
+_SUB_CLASS_ALIASES = {
+    "index funds": "Index",
+    "gold etf": "ETF",
+    "other etfs": "ETF",
+    "fof domestic": "Fund of Funds",
+    "fof overseas": "Fund of Funds",
+}
+
+
+def _normalise_class(text: str) -> str:
+    """Collapse an AMFI class label to its bare form: no trailing footnote asterisks, no
+    "Scheme"/"Schemes" filler, straight apostrophes, single spaces."""
+    s = text.replace("’", "'")  # noqa: RUF001 — AMFI emits a curly apostrophe in some class names
+    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s*\*+$", "", s)
+    s = re.sub(r"\s+Schemes?\b", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _canonical_asset_class(text: str) -> str:
+    """Map an AMFI class label onto `_ASSET_CLASSES`. Unknown labels fall back to "Other"
+    and are logged, so a new SEBI class shows up in the logs instead of silently splitting
+    the category dim."""
+    bare = _normalise_class(text)
+    if not bare:
+        return "Other"
+    canonical = _ASSET_CLASS_ALIASES.get(bare.lower())
+    if canonical is None:
+        logger.warning("Unmapped AMFI asset class %r — filed as 'Other'", bare)
+        return "Other"
+    return canonical
 
 
 def _classify_amfi_header(line: str) -> tuple[str | None, str | None, str | None]:
     """Classify a non-data AMFI line as (asset_class, sub_category, fund_house).
 
     Category headers are SEBI scheme-type lines (`Open/Close Ended Schemes(<Class> Scheme - <Sub>)`)
-    → asset_class ("Equity"/"Debt"/"Hybrid"/"Other"/"Solution Oriented") + sub_category
-    ("Large Cap Fund"). Legacy headers without the " - " split fall back via `_LEGACY_CLASS`.
+    → a canonical asset_class ("Equity"/"Debt"/"Hybrid"/…) + the granular sub_category
+    ("Large Cap Fund"). Headers without the " - " split use the whole inner text as both.
     Everything else is an AMC/fund-house line — these can also contain parentheses (e.g.
     "IL&FS Mutual Fund (IDF)"), which the old paren-only heuristic mis-filed as a category.
     """
@@ -332,33 +428,162 @@ def _classify_amfi_header(line: str) -> tuple[str | None, str | None, str | None
     inner = re.sub(r"\s+", " ", m.group("inner")).strip()
     if " - " in inner:
         class_part, sub = inner.split(" - ", 1)
-        asset_class = class_part.replace("Scheme", "").strip() or "Other"
-        return asset_class, sub.strip(), None
-    return _LEGACY_CLASS.get(inner.lower(), "Other"), inner, None
+        sub = _normalise_class(sub)
+        asset_class = _canonical_asset_class(class_part)
+        if asset_class == "Other":
+            asset_class = _SUB_CLASS_ALIASES.get(sub.lower(), "Other")
+        return asset_class, sub, None
+    return _canonical_asset_class(inner), _normalise_class(inner), None
 
 
-def fetch_amfi_master() -> list[dict]:
-    """Download AMFI NAVAll.txt → list of scheme dicts.
+# ---- NAVAll.txt column layout ----------------------------------------------------------
+# AMFI moved from 6 columns to 8 in 2025, splitting the plan/option suffix out of the scheme
+# name into their own `Plan` and `Option` columns:
+#   old: Code;ISIN Growth;ISIN Reinvestment;Scheme Name;NAV;Date
+#   new: Code;ISIN Growth;ISIN Reinvestment;Scheme Name;Plan;Option;NAV;Date
+# Layout is read from the file's own header row, so a further column move is absorbed without
+# a code change; the positional maps are the fallback when the header is missing or unreadable.
 
-    Line format: SchemeCode;ISIN Payout/Growth;ISIN Reinvestment;SchemeName;NAV;Date.
-    Lines without semicolons are scheme-type (category) or fund-house headers.
+_POSITIONAL_LAYOUTS = {
+    8: {
+        "scheme_code": 0,
+        "isin_growth": 1,
+        "isin_reinvestment": 2,
+        "scheme_name": 3,
+        "plan": 4,
+        "option": 5,
+        "nav": 6,
+        "nav_date": 7,
+    },
+    6: {"scheme_code": 0, "isin_growth": 1, "isin_reinvestment": 2, "scheme_name": 3, "nav": 4, "nav_date": 5},
+}
+_MIN_DATA_FIELDS = min(_POSITIONAL_LAYOUTS)
+
+
+def _header_field(cell: str) -> str | None:
+    """Map one NAVAll.txt header cell to a field name (None when unrecognised)."""
+    c = re.sub(r"\s+", " ", cell).strip().lower()
+    if "scheme code" in c:
+        return "scheme_code"
+    if "isin" in c:
+        return "isin_reinvestment" if "reinvest" in c else "isin_growth"
+    if "scheme name" in c:
+        return "scheme_name"
+    if c == "plan":
+        return "plan"
+    if c == "option":
+        return "option"
+    if "net asset value" in c or c == "nav":
+        return "nav"
+    if "date" in c:
+        return "nav_date"
+    return None
+
+
+def _parse_header(line: str) -> dict[str, int] | None:
+    """Build a {field: column index} map from the header row, or None if it doesn't parse."""
+    layout: dict[str, int] = {}
+    for i, cell in enumerate(line.split(";")):
+        field = _header_field(cell)
+        if field and field not in layout:
+            layout[field] = i
+    return layout if {"scheme_code", "scheme_name", "nav"} <= layout.keys() else None
+
+
+def _layout_for(parts: list[str], header_layout: dict[str, int] | None) -> dict[str, int] | None:
+    """Pick the column map for one data row: the file's header when every index it names is
+    present, else the widest positional layout the row can satisfy."""
+    if header_layout and max(header_layout.values()) < len(parts):
+        return header_layout
+    for width in sorted(_POSITIONAL_LAYOUTS, reverse=True):
+        if len(parts) >= width:
+            return _POSITIONAL_LAYOUTS[width]
+    return None
+
+
+def _cell(parts: list[str], layout: dict[str, int], field: str) -> str | None:
+    idx = layout.get(field)
+    if idx is None:
+        return None
+    value = parts[idx].strip()
+    return value or None
+
+
+def compose_scheme_name(base: str, plan: str | None, option: str | None) -> str:
+    """Full scheme name, "<base> - <plan> - <option>".
+
+    AMFI's `Scheme Name` column is now the *base* name shared by every plan/option variant of a
+    fund, so on its own it is neither unique (one name covered up to 38 scheme codes) nor
+    parseable by `detect_plan`/`detect_option`. Re-attaching AMFI's own plan/option text restores
+    both, and keeps the " - Direct - Growth" shape that AdvisorKhoj slugs and the display helpers
+    already expect. Rows with no plan/option (closed-ended FMPs) keep the bare name.
     """
-    logger.info("Fetching AMFI master data from %s", AMFI_NAV_ALL_URL)
-    resp = httpx.get(AMFI_NAV_ALL_URL, timeout=60, follow_redirects=True)
-    resp.raise_for_status()
+    return " - ".join(p for p in (base, plan, option) if p)
 
+
+# Output-shape floors for `_validate_amfi`. AMFI has published >10K schemes for years and every
+# live row carries a NAV, so these sit far below normal while still catching a column shift.
+_AMFI_MIN_SCHEMES = 1_000
+_AMFI_MIN_VALUE_COVERAGE = 0.5
+
+
+def _validate_amfi(schemes: list[dict], *, header_seen: bool, header_layout: dict[str, int] | None) -> None:
+    """Fail loudly when the parsed result doesn't look like NAVAll.txt any more.
+
+    The checks are on the parsed rows, not just the header: the last AMFI change produced a
+    full-sized result in which every NAV was None.
+    """
+    if header_seen and header_layout is None:
+        raise UpstreamFormatError("AMFI NAVAll.txt", "header row present but no recognisable columns in it")
+    if not header_seen:
+        logger.warning("AMFI NAVAll.txt had no header row — falling back to positional columns")
+
+    if len(schemes) < _AMFI_MIN_SCHEMES:
+        raise UpstreamFormatError(
+            "AMFI NAVAll.txt", f"only {len(schemes)} schemes parsed, expected >= {_AMFI_MIN_SCHEMES}"
+        )
+
+    total = len(schemes)
+    for field in ("nav", "nav_date"):
+        coverage = sum(row[field] is not None for row in schemes) / total
+        if coverage < _AMFI_MIN_VALUE_COVERAGE:
+            raise UpstreamFormatError(
+                "AMFI NAVAll.txt",
+                f"only {coverage:.1%} of {total} rows have a {field} — the column has probably moved",
+            )
+    named = sum(bool(row["scheme_name"]) for row in schemes) / total
+    if named < 1.0:
+        raise UpstreamFormatError(
+            "AMFI NAVAll.txt", f"{(1 - named):.1%} of {total} rows parsed with an empty scheme name"
+        )
+
+
+def parse_amfi_master(payload: str) -> list[dict]:
+    """Parse NAVAll.txt content → list of scheme dicts. Pure: no I/O, so it's directly testable
+    against captured fixtures.
+
+    Lines with fewer than `_MIN_DATA_FIELDS` semicolon-separated fields are scheme-type
+    (category) or fund-house headers. Raises `UpstreamFormatError` when the result no longer
+    looks like NAVAll.txt.
+    """
     schemes = []
     current_category = None
     current_sub_category = None
     current_fund_house = None
+    header_layout = None
+    header_seen = False
 
-    for line in resp.text.strip().split("\n"):
-        line = line.strip()
-        if not line or line.startswith("Scheme Code"):
+    for raw_line in payload.strip().split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.lower().startswith("scheme code"):
+            header_seen = True
+            header_layout = _parse_header(line)
             continue
 
         parts = line.split(";")
-        if len(parts) < 5:
+        if len(parts) < _MIN_DATA_FIELDS:
             # Scheme-type (asset class + sub-category) or fund-house header.
             asset_class, sub_category, fund_house = _classify_amfi_header(line)
             if asset_class is not None:
@@ -368,26 +593,34 @@ def fetch_amfi_master() -> list[dict]:
                 current_fund_house = fund_house
             continue
 
+        layout = _layout_for(parts, header_layout)
+        if layout is None:
+            continue
         try:
-            scheme_code = int(parts[0].strip())
+            scheme_code = int((_cell(parts, layout, "scheme_code") or "").strip())
         except ValueError:
             continue
 
-        isin_growth = parts[1].strip() or None
-        isin_reinvestment = parts[2].strip() if len(parts) > 2 else None
+        isin_reinvestment = _cell(parts, layout, "isin_reinvestment")
         if isin_reinvestment == "-":
             isin_reinvestment = None
-        scheme_name = parts[3].strip()
+        isin_growth = _cell(parts, layout, "isin_growth")
+        if isin_growth == "-":
+            isin_growth = None
 
-        nav_str = parts[4].strip() if len(parts) > 4 else None
+        plan = _cell(parts, layout, "plan")
+        option = _cell(parts, layout, "option")
+        base_name = _cell(parts, layout, "scheme_name") or ""
+
         nav = None
+        nav_str = _cell(parts, layout, "nav")
         if nav_str and nav_str not in ("N.A.", "-"):
             with contextlib.suppress(ValueError):
                 nav = float(nav_str)
 
         nav_date = None
-        if len(parts) > 5:
-            date_str = parts[5].strip()
+        date_str = _cell(parts, layout, "nav_date")
+        if date_str:
             with contextlib.suppress(ValueError):
                 nav_date = dt.strptime(date_str, "%d-%b-%Y").date()
 
@@ -396,7 +629,9 @@ def fetch_amfi_master() -> list[dict]:
                 "scheme_code": scheme_code,
                 "isin_growth": isin_growth,
                 "isin_reinvestment": isin_reinvestment,
-                "scheme_name": scheme_name,
+                "scheme_name": compose_scheme_name(base_name, plan, option),
+                "plan": plan,
+                "option": option,
                 "nav": nav,
                 "nav_date": nav_date,
                 "fund_house": current_fund_house,
@@ -405,5 +640,14 @@ def fetch_amfi_master() -> list[dict]:
             }
         )
 
+    _validate_amfi(schemes, header_seen=header_seen, header_layout=header_layout)
     logger.info("Parsed %d schemes from AMFI master", len(schemes))
     return schemes
+
+
+def fetch_amfi_master() -> list[dict]:
+    """Download AMFI NAVAll.txt → list of scheme dicts (see `parse_amfi_master`)."""
+    logger.info("Fetching AMFI master data from %s", AMFI_NAV_ALL_URL)
+    resp = httpx.get(AMFI_NAV_ALL_URL, timeout=60, follow_redirects=True)
+    resp.raise_for_status()
+    return parse_amfi_master(resp.text)

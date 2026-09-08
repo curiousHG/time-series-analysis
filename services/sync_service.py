@@ -14,9 +14,9 @@ from dataclasses import dataclass, field
 
 import polars as pl
 
-from data.repositories.holdings import fetch_holdings_frames, replace_holdings_atomic
+from data.repositories.holdings import fetch_holdings_for_scheme, replace_holdings_atomic, slug_to_code_map
 from data.repositories.nav import fetch_single_nav, last_nav_date_by_name, save_nav_df
-from mutual_funds.display import make_slug
+from mutual_funds.display import make_slug, short_scheme_name
 from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS, FetchOutcome
 
 logger = logging.getLogger(__name__)
@@ -125,9 +125,9 @@ def update_nav_incremental(
 # ---- Holdings ----------------------------------------------------------------------------
 
 
-def _fetch_normalize_holdings(slug: str) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Pull a slug's portfolio JSON and normalise it into the three target frames."""
-    return fetch_holdings_frames(slug)
+def _fetch_normalize_holdings(scheme_code: int) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Resolve the scheme on AdvisorKhoj, pull its portfolio and normalise it into the three frames."""
+    return fetch_holdings_for_scheme(scheme_code)
 
 
 def refresh_holdings_for_schemes(
@@ -141,14 +141,16 @@ def refresh_holdings_for_schemes(
     if not scheme_names:
         return HoldingsRefreshResult()
 
+    codes = slug_to_code_map()
     pairs = [(name, make_slug(name)) for name in scheme_names]
+    pairs = [(name, slug) for name, slug in pairs if slug in codes]
 
     total = len(pairs)
     result = HoldingsRefreshResult()
     done = 0
 
     with ThreadPoolExecutor(max_workers=HOLDINGS_FETCH_WORKERS) as pool:
-        future_to_pair = {pool.submit(_fetch_normalize_holdings, slug): (name, slug) for name, slug in pairs}
+        future_to_pair = {pool.submit(_fetch_normalize_holdings, codes[slug]): (name, slug) for name, slug in pairs}
         for future in as_completed(future_to_pair):
             name, _slug = future_to_pair[future]
             done += 1
@@ -157,7 +159,7 @@ def refresh_holdings_for_schemes(
 
             try:
                 h, s, a = future.result()
-                replace_holdings_atomic(_slug, h, s, a)
+                replace_holdings_atomic(_slug, h, s, a, scheme_code=codes[_slug])
                 result.success_count += 1
                 result.total_holdings += h.height
                 outcome = "updated"
@@ -186,23 +188,49 @@ def refresh_all_fund_data(
     (e.g. phase='NAV', done=12, total=99) so a polling UI can show progress. Returns a summary dict.
     """
     out: dict = {}
+    phases = [p for p in ("NAV", "Holdings") if scope in ("all", p.lower())]
+    if progress_cb:
+        progress_cb(
+            message=f"Starting {scope} refresh for {len(scheme_names):,} tracked fund(s) — {' + '.join(phases)}."
+        )
+
+    def _log_event(phase: str, ev: FetchEvent) -> None:
+        """Forward one fund's outcome to the UI log. Up-to-date funds are counted but not
+        logged — they are the overwhelming majority of a run and would bury the real activity."""
+        if progress_cb is None or ev.outcome == "skipped":
+            return
+        icon = "✓" if ev.outcome == "updated" else "✗"
+        progress_cb(message=f"{icon} [{phase} {ev.done}/{ev.total}] {short_scheme_name(ev.scheme_name)} — {ev.detail}")
+
     if scope in ("all", "nav"):
 
         def _nav_cb(ev: FetchEvent) -> None:
             if progress_cb:
                 progress_cb(phase="NAV", done=ev.done, total=ev.total)
+            _log_event("NAV", ev)
 
         nav = update_nav_incremental(scheme_names, progress_cb=_nav_cb)
         out |= {"nav_updated": nav.updated_count, "nav_new_rows": nav.new_rows_total, "nav_failed": len(nav.failures)}
+        if progress_cb:
+            progress_cb(
+                message=f"NAV done — {nav.updated_count:,} updated (+{nav.new_rows_total:,} rows), "
+                f"{nav.skipped_count:,} already current, {len(nav.failures):,} failed."
+            )
 
     if scope in ("all", "holdings"):
 
         def _hold_cb(ev: FetchEvent) -> None:
             if progress_cb:
                 progress_cb(phase="Holdings", done=ev.done, total=ev.total)
+            _log_event("Holdings", ev)
 
         holdings = refresh_holdings_for_schemes(scheme_names, progress_cb=_hold_cb)
         out |= {"holdings_updated": holdings.success_count, "holdings_failed": len(holdings.failures)}
+        if progress_cb:
+            progress_cb(
+                message=f"Holdings done — {holdings.success_count:,} updated "
+                f"({holdings.total_holdings:,} rows), {len(holdings.failures):,} failed."
+            )
 
     logger.info("refresh_all_fund_data(scope=%s): %s", scope, out)
     return out

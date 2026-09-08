@@ -21,6 +21,7 @@ from core.database import get_session
 from core.models import AmfiScheme, MfAmc, MfCategory
 from data.fetchers.mutual_fund import fetch_amfi_master
 from data.repositories.holdings import clear_slug_cache
+from mutual_funds.advisorkhoj import base_name
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,30 @@ def _prepare_sync_row(
     return row
 
 
+_PRUNE_ORPHAN_DIMS_SQL = {
+    "mf_category": sql_text(
+        "DELETE FROM mf_category c WHERE NOT EXISTS "
+        "(SELECT 1 FROM amfi_schemes s WHERE s.category_id = c.id) AND NOT EXISTS "
+        "(SELECT 1 FROM mf_metadata m WHERE m.category_id = c.id)"
+    ),
+    "mf_amc": sql_text(
+        "DELETE FROM mf_amc a WHERE NOT EXISTS "
+        "(SELECT 1 FROM amfi_schemes s WHERE s.fund_house_id = a.id) AND NOT EXISTS "
+        "(SELECT 1 FROM mf_metadata m WHERE m.fund_house_id = a.id)"
+    ),
+}
+
+
+def prune_orphan_dims(session) -> dict[str, int]:
+    """Delete dim rows no scheme or metadata row points at. AMFI reclassifications strand old
+    category/AMC names, which otherwise linger as dead options in the screener's filters.
+    Returns {table: rows deleted}."""
+    deleted = {table: session.exec(stmt).rowcount for table, stmt in _PRUNE_ORPHAN_DIMS_SQL.items()}
+    if any(deleted.values()):
+        logger.info("Pruned orphan dim rows: %s", deleted)
+    return deleted
+
+
 def sync_amfi_master() -> int:
     """Fetch AMFI NAVAll.txt and upsert all schemes into DB. Returns count.
 
@@ -148,6 +173,7 @@ def sync_amfi_master() -> int:
                 )
             )
             session.exec(stmt)
+        prune_orphan_dims(session)
         session.commit()
 
     # New schemes invalidate the slug→code map cached in holdings.py.
@@ -253,6 +279,33 @@ def lookup_scheme_code_by_exact_name(name: str) -> str | None:
     with get_session() as session:
         row = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == name)).first()
     return str(row) if row else None
+
+
+def find_direct_sibling(scheme_code: int) -> dict | None:
+    """The Direct-plan variant of a Regular-plan scheme (same base fund, same option when one
+    exists), as {scheme_code, scheme_name, isin_growth, isin_reinvestment}. None when the
+    scheme is not a Regular plan or has no Direct twin in the AMFI master."""
+    with get_session() as session:
+        me = session.get(AmfiScheme, scheme_code)
+        if me is None or (me.plan or "").lower() != "regular plan":
+            return None
+        my_base = base_name(me.scheme_name, me.plan, me.option)
+        rows = session.exec(
+            select(AmfiScheme).where(
+                col(AmfiScheme.plan) == "Direct Plan", col(AmfiScheme.scheme_name).startswith(my_base)
+            )
+        ).all()
+    twins = [r for r in rows if base_name(r.scheme_name, r.plan, r.option) == my_base]
+    if not twins:
+        return None
+    same_option = [r for r in twins if (r.option or "").lower() == (me.option or "").lower()]
+    pick = (same_option or twins)[0]
+    return {
+        "scheme_code": pick.scheme_code,
+        "scheme_name": pick.scheme_name,
+        "isin_growth": pick.isin_growth,
+        "isin_reinvestment": pick.isin_reinvestment,
+    }
 
 
 def get_scheme_details_by_name(scheme_name: str) -> dict | None:

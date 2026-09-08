@@ -37,6 +37,8 @@ def load_screener_view() -> pl.DataFrame:
             MfAmc.name.label("fund_house"),
             amfi_cat.name.label("category"),
             col(AmfiScheme.sub_category).label("sub_category"),
+            col(AmfiScheme.plan).label("amfi_plan"),
+            col(AmfiScheme.option).label("amfi_option"),
             AmfiScheme.isin_growth,
             AmfiScheme.nav,
             AmfiScheme.nav_date,
@@ -62,4 +64,7 @@ def load_screener_view() -> pl.DataFrame:
 
     if not rows:
         return pl.DataFrame()
-    return pl.from_dicts([dict(r) for r in rows])
+    # infer_schema_length=None scans every row: sparse columns (plan/option are null for the ~40%
+    # of schemes AMFI leaves blank, and the blanks lead) otherwise infer as Null from the first
+    # window and then fail to accept a string further down.
+    return pl.from_dicts([dict(r) for r in rows], infer_schema_length=None)

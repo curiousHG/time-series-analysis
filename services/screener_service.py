@@ -32,13 +32,24 @@ def status_cell(status: str | None) -> str:
 
 
 def build_screener_df() -> pl.DataFrame:
-    """Full screener DataFrame: the DB JOIN from `load_screener_view` plus derived `plan`/`option`."""
+    """Full screener DataFrame: the DB JOIN from `load_screener_view` plus resolved `plan`/`option`.
+
+    AMFI's own `Plan`/`Option` columns win where present; the name-derived fallback covers the
+    ~40% of rows AMFI leaves blank (closed-ended FMPs, most ETFs), where the suffix — when there
+    is one — still lives in the scheme name.
+    """
     df = load_screener_view()
     if df.is_empty():
         return df
     return df.with_columns(
-        pl.col("scheme_name").map_elements(detect_plan, return_dtype=pl.Utf8).alias("plan"),
-        pl.col("scheme_name").map_elements(detect_option, return_dtype=pl.Utf8).alias("option"),
+        pl.coalesce(
+            pl.col("amfi_plan").map_elements(detect_plan, return_dtype=pl.Utf8),
+            pl.col("scheme_name").map_elements(detect_plan, return_dtype=pl.Utf8),
+        ).alias("plan"),
+        pl.coalesce(
+            pl.col("amfi_option").map_elements(detect_option, return_dtype=pl.Utf8),
+            pl.col("scheme_name").map_elements(detect_option, return_dtype=pl.Utf8),
+        ).alias("option"),
     )
 
 

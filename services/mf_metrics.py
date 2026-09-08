@@ -15,24 +15,33 @@ from sqlmodel import col, select
 from core.database import get_session
 from core.models import AmfiScheme, MfHolding, MfMetadata, MfNav
 from core.timing import timed, timeit
+from data.repositories.scheme_codes import resolve_codes
 from data.repositories.scheme_metrics import clear_metrics, find_stale_schemes, load_metrics, upsert_metrics
 from data.repositories.stock import ensure_stock_data, refresh_stock_to_today
 from mutual_funds.display import make_slug  # noqa: F401 — back-compat re-export for callers
 from services.benchmarks import benchmark_for_fund
 from services.constants import RF_DAILY, TRADING_DAYS
+from services.price_adjust import adjust_splits
 
 logger = logging.getLogger(__name__)
 
 
 def nav_series(scheme_name: str) -> pd.Series:
-    """Daily NAV as a date-indexed pd.Series (empty if none)."""
+    """Daily NAV as a date-indexed pd.Series (empty if none).
+
+    Reads by the scheme_code the metrics save path resolves for this name — plan/option
+    siblings can share a name, and a name join would merge their NAV rows into one series.
+    """
+    code = resolve_codes([scheme_name]).get(scheme_name)
     with get_session() as session:
-        rows = session.exec(
-            select(MfNav.date, MfNav.nav)
-            .join(AmfiScheme, MfNav.scheme_code == AmfiScheme.scheme_code)
-            .where(AmfiScheme.scheme_name == scheme_name)
-            .order_by(MfNav.date)
-        ).all()
+        stmt = select(MfNav.date, MfNav.nav).order_by(MfNav.date)
+        if code is not None:
+            stmt = stmt.where(MfNav.scheme_code == code)
+        else:
+            stmt = stmt.join(AmfiScheme, MfNav.scheme_code == AmfiScheme.scheme_code).where(
+                AmfiScheme.scheme_name == scheme_name
+            )
+        rows = session.exec(stmt).all()
     if not rows:
         return pd.Series(dtype=float)
     s = pd.Series({pd.Timestamp(d): float(v) for d, v in rows})
@@ -206,11 +215,15 @@ def compute_metrics_for_scheme(
         return None
 
     nav = nav_series(scheme_name)
+    nav = nav[nav > 0]
     if len(nav) < TRADING_DAYS:
         return None
     if (datetime.date.today() - nav.index[-1].date()).days > 270:
         return None
 
+    # ETF unit sub-divisions and face-value changes print as −90% / −99% days in AMFI's
+    # unadjusted NAV; rescale the pre-split history so returns reflect the fund, not the unit.
+    nav = adjust_splits(nav)
     returns = nav.pct_change().dropna()
     if returns.empty:
         return None
@@ -512,6 +525,7 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
                 ).all()
             )
 
+    scheme_names = list(dict.fromkeys(scheme_names))  # siblings can share a name; compute each once
     if not scheme_names:
         return 0
 

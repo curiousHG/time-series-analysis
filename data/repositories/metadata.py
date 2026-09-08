@@ -10,10 +10,11 @@ from sqlmodel import col, func, select
 
 from core.database import get_session
 from core.models import AmfiScheme, MfAmc, MfCategory, MfMetadata
+from data.exceptions import SourceNotFound
 from data.fetchers.kuvera import fetch_fund_metadata_kuvera
 from data.fetchers.mutual_fund import fetch_fund_metadata
-from data.repositories.amfi import get_scheme_details_by_name, upsert_amc, upsert_category
-from data.repositories.holdings import clear_slug_cache
+from data.repositories.amfi import find_direct_sibling, get_scheme_details_by_name, upsert_amc, upsert_category
+from data.repositories.holdings import clear_slug_cache, resolve_advisorkhoj_slug
 from data.repositories.scheme_codes import mint_synthetic_codes
 
 logger = logging.getLogger("data.repositories.metadata")
@@ -131,41 +132,96 @@ def load_metadata(scheme_names: list[str] | None = None) -> pl.DataFrame:
     )
 
 
+def _advisorkhoj_metadata(scheme_name: str, scheme_code: int | None) -> tuple[dict | None, Exception | None]:
+    """AdvisorKhoj scrape by the verified slug first (the overview page accepts it where a
+    current AMFI name lands on the homepage), then by name for untracked schemes."""
+    keys: list[str | None] = []
+    if scheme_code is not None:
+        keys.append(resolve_advisorkhoj_slug(scheme_code))
+    keys.append(None)
+    last_error: Exception | None = None
+    for key in keys:
+        if key is None and keys[0] is not None and keys[0] == scheme_name:
+            continue
+        try:
+            meta = fetch_fund_metadata(scheme_name, lookup_key=key)
+        except SourceNotFound as e:
+            last_error = e
+            continue
+        except Exception as e:
+            last_error = e
+            logger.warning("AdvisorKhoj metadata failed for %s (key=%s): %s", scheme_name, key, e)
+            continue
+        if any(meta.get(k) is not None for k in ("aum_crores", "expense_ratio", "launch_date")):
+            return meta, None
+    return None, last_error
+
+
 def fetch_and_save(scheme_name: str) -> dict:
     """Fetch metadata for one scheme and persist it. Returns the saved dict.
 
-    AdvisorKhoj first; when it 404s (fund not covered) or yields an empty shell, fall back
-    to Kuvera's public API — candidates are ISIN-verified against amfi_schemes, so a fuzzy
-    name match can never store another fund's numbers.
+    Sources, in order, each filling only what the previous left empty:
+      1. Kuvera — JSON, candidates ISIN-verified against amfi_schemes, so a fuzzy name match
+         can never store another fund's numbers. Direct plans only (Kuvera sells no Regular).
+      2. AdvisorKhoj by the verified slug from the holdings resolver (covers Regular plans).
+      3. AdvisorKhoj by name — untracked schemes with no registry row.
+    AdvisorKhoj answers unknown keys with its homepage; `fetch_fund_overview_html` raises
+    `SourceNotFound` for that instead of returning the empty shell it used to.
     """
-    meta: dict | None = None
-    adv_error: Exception | None = None
-    try:
-        meta = fetch_fund_metadata(scheme_name)
-        if not any(meta.get(k) is not None for k in ("aum_crores", "expense_ratio", "launch_date")):
-            meta = None  # page existed but carried nothing useful — try the fallback
-    except Exception as e:
-        adv_error = e
-
     amfi_row = get_scheme_details_by_name(scheme_name)
     isins = tuple((amfi_row.get("isin_growth"), amfi_row.get("isin_reinvestment")) if amfi_row else ())
+    scheme_code = amfi_row.get("scheme_code") if amfi_row else None
 
-    if meta is None:
-        meta = fetch_fund_metadata_kuvera(scheme_name, isins)
-        if meta is not None:
-            logger.info("Metadata for %s via Kuvera fallback", scheme_name)
-    elif any(meta.get(k) is None for k in ("fund_manager", "risk_level", "investment_objective")):
-        # AdvisorKhoj lacks the manager entirely and sometimes the objective/riskometer —
-        # supplement just the gaps from Kuvera (still ISIN-verified).
-        extra = fetch_fund_metadata_kuvera(scheme_name, isins)
-        if extra:
-            for k in ("fund_manager", "risk_level", "investment_objective"):
-                if meta.get(k) is None and extra.get(k) is not None:
-                    meta[k] = extra[k]
+    meta = fetch_fund_metadata_kuvera(scheme_name, isins)
+    source = "Kuvera" if meta else None
+
+    adv, adv_error = _advisorkhoj_metadata(scheme_name, scheme_code)
+    if meta is None and adv is not None:
+        meta, source = adv, "AdvisorKhoj"
+    elif meta is not None and adv is not None:
+        for k, v in adv.items():
+            if meta.get(k) is None and v is not None:
+                meta[k] = v
+
+    if meta is None and scheme_code is not None:
+        meta = _from_direct_sibling(scheme_name, scheme_code)
+        source = "Kuvera (Direct-plan sibling, scheme-level fields only)" if meta else None
 
     if meta is None:
         raise adv_error or ValueError(f"No metadata found on any source for {scheme_name}")
+    logger.info("Metadata for %s via %s", scheme_name, source)
     save_metadata(meta)
+    return meta
+
+
+# Fields that describe the scheme rather than one plan of it. SEBI/AMFI disclose AUM per
+# scheme (both plans combined), and manager / objective / riskometer / category are shared;
+# expense ratio, launch date and minimums differ by plan and are deliberately NOT copied.
+_SCHEME_LEVEL_FIELDS = (
+    "aum_crores",
+    "category",
+    "asset_class",
+    "status",
+    "turnover_ratio",
+    "investment_objective",
+    "risk_level",
+    "fund_manager",
+)
+
+
+def _from_direct_sibling(scheme_name: str, scheme_code: int) -> dict | None:
+    """Last resort for a Regular plan neither source knows: the Direct twin's ISIN-verified
+    Kuvera record, restricted to scheme-level fields. Kuvera lists Direct plans only."""
+    sibling = find_direct_sibling(scheme_code)
+    if sibling is None:
+        return None
+    twin = fetch_fund_metadata_kuvera(sibling["scheme_name"], (sibling["isin_growth"], sibling["isin_reinvestment"]))
+    if not twin or twin.get("aum_crores") is None:
+        return None
+    meta = dict.fromkeys(twin)
+    meta.update({k: twin.get(k) for k in _SCHEME_LEVEL_FIELDS})
+    meta["scheme_name"] = scheme_name
+    meta["source_url"] = twin.get("source_url")
     return meta
 
 
@@ -175,7 +231,9 @@ def ensure_metadata(scheme_names: list[str]) -> pl.DataFrame:
         return pl.DataFrame(schema={"schemeName": pl.Utf8})
 
     existing = load_metadata(scheme_names)
-    have = set(existing["schemeName"].to_list()) if existing.height else set()
+    # A row without an AUM is a scrape that landed on nothing useful — treat it as missing
+    # so the next source gets a chance, instead of freezing an empty shell forever.
+    have = set(existing.filter(pl.col("aumCrores").is_not_null())["schemeName"].to_list()) if existing.height else set()
     missing = [n for n in scheme_names if n not in have]
 
     if missing:

@@ -8,19 +8,24 @@ def test_holdings_refresh_keeps_existing_rows_when_a_fetch_fails(monkeypatch):
     from services import sync_service
 
     replaced: list[str] = []
+    codes = {make_slug("Good Fund"): 1, make_slug("Bad Fund"): 2}
 
-    def fake_fetch(slug: str):
-        if slug == make_slug("Bad Fund"):
+    def fake_fetch(scheme_code: int):
+        if scheme_code == 2:
             raise RuntimeError("upstream failed")
+        slug = make_slug("Good Fund")
         return (
             pl.DataFrame({"schemeSlug": [slug], "instrumentName": ["ABC"], "weight": [10.0]}),
             pl.DataFrame({"schemeSlug": [slug], "sector": ["Financials"], "weight": [10.0]}),
             pl.DataFrame({"schemeSlug": [slug], "assetClass": ["Equity"], "weight": [10.0]}),
         )
 
+    monkeypatch.setattr(sync_service, "slug_to_code_map", lambda: codes)
     monkeypatch.setattr(sync_service, "_fetch_normalize_holdings", fake_fetch)
     # The atomic replace stands in for delete+save; a failed fetch must never reach it.
-    monkeypatch.setattr(sync_service, "replace_holdings_atomic", lambda slug, h, s, a: replaced.append(slug))
+    monkeypatch.setattr(
+        sync_service, "replace_holdings_atomic", lambda slug, h, s, a, scheme_code=None: replaced.append(slug)
+    )
 
     result = sync_service.refresh_holdings_for_schemes(["Good Fund", "Bad Fund"])
 
@@ -76,17 +81,20 @@ def test_repository_holdings_refresh_replaces_only_successful_slugs(monkeypatch)
 
     replaced: list[str] = []
 
-    def fake_fetch(slug: str):
-        if slug == "bad-fund":
+    def fake_fetch(scheme_code: int):
+        if scheme_code == 2:
             raise RuntimeError("upstream failed")
         return (
-            pl.DataFrame({"schemeSlug": [slug], "instrumentName": ["ABC"], "weight": [10.0]}),
-            pl.DataFrame({"schemeSlug": [slug], "sector": ["Financials"], "weight": [10.0]}),
-            pl.DataFrame({"schemeSlug": [slug], "assetClass": ["Equity"], "weight": [10.0]}),
+            pl.DataFrame({"schemeSlug": ["good-fund"], "instrumentName": ["ABC"], "weight": [10.0]}),
+            pl.DataFrame({"schemeSlug": ["good-fund"], "sector": ["Financials"], "weight": [10.0]}),
+            pl.DataFrame({"schemeSlug": ["good-fund"], "assetClass": ["Equity"], "weight": [10.0]}),
         )
 
-    monkeypatch.setattr(holdings, "fetch_holdings_frames", fake_fetch)
-    monkeypatch.setattr(holdings, "replace_holdings_atomic", lambda slug, h, s, a: replaced.append(slug))
+    monkeypatch.setattr(holdings, "_slug_to_code_map_cached", lambda: {"good-fund": 1, "bad-fund": 2})
+    monkeypatch.setattr(holdings, "fetch_holdings_for_scheme", fake_fetch)
+    monkeypatch.setattr(
+        holdings, "replace_holdings_atomic", lambda slug, h, s, a, scheme_code=None: replaced.append(slug)
+    )
     monkeypatch.setattr(holdings, "load_holdings", lambda slugs: pl.DataFrame())
     monkeypatch.setattr(holdings, "load_sectors", lambda slugs: pl.DataFrame())
     monkeypatch.setattr(holdings, "load_assets", lambda slugs: pl.DataFrame())

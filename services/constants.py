@@ -23,6 +23,9 @@ TRADING_DAYS = 252
 # Data-freshness thresholds (services.data_freshness).
 NAV_STALE_BUSINESS_DAYS = 1
 HOLDINGS_STALE_DAYS = 35
+# A tracked scheme whose latest AMFI NAV is older than this is dormant (matured FMP, wound-up
+# series): no source can have holdings or AUM for it, so every fetch/refresh path skips it.
+DORMANT_AFTER_DAYS = 90
 
 # Parallel fetch pool sizes (services.sync_service). Empirically tuned: MFAPI handles
 # 16-way concurrency cleanly (~55 schemes/s, p95 ~325ms); AdvisorKhoj ~78 rps p95 ~190ms.

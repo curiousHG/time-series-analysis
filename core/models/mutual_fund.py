@@ -79,6 +79,7 @@ class MfRegistry(SQLModel, table=True):
     metadata_status: str = Field(default="pending")
     added_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
     last_attempted_at: datetime.datetime | None = None
+    advisorkhoj_slug: str | None = None  # the spelling AdvisorKhoj resolved, once verified
 
 
 class MfAmc(SQLModel, table=True):
@@ -115,6 +116,8 @@ class AmfiScheme(SQLModel, table=True):
     isin_growth: str | None = Field(default=None, index=True)
     isin_reinvestment: str | None = None
     scheme_name: str
+    plan: str | None = Field(default=None, index=True)  # AMFI "Plan" column, e.g. "Direct Plan"
+    option: str | None = Field(default=None, index=True)  # AMFI "Option" column, e.g. "Growth Option"
     nav: float | None = None
     nav_date: datetime.date | None = None
     fund_house_id: int | None = Field(default=None, foreign_key="mf_amc.id", index=True)

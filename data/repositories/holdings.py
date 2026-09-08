@@ -10,14 +10,17 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
+from urllib.parse import unquote
 
 import polars as pl
 from sqlmodel import col, delete, func, select
 
 from core.database import get_session
-from core.models import AmfiScheme, MfAssetAllocation, MfHolding, MfSectorAllocation
+from core.models import AmfiScheme, MfAssetAllocation, MfHolding, MfMetadata, MfRegistry, MfSectorAllocation
 from data.constants import HOLDINGS_FIELD_MAP
+from data.exceptions import SourceNotFound
 from data.fetchers.mutual_fund import fetch_portfolio_by_slug
+from mutual_funds.advisorkhoj import base_name, name_candidates, same_fund
 from mutual_funds.display import make_slug
 from mutual_funds.holdings import (
     normalize_asset_allocation,
@@ -59,6 +62,11 @@ def _slug_to_code_map_cached() -> dict[str, int]:
     return out
 
 
+def slug_to_code_map() -> dict[str, int]:
+    """Public read of the cached slug → scheme_code map."""
+    return _slug_to_code_map_cached()
+
+
 def clear_slug_cache() -> None:
     """Drop the cached slug → scheme_code map. Call after AMFI sync or dedupe."""
     _slug_to_code_map_cached.cache_clear()
@@ -81,26 +89,24 @@ def _polars_row_to_holding(row: dict, scheme_code: int) -> MfHolding:
     return MfHolding(scheme_code=scheme_code, **fields)  # type: ignore[arg-type]
 
 
-def _add_holding_rows(session, df: pl.DataFrame) -> None:
+def _add_holding_rows(session, df: pl.DataFrame, scheme_code: int | None = None) -> None:
     """Stage MfHolding rows on `session` (no commit). Rows with unknown slugs are skipped."""
     if df.height == 0:
         return
     for row in df.iter_rows(named=True):
-        slug = row.get("schemeSlug")
-        code = _resolve_slug(slug) if slug else None
+        code = scheme_code if scheme_code is not None else _resolve_slug(row.get("schemeSlug") or "")
         if code is None:
-            logger.warning("save_holdings: no scheme_code for slug %r — skipping", slug)
+            logger.warning("save_holdings: no scheme_code for slug %r — skipping", row.get("schemeSlug"))
             continue
         session.add(_polars_row_to_holding(row, code))
 
 
-def _add_sector_rows(session, df: pl.DataFrame) -> None:
+def _add_sector_rows(session, df: pl.DataFrame, scheme_code: int | None = None) -> None:
     """Stage MfSectorAllocation rows on `session` (no commit)."""
     if df.height == 0:
         return
     for row in df.iter_rows(named=True):
-        slug = row.get("schemeSlug")
-        code = _resolve_slug(slug) if slug else None
+        code = scheme_code if scheme_code is not None else _resolve_slug(row.get("schemeSlug") or "")
         if code is None:
             continue
         session.add(
@@ -113,13 +119,12 @@ def _add_sector_rows(session, df: pl.DataFrame) -> None:
         )
 
 
-def _add_asset_rows(session, df: pl.DataFrame) -> None:
+def _add_asset_rows(session, df: pl.DataFrame, scheme_code: int | None = None) -> None:
     """Stage MfAssetAllocation rows on `session` (no commit)."""
     if df.height == 0:
         return
     for row in df.iter_rows(named=True):
-        slug = row.get("schemeSlug")
-        code = _resolve_slug(slug) if slug else None
+        code = scheme_code if scheme_code is not None else _resolve_slug(row.get("schemeSlug") or "")
         if code is None:
             continue
         session.add(
@@ -132,27 +137,27 @@ def _add_asset_rows(session, df: pl.DataFrame) -> None:
         )
 
 
-def save_holdings(df: pl.DataFrame) -> None:
+def save_holdings(df: pl.DataFrame, *, scheme_code: int | None = None) -> None:
     if df.height == 0:
         return
     with get_session() as session:
-        _add_holding_rows(session, df)
+        _add_holding_rows(session, df, scheme_code)
         session.commit()
 
 
-def save_sectors(df: pl.DataFrame) -> None:
+def save_sectors(df: pl.DataFrame, *, scheme_code: int | None = None) -> None:
     if df.height == 0:
         return
     with get_session() as session:
-        _add_sector_rows(session, df)
+        _add_sector_rows(session, df, scheme_code)
         session.commit()
 
 
-def save_assets(df: pl.DataFrame) -> None:
+def save_assets(df: pl.DataFrame, *, scheme_code: int | None = None) -> None:
     if df.height == 0:
         return
     with get_session() as session:
-        _add_asset_rows(session, df)
+        _add_asset_rows(session, df, scheme_code)
         session.commit()
 
 
@@ -309,30 +314,150 @@ def replace_holdings_atomic(
     holdings: pl.DataFrame,
     sectors: pl.DataFrame,
     assets: pl.DataFrame,
+    *,
+    scheme_code: int | None = None,
 ) -> None:
     """Delete + re-insert one fund's holdings/sector/asset rows in a single transaction,
     so a failed insert never leaves a fund with holdings but no sectors/assets.
+
+    Pass `scheme_code` whenever the caller knows it: plan/option variants of a fund share a
+    slug, so resolving the slug alone can file the rows under a sibling scheme.
     """
-    codes = _resolve_slugs([slug])
-    if not codes:
-        logger.warning("replace_holdings_atomic: no scheme_code for slug %r — skipping", slug)
-        return
-    code = codes[0]
+    code = scheme_code
+    if code is None:
+        codes = _resolve_slugs([slug])
+        if not codes:
+            logger.warning("replace_holdings_atomic: no scheme_code for slug %r — skipping", slug)
+            return
+        code = codes[0]
     with get_session() as session:
         session.exec(delete(MfHolding).where(col(MfHolding.scheme_code) == code))
         session.exec(delete(MfSectorAllocation).where(col(MfSectorAllocation.scheme_code) == code))
         session.exec(delete(MfAssetAllocation).where(col(MfAssetAllocation.scheme_code) == code))
-        _add_holding_rows(session, holdings)
-        _add_sector_rows(session, sectors)
-        _add_asset_rows(session, assets)
+        _add_holding_rows(session, holdings, code)
+        _add_sector_rows(session, sectors, code)
+        _add_asset_rows(session, assets, code)
         session.commit()
 
 
 # ---- ensure / refresh --------------------------------------------------------------------
 
 
+def _name_from_source_url(url: str | None) -> str | None:
+    """The scheme name an earlier AdvisorKhoj scrape requested — AMFI's pre-2025 spelling, which
+    AdvisorKhoj still keys by. None for non-AdvisorKhoj URLs."""
+    if not url or "advisorkhoj.com" not in url:
+        return None
+    tail = unquote(url.rstrip("/").rsplit("/", 1)[-1]).strip()
+    return tail or None
+
+
+def _returned_same_fund(row: dict, scheme_code: int, our_base: str) -> bool:
+    """Whether an AdvisorKhoj portfolio row belongs to our fund (any plan/option variant of it —
+    variants share one portfolio). AdvisorKhoj fuzzy-matches unknown slugs onto *other* funds,
+    so every hit is checked before it is stored."""
+    try:
+        got = int(row.get("scheme_code"))
+    except (TypeError, ValueError):
+        got = None
+    if got == scheme_code:
+        return True
+    if got is not None:
+        with get_session() as session:
+            other = session.get(AmfiScheme, got)
+        if other is not None:
+            return same_fund(base_name(other.scheme_name, other.plan, other.option), our_base)
+    common = row.get("scheme_amfi_common") or ""
+    return bool(common) and same_fund(common, our_base)
+
+
+def _store_advisorkhoj_slug(scheme_code: int, slug: str) -> None:
+    with get_session() as session:
+        reg = session.get(MfRegistry, scheme_code)
+        if reg is not None and reg.advisorkhoj_slug != slug:
+            reg.advisorkhoj_slug = slug
+            session.add(reg)
+            session.commit()
+
+
+def resolve_and_fetch_portfolio(scheme_code: int) -> tuple[str, dict]:
+    """Find the AdvisorKhoj slug for a scheme and return (slug, portfolio payload).
+
+    Tries, in order: the slug stored from an earlier success, the spelling an earlier
+    metadata scrape used, then the generated candidates from `name_candidates`. A hit counts
+    only if the returned rows belong to the same fund; the winning slug is persisted on
+    `mf_registry` so later refreshes are one request. Raises `SourceNotFound` when nothing
+    verifies.
+    """
+    with get_session() as session:
+        scheme = session.get(AmfiScheme, scheme_code)
+        if scheme is None:
+            raise SourceNotFound("AdvisorKhoj portfolio", str(scheme_code))
+        reg = session.get(MfRegistry, scheme_code)
+        meta = session.get(MfMetadata, scheme_code)
+        stored = reg.advisorkhoj_slug if reg else None
+        old_name = _name_from_source_url(meta.source_url if meta else None)
+        name, plan, option = scheme.scheme_name, scheme.plan, scheme.option
+
+    our_base = base_name(name, plan, option)
+    slugs = [stored] if stored else []
+    slugs += [make_slug(n) for n in name_candidates(our_base, plan, option, known=[old_name] if old_name else None)]
+
+    tried: set[str] = set()
+    for slug in slugs:
+        if slug in tried:
+            continue
+        tried.add(slug)
+        try:
+            resp = fetch_portfolio_by_slug(slug)
+        except SourceNotFound:
+            continue
+        rows = (resp.get("schemePortfolioAnalysisResponse") or {}).get("schemePortfolioList") or []
+        if not rows:
+            continue
+        if _returned_same_fund(rows[0], scheme_code, our_base):
+            if slug != stored:
+                _store_advisorkhoj_slug(scheme_code, slug)
+            return slug, resp
+        logger.info(
+            "AdvisorKhoj slug %r answered with scheme %s, not %s — rejected",
+            slug,
+            rows[0].get("scheme_code"),
+            scheme_code,
+        )
+    raise SourceNotFound("AdvisorKhoj portfolio", name)
+
+
+def resolve_advisorkhoj_slug(scheme_code: int) -> str | None:
+    """The verified AdvisorKhoj slug for a scheme, or None when nothing on AdvisorKhoj matches.
+    Served from `mf_registry.advisorkhoj_slug` after the first success."""
+    with get_session() as session:
+        reg = session.get(MfRegistry, scheme_code)
+        if reg is not None and reg.advisorkhoj_slug:
+            return reg.advisorkhoj_slug
+    try:
+        slug, _ = resolve_and_fetch_portfolio(scheme_code)
+    except SourceNotFound:
+        return None
+    return slug
+
+
+def fetch_holdings_for_scheme(scheme_code: int) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Resolve + fetch + normalise one scheme's holdings. Frames carry the scheme's *own*
+    slug (`make_slug(scheme_name)`) regardless of which AdvisorKhoj spelling resolved, so the
+    existing slug-keyed loaders keep working; save with `scheme_code=` to avoid the slug map."""
+    _, resp = resolve_and_fetch_portfolio(scheme_code)
+    with get_session() as session:
+        own_slug = make_slug(session.get(AmfiScheme, scheme_code).scheme_name)
+    return (
+        normalize_holdings(resp, own_slug),
+        normalize_sector_allocation(resp, own_slug),
+        normalize_asset_allocation(resp, own_slug),
+    )
+
+
 def fetch_holdings_frames(slug: str) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Fetch and normalize one fund's holdings payload."""
+    """Fetch and normalize one fund's holdings payload by raw slug (no resolution)."""
     resp = fetch_portfolio_by_slug(slug)
     return (
         normalize_holdings(resp, slug),
@@ -350,17 +475,22 @@ def ensure_holdings_data(slugs: list[str]) -> tuple[pl.DataFrame, pl.DataFrame, 
     missing = set(slugs) - existing
 
     if missing:
+        code_map = _slug_to_code_map_cached()
         with ThreadPoolExecutor(max_workers=4) as pool:
-            future_to_slug = {pool.submit(fetch_holdings_frames, slug): slug for slug in missing}
-            for future in as_completed(future_to_slug):
-                slug = future_to_slug[future]
+            future_to_code = {
+                pool.submit(fetch_holdings_for_scheme, code_map[slug]): code_map[slug]
+                for slug in missing
+                if slug in code_map
+            }
+            for future in as_completed(future_to_code):
+                code = future_to_code[future]
                 try:
                     h, s, a = future.result()
-                    save_holdings(h)
-                    save_sectors(s)
-                    save_assets(a)
+                    save_holdings(h, scheme_code=code)
+                    save_sectors(s, scheme_code=code)
+                    save_assets(a, scheme_code=code)
                 except Exception as e:
-                    logger.error("Failed to fetch holdings for %s: %s", slug, e)
+                    logger.error("Failed to fetch holdings for scheme %s: %s", code, e)
 
         holdings = load_holdings(slugs)
         sectors = load_sectors(slugs)
@@ -371,19 +501,22 @@ def ensure_holdings_data(slugs: list[str]) -> tuple[pl.DataFrame, pl.DataFrame, 
 
 def refresh_holdings_data(slugs: list[str]) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Re-fetch holdings data for given slugs, replacing successful fetches only."""
-    fetched: list[tuple[str, pl.DataFrame, pl.DataFrame, pl.DataFrame]] = []
+    fetched: list[tuple[str, int, pl.DataFrame, pl.DataFrame, pl.DataFrame]] = []
+    code_map = _slug_to_code_map_cached()
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        future_to_slug = {pool.submit(fetch_holdings_frames, slug): slug for slug in slugs}
+        future_to_slug = {
+            pool.submit(fetch_holdings_for_scheme, code_map[slug]): slug for slug in slugs if slug in code_map
+        }
         for future in as_completed(future_to_slug):
             slug = future_to_slug[future]
             try:
                 h, s, a = future.result()
-                fetched.append((slug, h, s, a))
+                fetched.append((slug, code_map[slug], h, s, a))
             except Exception as e:
                 logger.error("Failed to refresh holdings for %s: %s", slug, e)
 
-    for slug, h, s, a in fetched:
-        replace_holdings_atomic(slug, h, s, a)
+    for slug, code, h, s, a in fetched:
+        replace_holdings_atomic(slug, h, s, a, scheme_code=code)
 
     return load_holdings(slugs), load_sectors(slugs), load_assets(slugs)
