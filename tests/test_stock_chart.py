@@ -17,7 +17,6 @@ def captured(monkeypatch):
     """Capture the charts payload instead of rendering the JS component."""
     cap: dict = {}
     monkeypatch.setattr(chart, "renderLightweightCharts", lambda charts, key: cap.__setitem__("charts", charts))
-    monkeypatch.setattr(chart.st, "subheader", lambda *a, **k: None)
     return cap
 
 
