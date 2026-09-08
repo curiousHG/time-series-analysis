@@ -64,15 +64,23 @@ def _report(progress_cb: Callable[..., None] | None, **fields: object) -> None:
         progress_cb(**fields)
 
 
-def refresh_stocks_via_yfinance(*, window_days: int = 7, chunk: int = 200, progress_cb: Callable[..., None] | None = None) -> int:
+def refresh_stocks_via_yfinance(
+    *, window_days: int = 7, chunk: int = 200, progress_cb: Callable[..., None] | None = None
+) -> int:
     """Daily forward-fill for every tracked equity (NSE + international) via batched yfinance
     downloads — the SAME adjusted source as full-history fetches, so daily rows can never drift
     from stored history (raw bhavcopy appends diverged after every split/dividend). Re-writes the
     trailing `window_days` too, absorbing any late corporate-action adjustments and evening out
     ragged per-symbol tails. Returns rows upserted."""
-    from data.repositories.stock import last_stock_ohlcv_date, list_stock_symbols, refresh_stocks_batch  # noqa: PLC0415
+    from data.repositories.stock import (  # noqa: PLC0415
+        fill_stock_gaps,
+        last_nse_stock_ohlcv_date,
+        last_stock_ohlcv_date,
+        list_stock_symbols,
+        refresh_stocks_batch,
+    )
 
-    last = last_stock_ohlcv_date()
+    last = last_nse_stock_ohlcv_date() or last_stock_ohlcv_date()
     if last is None:
         return 0  # nothing tracked yet — the seed/backfill paths populate first
     today = _date.today()
@@ -81,8 +89,13 @@ def refresh_stocks_via_yfinance(*, window_days: int = 7, chunk: int = 200, progr
     chunks = [symbols[i : i + chunk] for i in range(0, len(symbols), chunk)]
     total = 0
     for i, ch in enumerate(chunks, 1):
-        total += refresh_stocks_batch(ch, start, today + _timedelta(days=1))
+        rows = refresh_stocks_batch(ch, start, today + _timedelta(days=1))
+        total += rows
         _report(progress_cb, phase="Stocks", done=i, total=len(chunks))
+        _report(progress_cb, message=f"✓ [Stocks {i}/{len(chunks)}] {len(ch)} symbols — {rows:,} rows upserted")
+    _report(progress_cb, phase="Gap fill", done=0, total=1)
+    total += fill_stock_gaps()
+    _report(progress_cb, phase="Gap fill", done=1, total=1)
     logger.info("yfinance stock refresh: %d rows from %s for %d symbols", total, start, len(symbols))
     return total
 
@@ -94,12 +107,17 @@ def refresh_indices_via_bhavcopy(*, max_days: int = 120, progress_cb: Callable[.
 
     today = _date.today()
     last = last_index_bhavcopy_date()
-    start = max(last + _timedelta(days=1), today - _timedelta(days=max_days)) if last else today - _timedelta(days=max_days)
+    start = (
+        max(last + _timedelta(days=1), today - _timedelta(days=max_days)) if last else today - _timedelta(days=max_days)
+    )
     days = _days_between(start, today)
     total = 0
     for i, day in enumerate(days, 1):
-        total += save_index_bhavcopy_day(day)
+        rows = save_index_bhavcopy_day(day)
+        total += rows
         _report(progress_cb, phase="Indices", done=i, total=len(days))
+        if rows:
+            _report(progress_cb, message=f"✓ [Indices {i}/{len(days)}] {day} — {rows:,} rows")
     logger.info("index bhavcopy refresh: %d rows from %s to %s", total, start, today)
     return total
 
@@ -162,7 +180,9 @@ def stock_data_health() -> dict:
         index_last = _q(session, "SELECT max(date) FROM index_ohlcv")
         index_first = _q(session, "SELECT min(date) FROM index_ohlcv WHERE symbol = 'Nifty 50'")
         with_metrics = _q(session, "SELECT count(*) FROM stock_metrics WHERE return_1y IS NOT NULL") or 0
-        with_fundamentals = _q(session, "SELECT count(*) FROM stock_registry WHERE fundamentals_status = 'available'") or 0
+        with_fundamentals = (
+            _q(session, "SELECT count(*) FROM stock_registry WHERE fundamentals_status = 'available'") or 0
+        )
         unavailable = _q(session, "SELECT count(*) FROM stock_registry WHERE ohlcv_status = 'unavailable'") or 0
 
     today = _date.today()
@@ -223,8 +243,11 @@ def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] 
             clear_stock_ohlcv_status(sym)  # reset the watermark (floor/streak) before the re-fetch
             refetch_stock_full(sym)  # fetch + upsert full history over the corrupt rows (no delete)
             repaired.append(sym)
-        except Exception:
+        except Exception as e:
             failed.append(sym)
+            _report(progress_cb, message=f"✗ [Repair {i}/{len(symbols)}] {sym} — {e}")
+        else:
+            _report(progress_cb, message=f"✓ [Repair {i}/{len(symbols)}] {sym} re-fetched")
         _report(progress_cb, phase="Repair", done=i, total=len(symbols))
     if repaired:
         recompute_price_metrics(repaired)
@@ -251,8 +274,11 @@ def refetch_all_stocks(*, progress_cb: Callable[..., None] | None = None) -> int
             clear_stock_ohlcv_status(sym)
             refetch_stock_full(sym)
             done.append(sym)
-        except Exception:
+        except Exception as e:
             logger.debug("re-fetch failed for %s", sym)
+            _report(progress_cb, message=f"✗ [Re-fetch {i}/{len(symbols)}] {sym} — {e}")
+        else:
+            _report(progress_cb, message=f"✓ [Re-fetch {i}/{len(symbols)}] {sym}")
         _report(progress_cb, phase="Re-fetch", done=i, total=len(symbols))
     if done:
         recompute_price_metrics(done)
@@ -286,8 +312,11 @@ def sync_missing_fundamentals(*, progress_cb: Callable[..., None] | None = None)
     for i, sym in enumerate(symbols, 1):
         try:
             ensure_stock_fundamentals([sym])
-        except Exception:
+        except Exception as e:
             logger.debug("fundamentals scrape failed for %s", sym)
+            _report(progress_cb, message=f"✗ [Fundamentals {i}/{len(symbols)}] {sym} — {e}")
+        else:
+            _report(progress_cb, message=f"✓ [Fundamentals {i}/{len(symbols)}] {sym} scraped")
         _report(progress_cb, phase="Fundamentals", done=i, total=len(symbols))
     if symbols:
         recompute_price_metrics(symbols)

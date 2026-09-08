@@ -5,6 +5,7 @@ from datetime import date
 import pandas as pd
 import polars as pl
 
+from services.benchmarks import SUBCATEGORY_BENCHMARK
 from services.insights_service import (
     AMC_CONC_WARN_PCT,
     FUND_CONC_WARN_PCT,
@@ -30,7 +31,7 @@ def _metrics(rows: list[dict]) -> pl.DataFrame:
 
 def test_underperformance_thresholds():
     """Just-inside stays quiet; just-over trips warn (6M) and critical (1Y)."""
-    bench = {"^CRSLDX": {"6m": 0.10, "1y": 0.20}}
+    bench = {SUBCATEGORY_BENCHMARK["Flexi Cap Fund"]: {"6m": 0.10, "1y": 0.20}}
     subcats = {"Fine": "Flexi Cap Fund", "Behind6m": "Flexi Cap Fund", "Behind1y": "Flexi Cap Fund"}
     metrics = _metrics(
         [

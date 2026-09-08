@@ -5,6 +5,7 @@ history; the single OHLCV source of truth) and the NSE stock bhavcopy (bulk one-
 from __future__ import annotations
 
 import logging
+from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
 import polars as pl
@@ -22,7 +23,7 @@ from stocks.constants import NSE_EXCHANGES as _NSE_EXCHANGES
 from stocks.constants import is_index_symbol, to_bare_symbol
 
 if TYPE_CHECKING:
-    from datetime import date, datetime
+    from datetime import date, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,9 @@ def _fetch_and_save_stock(symbol: str, start: date, end: date) -> None:
         _upsert_ohlcv(StockOhlcv, symbol, pl.from_pandas(data.reset_index()))
 
 
-def register_stock(symbol: str, *, name: str | None = None, exchange: str | None = None, quote_type: str | None = None) -> None:
+def register_stock(
+    symbol: str, *, name: str | None = None, exchange: str | None = None, quote_type: str | None = None
+) -> None:
     """Upsert a stock_registry row — for stocks added outside the NSE master (e.g. global tickers),
     so `_yf_fetch_symbol` knows to fetch them as-is."""
     with get_session() as session:
@@ -172,8 +175,14 @@ def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: dateti
         return ensure_index_data(symbol, start, end)
     sym = to_bare_symbol(symbol)
     return _ensure_ohlcv(
-        sym, start, end, model=StockOhlcv, fetch_fn=_fetch_and_save_stock,
-        get_wm=_get_stock_wm, set_wm=_set_stock_wm, flag_unavailable=True,
+        sym,
+        start,
+        end,
+        model=StockOhlcv,
+        fetch_fn=_fetch_and_save_stock,
+        get_wm=_get_stock_wm,
+        set_wm=_set_stock_wm,
+        flag_unavailable=True,
     )
 
 
@@ -200,7 +209,9 @@ def _despike(rows: list[dict]) -> list[dict]:
     for i in range(1, len(rows) - 1):
         c, p, n = rows[i]["close"], rows[i - 1]["close"], rows[i + 1]["close"]
         if _spiky(c, p) and _spiky(c, n):
-            logger.info("despike %s %s: close=%.2f vs neighbours %.2f / %.2f", rows[i]["symbol"], rows[i]["date"], c, p, n)
+            logger.info(
+                "despike %s %s: close=%.2f vs neighbours %.2f / %.2f", rows[i]["symbol"], rows[i]["date"], c, p, n
+            )
             continue
         keep.append(rows[i])
     if len(rows) > 1:
@@ -281,6 +292,89 @@ def load_registry_catalog() -> pl.DataFrame:
         },
         schema={"symbol": pl.Utf8, "name": pl.Utf8, "quote_type": pl.Utf8, "exchange": pl.Utf8},
     )
+
+
+def nse_trading_days(start: date, end: date) -> list[date]:
+    """NSE trading calendar between `start` and `end` inclusive — the dates the index bhavcopy
+    published Nifty 50, which is the only source here that reflects holidays and special sessions."""
+    from core.models import IndexOhlcv  # noqa: PLC0415 — model import kept local to this helper
+
+    with get_session() as session:
+        rows = session.exec(
+            select(col(IndexOhlcv.date))
+            .where(col(IndexOhlcv.symbol) == "Nifty 50", col(IndexOhlcv.date) >= start, col(IndexOhlcv.date) <= end)
+            .order_by(col(IndexOhlcv.date))
+        ).all()
+    return list(rows)
+
+
+def stock_gap_ranges(symbols: list[str] | None = None, *, lookback_days: int = 730) -> dict[str, tuple[date, date]]:
+    """{symbol: (first_missing, last_missing)} for NSE equities missing trading days *inside*
+    their stored history over the lookback — the internal holes a forward-only refresh never
+    revisits. A symbol's own first stored date bounds the check, so thin new listings are not
+    reported as gaps."""
+    today = date.today()
+    since = today - timedelta(days=lookback_days)
+    # Weekend special sessions (Budget day) are real trading days the bhavcopy records, but
+    # yfinance never publishes equity bars for them — a gap that can never be filled.
+    calendar = [d for d in nse_trading_days(since, today) if d.weekday() < 5]
+    if not calendar:
+        return {}
+    with get_session() as session:
+        live = session.exec(
+            select(StockRegistry.symbol).where(
+                col(StockRegistry.exchange).is_not(None), col(StockRegistry.exchange).in_(_NSE_EXCHANGES)
+            )
+        ).all()
+        wanted = set(symbols) & set(live) if symbols else set(live)
+        rows = session.exec(
+            select(col(StockOhlcv.symbol), col(StockOhlcv.date)).where(
+                col(StockOhlcv.symbol).in_(wanted), col(StockOhlcv.date) >= since
+            )
+        ).all()
+    have: dict[str, set[date]] = {}
+    for sym, d in rows:
+        have.setdefault(sym, set()).add(d)
+    gaps: dict[str, tuple[date, date]] = {}
+    for sym, dates in have.items():
+        first, last = min(dates), max(dates)
+        missing = [d for d in calendar if first <= d <= last and d not in dates]
+        if missing:
+            gaps[sym] = (missing[0], missing[-1])
+    return gaps
+
+
+def fill_stock_gaps(symbols: list[str] | None = None, *, chunk: int = 200) -> int:
+    """Refetch every internal hole found by `stock_gap_ranges`, batching symbols that share the
+    same missing window. Returns rows upserted."""
+    gaps = stock_gap_ranges(symbols)
+    if not gaps:
+        return 0
+    by_range: dict[tuple[date, date], list[str]] = {}
+    for sym, rng in gaps.items():
+        by_range.setdefault(rng, []).append(sym)
+    total = 0
+    for (first, last), syms in sorted(by_range.items()):
+        for i in range(0, len(syms), chunk):
+            total += refresh_stocks_batch(syms[i : i + chunk], first, last + timedelta(days=1))
+    logger.info("fill_stock_gaps: %d symbol(s) across %d window(s), %d rows", len(gaps), len(by_range), total)
+    return total
+
+
+def last_nse_stock_ohlcv_date() -> date | None:
+    """The date up to which the *typical* live NSE equity is stored: the median of per-symbol
+    max dates. The plain max is dragged forward by the handful of international tickers that
+    keep updating while every NSE symbol sits weeks behind, which is how a forward-only refresh
+    window opened a 40-day hole across the whole universe."""
+    with get_session() as session:
+        rows = session.exec(
+            select(func.max(col(StockOhlcv.date)))
+            .join(StockRegistry, StockRegistry.symbol == StockOhlcv.symbol)
+            .where(col(StockRegistry.exchange).in_(_NSE_EXCHANGES))
+            .group_by(col(StockOhlcv.symbol))
+        ).all()
+    dates = sorted(d for d in rows if d is not None)
+    return dates[len(dates) // 2] if dates else None
 
 
 def last_stock_ohlcv_date() -> date | None:

@@ -60,7 +60,10 @@ def save_index_bhavcopy_day(day: date) -> int:
         stmt = pg_insert(IndexOhlcv).values(rows)
         stmt = stmt.on_conflict_do_update(
             index_elements=["date", "symbol"],
-            set_={c: stmt.excluded[c] for c in ("open", "high", "low", "close", "volume", "turnover_cr", "pe", "pb", "div_yield")},
+            set_={
+                c: stmt.excluded[c]
+                for c in ("open", "high", "low", "close", "volume", "turnover_cr", "pe", "pb", "div_yield")
+            },
         )
         session.exec(stmt)
         session.commit()
@@ -88,8 +91,49 @@ def _fetch_and_save_index(symbol: str, start: date, end: date) -> None:
         logger.debug("index %r is bhavcopy-maintained (bulk); no on-demand fetch", symbol)
         return
     data = fetch_symbol_data(symbol, start=start, end=end)
-    if data is not None and not data.empty:
-        _upsert_ohlcv(IndexOhlcv, symbol, pl.from_pandas(data.reset_index()))
+    if data is None or data.empty:
+        return
+    frame = _reject_implausible_index_bars(symbol, pl.from_pandas(data.reset_index()))
+    if frame.height:
+        _upsert_ohlcv(IndexOhlcv, symbol, frame)
+
+
+# A broad index does not halve or double in a session. A fetched bar that far from the last
+# stored close is another instrument's bar (the thread-safety failure the fetcher now guards
+# against) or a source glitch — either way it must not be stored.
+_MAX_INDEX_DAY_MOVE = 0.5
+
+
+def _reject_implausible_index_bars(symbol: str, frame: pl.DataFrame) -> pl.DataFrame:
+    if frame.height == 0 or "Close" not in frame.columns:
+        return frame
+    first_date = _to_date(frame["Date"].min())
+    with get_session() as session:
+        prev = session.exec(
+            select(col(IndexOhlcv.close))
+            .where(col(IndexOhlcv.symbol) == symbol, col(IndexOhlcv.date) < first_date)
+            .order_by(col(IndexOhlcv.date).desc())
+            .limit(1)
+        ).first()
+    if not prev:
+        return frame
+    anchor = float(prev)
+    keep: list[bool] = []
+    for close in frame.sort("Date")["Close"].to_list():
+        ok = close is not None and close > 0 and abs(close / anchor - 1) <= _MAX_INDEX_DAY_MOVE
+        keep.append(ok)
+        if ok:
+            anchor = float(close)
+    dropped = keep.count(False)
+    if dropped:
+        logger.warning(
+            "%s: rejected %d implausible index bar(s) (> %.0f%% from prior close)",
+            symbol,
+            dropped,
+            _MAX_INDEX_DAY_MOVE * 100,
+        )
+        frame = frame.sort("Date").with_columns(pl.Series("_keep", keep)).filter(pl.col("_keep")).drop("_keep")
+    return frame
 
 
 def ensure_index_data(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
@@ -97,8 +141,14 @@ def ensure_index_data(symbol: str, start_date: datetime | date, end_date: dateti
     start = _to_date(start_date)
     end = _to_date(end_date)
     return _ensure_ohlcv(
-        symbol, start, end, model=IndexOhlcv, fetch_fn=_fetch_and_save_index,
-        get_wm=_get_index_wm, set_wm=_set_index_wm, flag_unavailable=False,
+        symbol,
+        start,
+        end,
+        model=IndexOhlcv,
+        fetch_fn=_fetch_and_save_index,
+        get_wm=_get_index_wm,
+        set_wm=_set_index_wm,
+        flag_unavailable=False,
     )
 
 

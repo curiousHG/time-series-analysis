@@ -27,6 +27,8 @@ from data.repositories.ohlcv_watermark import (
 )
 from data.repositories.stock_ohlcv import (
     ensure_stock_data,
+    fill_stock_gaps,
+    last_nse_stock_ohlcv_date,
     last_stock_ohlcv_date,
     list_registry_symbols,
     list_stock_symbols,
@@ -37,6 +39,7 @@ from data.repositories.stock_ohlcv import (
     refresh_stocks_batch,
     register_stock,
     search_stock_symbols,
+    stock_gap_ranges,
     sync_nse_etf_universe,
     sync_nse_universe,
 )
@@ -45,9 +48,11 @@ __all__ = [
     "clear_stock_ohlcv_status",
     "ensure_index_data",
     "ensure_stock_data",
+    "fill_stock_gaps",
     "first_index_bhavcopy_date",
     "get_stock_ohlcv_statuses",
     "last_index_bhavcopy_date",
+    "last_nse_stock_ohlcv_date",
     "last_stock_ohlcv_date",
     "latest_index_valuation",
     "list_bhavcopy_index_names",
@@ -65,6 +70,7 @@ __all__ = [
     "register_stock",
     "save_index_bhavcopy_day",
     "search_stock_symbols",
+    "stock_gap_ranges",
     "sync_nse_etf_universe",
     "sync_nse_universe",
 ]

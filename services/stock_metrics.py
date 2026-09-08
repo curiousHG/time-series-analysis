@@ -21,6 +21,7 @@ from sqlmodel import col, select
 from core.database import get_session
 from core.models import StockMetrics, StockRegistry
 from data.repositories.stock import ensure_stock_data
+from services.price_adjust import adjust_splits
 from services.constants import TRADING_DAYS
 from services.mf_metrics import compute_alpha_beta
 from stocks.constants import is_nse_exchange
@@ -45,7 +46,8 @@ def _daily_returns(symbol: str, *, lookback_days: int = 800) -> pd.Series:
     if df.is_empty():
         return pd.Series(dtype="float64")
     pdf = df.select(["Date", "Close"]).to_pandas().set_index("Date").sort_index()
-    return pdf["Close"].pct_change().dropna()
+    close = adjust_splits(pdf["Close"])  # yfinance history still carries unrecorded splits/bonuses
+    return close.pct_change().dropna()
 
 
 def compute_price_metrics(symbol: str, benchmark_returns: pd.Series) -> dict | None:

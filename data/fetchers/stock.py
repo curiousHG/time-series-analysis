@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import date
 from io import StringIO
 
@@ -12,8 +13,27 @@ from data.constants import (
     NSE_EQUITY_LIST_URL,
     NSE_HEADERS,
 )
+from data.exceptions import UpstreamFormatError
 
 logger = logging.getLogger("data.fetchers.stock")
+
+# yfinance shares one session/cache across threads and is not thread-safe: concurrent
+# `yf.download` calls can hand one caller another caller's frame. Observed in production —
+# every '^' index received a stock's bar on refresh days because MF-metric threads refreshed
+# benchmarks while stock-metric threads fetched forward gaps. All yfinance calls go through
+# this lock, and every returned frame is checked against the ticker that was asked for.
+_YF_LOCK = threading.Lock()
+
+
+def _require_columns(df: pd.DataFrame, required: tuple[str, ...], source: str) -> None:
+    """Raise `UpstreamFormatError` when a downloaded CSV is missing columns we read by name.
+
+    Only for payloads that arrived intact — an unavailable file (404, holiday) is handled by the
+    caller's own miss path. A renamed or dropped column, by contrast, silently empties a sync.
+    """
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise UpstreamFormatError(source, f"missing column(s) {missing}; got {list(df.columns)}")
 
 
 def fetch_nse_equity_list() -> list[dict]:
@@ -22,6 +42,7 @@ def fetch_nse_equity_list() -> list[dict]:
     r.raise_for_status()
     df = pd.read_csv(StringIO(r.text))
     df.columns = [c.strip() for c in df.columns]
+    _require_columns(df, ("SYMBOL", "NAME OF COMPANY", "ISIN NUMBER", "SERIES"), "NSE EQUITY_L.csv")
     return [
         {
             "symbol": str(row["SYMBOL"]).strip(),
@@ -92,8 +113,7 @@ def fetch_nse_index_bhavcopy(day: date) -> pd.DataFrame | None:
     except Exception:
         return None
     df.columns = [c.strip() for c in df.columns]
-    if "Index Name" not in df.columns or "Closing Index Value" not in df.columns:
-        return None
+    _require_columns(df, ("Index Name", "Index Date", "Closing Index Value"), "NSE index bhavcopy")
 
     def _num(colname: str) -> pd.Series:
         if colname not in df.columns:
@@ -132,8 +152,7 @@ def fetch_nse_index_constituents(index_name: str) -> list[str]:
         logger.debug("NSE constituents miss for %s (%s): %s", index_name, slug, e)
         return []
     df.columns = [c.strip() for c in df.columns]
-    if "Symbol" not in df.columns:
-        return []
+    _require_columns(df, ("Symbol",), f"NSE constituents CSV (ind_{slug}list.csv)")
     return [str(s).strip() for s in df["Symbol"] if str(s).strip()]
 
 
@@ -143,8 +162,7 @@ def fetch_nifty500_symbols() -> list[str]:
     r.raise_for_status()
     df = pd.read_csv(StringIO(r.text))
     df.columns = [c.strip() for c in df.columns]
-    if "Symbol" not in df.columns:
-        return []
+    _require_columns(df, ("Symbol",), "NSE ind_nifty500list.csv")
     return [str(s).strip() for s in df["Symbol"] if str(s).strip()]
 
 
@@ -279,16 +297,17 @@ def fetch_symbols_batch(symbols: list[str], start: date, end_exclusive: date) ->
     if not symbols:
         return {}
     try:
-        raw = yf.download(
-            symbols,
-            start=start,
-            end=end_exclusive,
-            interval="1d",
-            auto_adjust=True,
-            group_by="ticker",
-            threads=True,
-            progress=False,
-        )
+        with _YF_LOCK:
+            raw = yf.download(
+                symbols,
+                start=start,
+                end=end_exclusive,
+                interval="1d",
+                auto_adjust=True,
+                group_by="ticker",
+                threads=True,
+                progress=False,
+            )
     except Exception as e:
         logger.error("batch price fetch failed for %d tickers: %s", len(symbols), e)
         push_notice(f"Batch price refresh failed: {e}", level="error", key="fetch:batch")
@@ -296,16 +315,37 @@ def fetch_symbols_batch(symbols: list[str], start: date, end_exclusive: date) ->
     if raw is None or raw.empty:
         return {}
     out: dict[str, pd.DataFrame] = {}
-    if not isinstance(raw.columns, pd.MultiIndex):  # single ticker → flat columns
+    if not isinstance(raw.columns, pd.MultiIndex):  # flat columns → yfinance collapsed to one ticker
+        if len(symbols) != 1:
+            # Which of the requested tickers this is cannot be known; filing it under symbols[0]
+            # is exactly how one instrument's bars end up stored under another's key.
+            raise UpstreamFormatError(
+                "yfinance batch", f"flat frame for a {len(symbols)}-ticker request — ticker attribution lost"
+            )
         df = raw.dropna(how="all")
         if not df.empty:
             out[symbols[0]] = df
         return out
+    requested = set(symbols)
     for ticker in raw.columns.get_level_values(0).unique():
+        if str(ticker) not in requested:
+            raise UpstreamFormatError("yfinance batch", f"returned ticker {ticker!r} that was not requested")
         df = raw[ticker].dropna(how="all")
         if not df.empty:
             out[str(ticker)] = df
     return out
+
+
+def _verified_single(data: pd.DataFrame | None, symbol: str) -> pd.DataFrame | None:
+    """Flatten a one-ticker `group_by="ticker"` frame after checking it is for `symbol`."""
+    if data is None or data.empty:
+        return data
+    if isinstance(data.columns, pd.MultiIndex):
+        tickers = [str(t) for t in data.columns.get_level_values(0).unique()]
+        if tickers != [symbol]:
+            raise UpstreamFormatError("yfinance", f"asked for {symbol!r}, frame is for {tickers}")
+        data = data[symbol]
+    return data
 
 
 def fetch_symbol_data(symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame | None:
@@ -313,20 +353,23 @@ def fetch_symbol_data(symbol: str, start: str, end: str, interval: str = "1d") -
     try:
         # auto_adjust=True matches yfinance's new default (silences FutureWarning) and gives
         # split/dividend-adjusted closes, which is what we want for return calculations.
-        data = yf.download(
-            symbol,
-            start=start,
-            end=end,
-            interval=interval,
-            multi_level_index=False,
-            auto_adjust=True,
-            progress=False,
-        )
-        return data
+        # group_by="ticker" keeps the ticker in the column index so the frame can be verified
+        # as the one asked for before it is flattened.
+        with _YF_LOCK:
+            data = yf.download(
+                symbol,
+                start=start,
+                end=end,
+                interval=interval,
+                group_by="ticker",
+                auto_adjust=True,
+                progress=False,
+            )
+        return _verified_single(data, symbol)
+    except UpstreamFormatError:
+        raise
     except Exception as e:
         logger.error(f"Error fetching data for symbol {symbol}: {e}")
         # Surface to the UI (drained as a toast); de-dup per symbol so repeats collapse.
         push_notice(f"Price fetch failed for {symbol}: {e}", level="error", key=f"fetch:{symbol}")
         return None
-
-

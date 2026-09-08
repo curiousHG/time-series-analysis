@@ -8,34 +8,37 @@ from __future__ import annotations
 
 import re
 
-# Map common Indian benchmark names → yfinance / jugaad symbols.
+# Map common Indian benchmark names → index_ohlcv symbols. NSE indices use their bhavcopy names
+# (maintained daily in bulk, carry P/E & valuation, a day fresher than Yahoo); Yahoo '^' tickers
+# remain only for Nifty 50 / Sensex and non-Indian indices. The old '^CNX…' Yahoo aliases were
+# retired after they were found holding other instruments' bars.
 # Keys are matched after normalisation (lowercase, strip "TRI"/"Index"/"PRI"/"Total Return"/punctuation).
 BENCHMARK_SYMBOL_MAP: dict[str, str] = {
     "nifty 50": "^NSEI",
     "nifty50": "^NSEI",
-    "nifty 100": "^CNX100",
-    "nifty 200": "^CNX200",
-    "nifty 500": "^CRSLDX",
-    "nifty next 50": "^NSMIDCP",
-    "nifty midcap 50": "^NSEMDCP50",
+    "nifty 100": "Nifty 100",
+    "nifty 200": "Nifty 200",
+    "nifty 500": "Nifty 500",
+    "nifty next 50": "Nifty Next 50",
+    "nifty midcap 50": "Nifty Midcap 50",
     # The midcap/smallcap families aren't reliably on yfinance (the .NS index tickers got delisted)
     # and niftyindices.com is dead — they resolve to the NSE index-bhavcopy names, which the daily
     # bulk refresh maintains in index_ohlcv. NOTE: values are the EXACT (inconsistent) NSE spellings.
     "nifty midcap 100": "NIFTY Midcap 100",
     "nifty midcap 150": "Nifty Midcap 150",
-    "nifty smallcap 100": "^CNXSC",
+    "nifty smallcap 100": "NIFTY Smallcap 100",
     "nifty smallcap 250": "Nifty Smallcap 250",
-    "nifty bank": "^NSEBANK",
-    "bank nifty": "^NSEBANK",
+    "nifty bank": "Nifty Bank",
+    "bank nifty": "Nifty Bank",
     "s&p bse sensex": "^BSESN",
     "bse sensex": "^BSESN",
     "sensex": "^BSESN",
-    "nifty it": "^CNXIT",
-    "nifty pharma": "^CNXPHARMA",
-    "nifty fmcg": "^CNXFMCG",
-    "nifty auto": "^CNXAUTO",
-    "nifty metal": "^CNXMETAL",
-    "nifty energy": "^CNXENERGY",
+    "nifty it": "Nifty IT",
+    "nifty pharma": "Nifty Pharma",
+    "nifty fmcg": "Nifty FMCG",
+    "nifty auto": "Nifty Auto",
+    "nifty metal": "Nifty Metal",
+    "nifty energy": "Nifty Energy",
     # US / global benchmarks — for overseas FoFs (e.g. Franklin U.S. Opportunities → Russell
     # 3000 Growth). All resolve on yfinance and route to index_ohlcv via the '^' convention.
     "s&p 500": "^GSPC",
@@ -59,16 +62,16 @@ BENCHMARK_SYMBOL_MAP: dict[str, str] = {
 # Curated dropdown options for UI selectors (index picker, risk-vs-return). Order = display.
 BENCHMARK_CHOICES: dict[str, str] = {
     "Nifty 50": "^NSEI",
-    "Nifty 100": "^CNX100",
-    "Nifty 500": "^CRSLDX",
-    "Nifty Next 50": "^NSMIDCP",
+    "Nifty 100": "Nifty 100",
+    "Nifty 500": "Nifty 500",
+    "Nifty Next 50": "Nifty Next 50",
     "Nifty Midcap 100": "NIFTY Midcap 100",
     "Nifty Midcap 150": "Nifty Midcap 150",
-    "Nifty Smallcap 100": "^CNXSC",
+    "Nifty Smallcap 100": "NIFTY Smallcap 100",
     "Nifty Smallcap 250": "Nifty Smallcap 250",
     "BSE Sensex": "^BSESN",
-    "Nifty Bank": "^NSEBANK",
-    "Nifty IT": "^CNXIT",
+    "Nifty Bank": "Nifty Bank",
+    "Nifty IT": "Nifty IT",
     # US / global (yfinance)
     "S&P 500 (US)": "^GSPC",
     "Nasdaq 100 (US)": "^NDX",
@@ -85,21 +88,21 @@ DEFAULT_BENCHMARK_LABEL = "Nifty 50"
 # symbol → friendly label, for index selectors that only know the raw symbol.
 INDEX_DISPLAY_NAMES: dict[str, str] = {
     "^NSEI": "Nifty 50",
-    "^CNX100": "Nifty 100",
-    "^CNX200": "Nifty 200",
-    "^CRSLDX": "Nifty 500",
-    "^NSMIDCP": "Nifty Next 50",
-    "^NSEMDCP50": "Nifty Midcap 50",
+    "Nifty 100": "Nifty 100",
+    "Nifty 200": "Nifty 200",
+    "Nifty 500": "Nifty 500",
+    "Nifty Next 50": "Nifty Next 50",
+    "Nifty Midcap 50": "Nifty Midcap 50",
     "NIFTY Midcap 100": "Nifty Midcap 100",
-    "^CNXSC": "Nifty Smallcap 100",
-    "^NSEBANK": "Nifty Bank",
+    "NIFTY Smallcap 100": "Nifty Smallcap 100",
+    "Nifty Bank": "Nifty Bank",
     "^BSESN": "BSE Sensex",
-    "^CNXIT": "Nifty IT",
-    "^CNXPHARMA": "Nifty Pharma",
-    "^CNXFMCG": "Nifty FMCG",
-    "^CNXAUTO": "Nifty Auto",
-    "^CNXMETAL": "Nifty Metal",
-    "^CNXENERGY": "Nifty Energy",
+    "Nifty IT": "Nifty IT",
+    "Nifty Pharma": "Nifty Pharma",
+    "Nifty FMCG": "Nifty FMCG",
+    "Nifty Auto": "Nifty Auto",
+    "Nifty Metal": "Nifty Metal",
+    "Nifty Energy": "Nifty Energy",
     "^GSPC": "S&P 500 (US)",
     "^NDX": "Nasdaq 100 (US)",
     "^IXIC": "Nasdaq Composite (US)",
@@ -120,32 +123,33 @@ def index_display_name(symbol: str) -> str:
     """Friendly label for an index/FX symbol; falls back to the raw symbol."""
     return INDEX_DISPLAY_NAMES.get(symbol, symbol)
 
+
 # SEBI sub-category → benchmark index symbol (fetchable via yfinance "^…" or niftyindices
 # "NIFTY …"). Sub-categories absent here (all Debt, Arbitrage, Index/ETF/FoF, Conservative
 # Hybrid) have no meaningful equity benchmark → CAPM alpha/beta is left NaN rather than
 # computed against an equity index it has near-zero correlation with.
 SUBCATEGORY_BENCHMARK: dict[str, str] = {
     # Equity — each maps to its SEBI benchmark (or the closest fetchable proxy).
-    "Large Cap Fund": "^CNX100",  # Nifty 100
-    "Large & Mid Cap Fund": "^CNX200",  # Nifty 200 (proxy for LargeMidcap 250)
+    "Large Cap Fund": "Nifty 100",  # Nifty 100
+    "Large & Mid Cap Fund": "Nifty 200",  # Nifty 200 (proxy for LargeMidcap 250)
     "Mid Cap Fund": "Nifty Midcap 150",  # NSE index bhavcopy (yfinance lacks it)
     "Small Cap Fund": "Nifty Smallcap 250",  # NSE index bhavcopy
-    "Multi Cap Fund": "^CRSLDX",  # Nifty 500
-    "Flexi Cap Fund": "^CRSLDX",
-    "ELSS": "^CRSLDX",
-    "Focused Fund": "^CRSLDX",
-    "Value Fund": "^CRSLDX",
-    "Contra Fund": "^CRSLDX",
-    "Dividend Yield Fund": "^CRSLDX",
-    "Sectoral/ Thematic": "^CRSLDX",  # broad fallback (sector index needs name parsing)
+    "Multi Cap Fund": "Nifty 500",  # Nifty 500
+    "Flexi Cap Fund": "Nifty 500",
+    "ELSS": "Nifty 500",
+    "Focused Fund": "Nifty 500",
+    "Value Fund": "Nifty 500",
+    "Contra Fund": "Nifty 500",
+    "Dividend Yield Fund": "Nifty 500",
+    "Sectoral/ Thematic": "Nifty 500",  # broad fallback (sector index needs name parsing)
     # Hybrid / solution-oriented with material equity exposure — Nifty 500 is a rough lens.
-    "Aggressive Hybrid Fund": "^CRSLDX",
-    "Dynamic Asset Allocation or Balanced Advantage": "^CRSLDX",
-    "Multi Asset Allocation": "^CRSLDX",
-    "Equity Savings": "^CRSLDX",
-    "Retirement Fund": "^CRSLDX",
-    "Children's Fund": "^CRSLDX",
-    "Childrens Fund": "^CRSLDX",
+    "Aggressive Hybrid Fund": "Nifty 500",
+    "Dynamic Asset Allocation or Balanced Advantage": "Nifty 500",
+    "Multi Asset Allocation": "Nifty 500",
+    "Equity Savings": "Nifty 500",
+    "Retirement Fund": "Nifty 500",
+    "Children's Fund": "Nifty 500",
+    "Childrens Fund": "Nifty 500",
 }
 
 
@@ -158,8 +162,19 @@ def subcategory_benchmark(sub_category: str | None) -> str | None:
 
 # Fixed-income / non-directional sub-categories where an equity CAPM benchmark is meaningless.
 _DEBT_LIKE_KEYWORDS = (
-    "liquid", "overnight", "money market", "duration", "bond", "gilt", "credit risk",
-    "banking and psu", "floater", "arbitrage", "fixed maturity", "interval", "debt",
+    "liquid",
+    "overnight",
+    "money market",
+    "duration",
+    "bond",
+    "gilt",
+    "credit risk",
+    "banking and psu",
+    "floater",
+    "arbitrage",
+    "fixed maturity",
+    "interval",
+    "debt",
 )
 
 
@@ -198,12 +213,12 @@ def _normalise_benchmark(name: str) -> str:
 # yfinance and niftyindices no longer serves them cleanly — fall back to the closest fetchable
 # PARENT universe. Longest tokens first so "500" doesn't match inside "50".
 _PARENT_UNIVERSE = (
-    ("smallcap", "NIFTY SMALLCAP 250"),
-    ("midcap", "NIFTY MIDCAP 150"),
-    ("next 50", "^NSMIDCP"),
-    ("500", "^CRSLDX"),
-    ("200", "^CNX200"),
-    ("100", "^CNX100"),
+    ("smallcap", "Nifty Smallcap 250"),
+    ("midcap", "Nifty Midcap 150"),
+    ("next 50", "Nifty Next 50"),
+    ("500", "Nifty 500"),
+    ("200", "Nifty 200"),
+    ("100", "Nifty 100"),
     ("50", "^NSEI"),
 )
 

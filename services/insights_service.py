@@ -338,26 +338,26 @@ def build_alerts() -> list[Alert]:
 MARKET_PULSE_SYMBOLS: dict[str, str] = {
     "^NSEI": "Nifty 50",
     "^BSESN": "Sensex",
-    "^NSEBANK": "Nifty Bank",
-    "^NSMIDCP": "Nifty Next 50",
+    "Nifty Bank": "Nifty Bank",
+    "Nifty Next 50": "Nifty Next 50",
 }
 
 # Broad + sectoral indices for the Overview sector board (all yfinance-fetchable). (symbol, label, group)
 SECTOR_INDEX_SYMBOLS: list[tuple[str, str, str]] = [
     ("^NSEI", "Nifty 50", "Broad"),
-    ("^NSMIDCP", "Nifty Next 50", "Broad"),
-    ("NIFTY MIDCAP 150", "Nifty Midcap 150", "Broad"),
-    ("NIFTY SMALLCAP 250", "Nifty Smallcap 250", "Broad"),
-    ("^NSEBANK", "Bank", "Sector"),
-    ("^CNXIT", "IT", "Sector"),
-    ("^CNXPHARMA", "Pharma", "Sector"),
-    ("^CNXAUTO", "Auto", "Sector"),
-    ("^CNXFMCG", "FMCG", "Sector"),
-    ("^CNXMETAL", "Metal", "Sector"),
-    ("^CNXENERGY", "Energy", "Sector"),
-    ("^CNXREALTY", "Realty", "Sector"),
-    ("^CNXINFRA", "Infra", "Sector"),
-    ("^CNXPSUBANK", "PSU Bank", "Sector"),
+    ("Nifty Next 50", "Nifty Next 50", "Broad"),
+    ("Nifty Midcap 150", "Nifty Midcap 150", "Broad"),
+    ("Nifty Smallcap 250", "Nifty Smallcap 250", "Broad"),
+    ("Nifty Bank", "Bank", "Sector"),
+    ("Nifty IT", "IT", "Sector"),
+    ("Nifty Pharma", "Pharma", "Sector"),
+    ("Nifty Auto", "Auto", "Sector"),
+    ("Nifty FMCG", "FMCG", "Sector"),
+    ("Nifty Metal", "Metal", "Sector"),
+    ("Nifty Energy", "Energy", "Sector"),
+    ("Nifty Realty", "Realty", "Sector"),
+    ("Nifty Infrastructure", "Infra", "Sector"),
+    ("Nifty PSU Bank", "PSU Bank", "Sector"),
 ]
 
 # International indices (yfinance) for the Overview Indexes tab. (symbol, label, region)

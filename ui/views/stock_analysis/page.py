@@ -189,7 +189,9 @@ def _render_add_international() -> None:
                 pick["symbol"], name=pick["name"], exchange=pick["exchange"], quote_type=pick["quote_type"]
             )
             load_analysis_catalog_cached.clear()
-            st.session_state.sa_ticker = pick["symbol"]
+            # The sa_ticker selectbox already rendered this run — a widget-keyed state can't be
+            # written after instantiation. Stage the selection; it's applied pre-widget on rerun.
+            st.session_state.sa_ticker_pending = pick["symbol"]
             st.toast(f"Added {pick['symbol']} ({pick['exchange']}).", icon="🌍")
             st.rerun()
 
@@ -198,6 +200,10 @@ _options = [c["id"] for c in _catalog]
 _n_stock = sum(1 for c in _catalog if c["kind"] == "stock")
 _n_etf = sum(1 for c in _catalog if c["kind"] == "etf")
 _n_index = sum(1 for c in _catalog if c["kind"] == "index")
+# A selection staged by the add-international flow (or navigation) — apply it BEFORE the selectbox
+# instantiates; Streamlit forbids writing a widget's key after its widget rendered in the same run.
+if (_pending := st.session_state.pop("sa_ticker_pending", None)) is not None:
+    st.session_state.sa_ticker = _pending
 if st.session_state.get("sa_ticker") not in _options:
     st.session_state.pop("sa_ticker", None)
 ticker = st.selectbox(

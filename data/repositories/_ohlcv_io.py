@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 
 import polars as pl
 from sqlalchemy import func
@@ -29,6 +30,42 @@ def _to_date(d: datetime | date) -> date:
     return d.date() if isinstance(d, datetime) else d
 
 
+@lru_cache(maxsize=1)
+def _special_session_dates() -> frozenset[date]:
+    """Weekend dates on which NSE actually traded (Budget-day / Muhurat sessions), from the
+    index bhavcopy — the only source here that reflects the real trading calendar."""
+    from core.models import IndexOhlcv  # noqa: PLC0415 — model import kept off this module's top level
+
+    with get_session() as session:
+        rows = session.exec(select(col(IndexOhlcv.date)).where(col(IndexOhlcv.symbol) == "Nifty 50").distinct()).all()
+    return frozenset(d for d in rows if d.weekday() >= 5)
+
+
+def _drop_phantom_weekend_bars(df: pl.DataFrame, symbol: str) -> pl.DataFrame:
+    """Drop Saturday/Sunday bars that are not a known NSE special session.
+
+    yfinance answers a delisted/renamed ticker (TATAMOTORS after the demerger) with a history
+    whose dates are shifted a day earlier, which shows up as a bar on every Sunday. Nothing
+    trades on a weekend except NSE's occasional special sessions, so those are the only weekend
+    dates allowed through.
+    """
+    weekend = df.filter(pl.col("Date").dt.weekday() >= 6)
+    if weekend.height == 0:
+        return df
+    allowed = _special_session_dates()
+    phantom = [d for d in weekend["Date"].to_list() if _as_date(d) not in allowed]
+    if not phantom:
+        return df
+    logger.warning(
+        "%s: dropping %d weekend bar(s) outside NSE special sessions (first %s)", symbol, len(phantom), phantom[0]
+    )
+    return df.filter(~(pl.col("Date").dt.weekday() >= 6) | pl.col("Date").is_in(sorted(allowed)))
+
+
+def _as_date(d) -> date:
+    return d.date() if isinstance(d, datetime) else d
+
+
 def _upsert_ohlcv(model: type, symbol: str, df: pl.DataFrame) -> None:
     """Upsert OHLCV rows into `model`'s table (StockOhlcv or IndexOhlcv). Rows without a positive
     close are dropped — yahoo's early-2000s .NS history contains zero/null-close days that would
@@ -36,6 +73,7 @@ def _upsert_ohlcv(model: type, symbol: str, df: pl.DataFrame) -> None:
     if df.height == 0:
         return
     df = df.filter(pl.col("Close").is_not_null() & (pl.col("Close") > 0))
+    df = _drop_phantom_weekend_bars(df, symbol)
     if df.height == 0:
         return
     with get_session() as session:
