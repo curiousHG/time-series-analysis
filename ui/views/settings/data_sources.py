@@ -371,6 +371,8 @@ def _mermaid(code: str, *, height: int, tips: dict[str, str] | None = None) -> N
                                 flowchart: {{ curve: 'basis', nodeSpacing: 22, rankSpacing: 70, padding: 10 }},
                                 themeVariables: {{ fontSize: '13px', fontFamily: 'Inter, system-ui, sans-serif',
                                                    lineColor: '#475569', edgeLabelBackground: '#0f1117' }} }});
+          const visible = () => document.documentElement.clientWidth > 0 && document.documentElement.clientHeight > 0;
+          while (!visible()) await new Promise(r => setTimeout(r, 250));
           await mermaid.run();
           const TIPS = {tips_json};
           {_HOVER_JS}
@@ -391,8 +393,9 @@ def render() -> None:
         "`amfi_schemes.scheme_code`; stocks and indices are keyed by bare symbol or NSE index name. "
         "Portfolio and MF Analysis also read `index_ohlcv` for benchmark comparisons (arrows omitted to keep the map readable)."
     )
-    with st.expander("How a fetch works (DB-first rule)"):
-        st.caption(
-            "Check the DB, fetch only the missing gap, save it back, return from the DB. Every page goes through `ensure_*`, never a fetcher."
-        )
-        _mermaid(_ENSURE_FLOW, height=210)
+    st.markdown("**How a fetch works**")
+    st.caption(
+        "Check the DB, fetch only the missing gap, save it back, return from the DB. "
+        "Every page goes through `ensure_*`, never a fetcher."
+    )
+    _mermaid(_ENSURE_FLOW, height=210)
