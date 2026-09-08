@@ -3,6 +3,7 @@ data/*
 !data/
 !data/__init__.py
 !data/constants.py
+!data/sources.py
 !data/fetchers/
 !data/repositories/
 !data/parquet/advisorkhoj_registry.parquet
