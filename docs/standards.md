@@ -19,6 +19,7 @@ ui/views  →  ui/state/loaders.py  →  services/  →  data/repositories  → 
   `services` nor `data.*` — they are leaf logic.
 - ⚙ Views reach data **through `ui/state/loaders.py` (reads) or a service (writes/refreshes)** — never
   `from data.…` directly. 15 legacy files are ratcheted; route each through the seam, then delete its entry.
+  The pure constant modules `data.constants` and `data.sources` (no DB, no HTTP) are exempt.
 - ⚙ `_`-prefixed names are module-internal. Never import them across top-level packages — promote a
   public accessor instead.
 - ⚙ `pg_insert` / `ON CONFLICT` writes are built **only in `data/repositories/`**.

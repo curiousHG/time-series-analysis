@@ -110,6 +110,9 @@ def test_no_private_imports_across_packages():
     )
 
 
+_PURE_DATA_MODULES = {"data.constants", "data.sources"}
+
+
 def test_views_import_data_via_seam():
     """Views reach data through ui/state/loaders.py or a service — not data.* directly. Frozen at
     today's 15 files; route each through the seam and delete its entry."""
@@ -118,7 +121,7 @@ def test_views_import_data_via_seam():
         for rel, tree in FILES.items()
         if rel.startswith("ui/")
         and rel != "ui/state/loaders.py"  # the sanctioned seam
-        and any(mod.split(".")[0] == "data" for mod, _ in _imports(tree))
+        and any(mod.split(".")[0] == "data" and mod not in _PURE_DATA_MODULES for mod, _ in _imports(tree))
     }
     _ratchet(
         "ui→data bypasses the loaders/services seam",
@@ -183,9 +186,7 @@ def _cache_decorators() -> list[tuple[str, str, bool]]:
 def test_ui_caching_goes_through_loaders():
     """st.cache_data lives in ui/state/loaders.py (one cache surface). Page-local caches are frozen
     at today's set; new ones belong in loaders.py."""
-    violations = {
-        rel for rel, kind, _ in _cache_decorators() if kind == "cache_data" and rel != "ui/state/loaders.py"
-    }
+    violations = {rel for rel, kind, _ in _cache_decorators() if kind == "cache_data" and rel != "ui/state/loaders.py"}
     _ratchet(
         "cache_data outside ui/state/loaders.py",
         violations,
@@ -201,7 +202,9 @@ def test_ui_caching_goes_through_loaders():
 def test_cache_data_requires_ttl():
     """A cache without ttl serves stale data until a manual clear — every cache_data declares ttl.
     The 4 no-ttl loaders are frozen; Wave 0 gives them ttls and empties this list."""
-    violations = {f"{rel}::{kind}" for rel, kind, has_ttl in _cache_decorators() if kind == "cache_data" and not has_ttl}
+    violations = {
+        f"{rel}::{kind}" for rel, kind, has_ttl in _cache_decorators() if kind == "cache_data" and not has_ttl
+    }
     _ratchet(
         "cache_data without ttl",
         violations,
