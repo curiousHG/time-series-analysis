@@ -38,7 +38,7 @@ def _render_correlation(portfolio_nav: pl.DataFrame) -> None:
         return
     order = hierarchical_order(corr)
     fig = render_correlation_heatmap(corr.loc[order, order])
-    fig.update_layout(height=max(420, 34 * len(order)), title=None)
+    fig.update_layout(height=max(420, 34 * len(order)), title={"text": ""})
     st.plotly_chart(fig, use_container_width=True, key="pf-corr-heatmap")
     st.caption(
         "Daily-return correlation, hierarchically clustered. Blocks of deep red (> 0.9) "

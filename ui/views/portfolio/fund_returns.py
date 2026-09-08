@@ -80,7 +80,5 @@ def _render_monthly_heatmap(nav_df: pl.DataFrame):
         color_continuous_scale="RdYlGn",
         color_continuous_midpoint=0,
     )
-    fig.update_layout(
-        height=320, showlegend=False, coloraxis_showscale=False, xaxis_title=None, yaxis_title="Return %"
-    )
+    fig.update_layout(height=320, showlegend=False, coloraxis_showscale=False, xaxis_title=None, yaxis_title="Return %")
     st.plotly_chart(fig, use_container_width=True, key="monthly-heatmap")

@@ -54,7 +54,13 @@ def _line(times, values, color: str, title: str) -> dict:
     return {
         "type": "Line",
         "data": data,
-        "options": {"color": color, "lineWidth": 1, "priceLineVisible": False, "lastValueVisible": False, "title": title},
+        "options": {
+            "color": color,
+            "lineWidth": 1,
+            "priceLineVisible": False,
+            "lastValueVisible": False,
+            "title": title,
+        },
     }
 
 
@@ -75,7 +81,13 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
         price = {
             "type": "Candlestick",
             "data": candles,
-            "options": {"upColor": _UP, "downColor": _DOWN, "wickUpColor": _UP, "wickDownColor": _DOWN, "borderVisible": False},
+            "options": {
+                "upColor": _UP,
+                "downColor": _DOWN,
+                "wickUpColor": _UP,
+                "wickDownColor": _DOWN,
+                "borderVisible": False,
+            },
         }
     else:
         # Some indices (e.g. "CNX 100 Equal Weight") only carry close values — fall back to a line.
@@ -88,7 +100,7 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
             for i, (name, values) in enumerate(overlays.items())
         ],
     ]
-    charts = [{"chart": _chart_opts(430), "series": price_series}]
+    charts = [{"chart": _chart_opts(560), "series": price_series}]
 
     # ---- Volume pane ----
     if has_volume:
@@ -98,7 +110,10 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
             if pd.notna(v)
         ]
         charts.append(
-            {"chart": _chart_opts(120), "series": [{"type": "Histogram", "data": vol, "options": {"priceFormat": {"type": "volume"}}}]}
+            {
+                "chart": _chart_opts(120),
+                "series": [{"type": "Histogram", "data": vol, "options": {"priceFormat": {"type": "volume"}}}],
+            }
         )
 
     # ---- Panel panes (recompute per indicator so multi-series like MACD group together) ----
@@ -126,8 +141,14 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
                 {"price": 30, "color": "#475569", "lineStyle": 2, "lineWidth": 1},
             ]
         opts = _chart_opts(150)
-        opts["watermark"] = {"visible": True, "text": ind_name, "color": "rgba(148,163,184,0.25)", "fontSize": 12, "horzAlign": "left", "vertAlign": "top"}
+        opts["watermark"] = {
+            "visible": True,
+            "text": ind_name,
+            "color": "rgba(148,163,184,0.25)",
+            "fontSize": 12,
+            "horzAlign": "left",
+            "vertAlign": "top",
+        }
         charts.append({"chart": opts, "series": series})
 
-    st.subheader(symbol)
     renderLightweightCharts(charts, key=f"lwc_{symbol}")

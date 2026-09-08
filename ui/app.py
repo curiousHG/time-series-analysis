@@ -6,6 +6,7 @@ import ui.charts.theme  # noqa: F401 — registers Plotly dark theme
 from core.database import init_schema
 from core.logging_config import setup_logging
 from core.timing import timed
+from ui.components.chrome import inject_global_css
 
 with timed("boot.setup_logging"):
     setup_logging()
@@ -71,4 +72,5 @@ def run():
             st.Page("ui/views/settings/page.py", title="Settings", url_path="settings"),
         ]
         pg = st.navigation(pages, position="top")
+        inject_global_css()
         pg.run()

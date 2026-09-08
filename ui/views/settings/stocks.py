@@ -118,8 +118,10 @@ def render() -> None:
             st.toast(f"Recomputed metrics for {n:,} stocks.", icon="✅")
             st.rerun()
 
-    st.caption("Re-fetch replaces every stock's full history from yfinance (the single reliable source) — "
-               "fixes any source-mixing corruption. Fundamentals scrapes screener.in for universe stocks that lack it.")
+    st.caption(
+        "Re-fetch replaces every stock's full history from yfinance (the single reliable source) — "
+        "fixes any source-mixing corruption. Fundamentals scrapes screener.in for universe stocks that lack it."
+    )
     b4, b5 = st.columns(2)
     with b4:
         _REPAIR.start_button(

@@ -9,61 +9,12 @@ from data.repositories.amfi import get_scheme_count
 from data.repositories.tradebook import get_tradebook_stats
 from services.db_stats import get_db_stats
 from services.registry_service import list_tracked
+from ui.components.chrome import page_header
 from ui.views.settings import amfi, data_sources, db_stats, metrics_cache, refresh, stocks, tradebook
 
 
-def _inject_styles() -> None:
-    st.markdown(
-        """
-        <style>
-        section[data-testid="stSidebar"] + section .block-container {
-            padding-top: 2rem;
-        }
-        .settings-kicker {
-            color: #94a3b8;
-            font-size: 0.82rem;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            margin-bottom: 0.15rem;
-        }
-        .settings-subtle {
-            color: #94a3b8;
-            margin-top: -0.35rem;
-            margin-bottom: 1.2rem;
-        }
-        div[data-testid="stMetric"] {
-            background: rgba(15, 23, 42, 0.42);
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            border-radius: 8px;
-            padding: 0.85rem 0.95rem;
-        }
-        div[data-testid="stMetricLabel"] p {
-            color: #94a3b8;
-            font-size: 0.78rem;
-        }
-        div[data-testid="stMetricValue"] {
-            font-size: 1.45rem;
-        }
-        div[data-testid="stTabs"] button p {
-            font-size: 0.92rem;
-            font-weight: 600;
-        }
-        .settings-section-note {
-            color: #94a3b8;
-            margin: -0.35rem 0 1rem 0;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def _render_header() -> None:
-    st.markdown('<div class="settings-kicker">Operations</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="settings-subtle">Keep portfolio inputs, fund data, cache jobs, and database health in one place.</div>',
-        unsafe_allow_html=True,
-    )
+    page_header("Settings", "Portfolio inputs, fund data, refresh jobs and database health")
 
 
 def _render_overview() -> None:
@@ -104,49 +55,28 @@ def _render_tabs() -> None:
     )
 
     with portfolio_tab:
-        st.markdown("### Portfolio Data")
-        st.markdown(
-            '<div class="settings-section-note">Upload and inspect the Kite/Zerodha tradebook used by Portfolio analytics.</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption("Upload and inspect the Kite/Zerodha tradebook used by Portfolio analytics.")
         tradebook.render()
 
     with fund_tab:
-        st.markdown("### Fund Data")
-        st.markdown(
-            '<div class="settings-section-note">Sync the AMFI universe, refresh tracked funds, and rebuild derived metrics.</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption("Sync the AMFI universe, refresh tracked funds, and rebuild derived metrics.")
         amfi.render()
         refresh.render()
         metrics_cache.render()
 
     with stock_tab:
-        st.markdown("### Stock Data")
-        st.markdown(
-            '<div class="settings-section-note">Retry price downloads for stocks with no fetchable history.</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption("Retry price downloads for stocks with no fetchable history.")
         stocks.render()
 
     with system_tab:
-        st.markdown("### System")
-        st.markdown(
-            '<div class="settings-section-note">Inspect database footprint and table-level storage.</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption("Inspect database footprint and table-level storage.")
         db_stats.render()
 
     with reference_tab:
-        st.markdown("### Reference")
-        st.markdown(
-            '<div class="settings-section-note">Source-to-table mappings and schema notes for maintenance work.</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption("Source-to-table mappings and schema notes for maintenance work.")
         data_sources.render()
 
 
-_inject_styles()
 _render_header()
 _render_overview()
 st.divider()

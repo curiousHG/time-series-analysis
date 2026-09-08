@@ -16,6 +16,7 @@ from stocks.constants import NIFTY_50, to_bare_symbol
 from stocks.metric_catalog import CATEGORY_COLORS, DEFAULT_VISIBLE_COLS, STOCK_METRIC_RENAME
 from ui.components.aggrid_theme import streamlit_dark_aggrid_theme
 from ui.components.background_refresh import BackgroundRefresh
+from ui.components.chrome import page_header
 from ui.components.notifications import render_toasts
 from ui.components.screener_grid import clicked_cell_value, render_screener_grid
 from ui.constants import STOCK_FILTER_DEFAULTS, STOCK_SCREENER_PERSIST_KEY
@@ -103,7 +104,9 @@ with st.expander("Add ticker (stock or index)", expanded=False, icon=":material/
             "searches — search, pick, search again, then add all at once. NSE stocks get "
             "fundamentals + CAPM; global stocks are OHLCV-only (chartable in Stock Analysis)."
         )
-        _q = st.text_input("Search by name or symbol", placeholder="e.g. reliance, apple, tesla", key="stock_scr_add_query")
+        _q = st.text_input(
+            "Search by name or symbol", placeholder="e.g. reliance, apple, tesla", key="stock_scr_add_query"
+        )
         _opts: list[tuple[str, str, str]] = []
         if _q and len(_q) >= 2:
             with st.spinner("Searching…"):
@@ -166,9 +169,7 @@ with st.sidebar:
     )
     roe_min = st.number_input("Min ROE %", min_value=0.0, step=1.0, key="stock_scr_roe", on_change=_persist_filters)
     alpha_min = st.number_input("Min Alpha %", step=1.0, key="stock_scr_alpha", on_change=_persist_filters)
-    _POPULATE.start_button(
-        "Re-sync Nifty 50", lambda: _populate_task(list(NIFTY_50)), use_container_width=False
-    )
+    _POPULATE.start_button("Re-sync Nifty 50", lambda: _populate_task(list(NIFTY_50)), use_container_width=False)
     if _POPULATE.is_running():
         _POPULATE.poll()
 
@@ -182,7 +183,7 @@ _filtered = apply_stock_filters(
     categories=categories or None,
 )
 
-st.caption(f"**{_filtered.height}** of {_df.height} stocks match")
+page_header("Stock Screener", f"{_filtered.height} of {_df.height} stocks match the filters")
 
 # Category summary — counts per alpha quadrant.
 counts = dict(_filtered.group_by("alpha_category").len().iter_rows())

@@ -10,6 +10,7 @@ import streamlit as st
 
 from services.registry_service import load_registry
 from ui.components.background_refresh import BackgroundRefresh
+from ui.components.chrome import page_header
 from ui.components.freshness_banner import clear_freshness_cache, is_fund_stale
 from ui.state.loaders import load_holdings_data, load_txn_data
 from ui.views.portfolio import flows_tab, overview_tab, positions_tab, risk_tab
@@ -52,7 +53,9 @@ _REFRESH = BackgroundRefresh(
     "Portfolio refresh",
     cache_clearers=(_clear_portfolio_caches,),
     summarize=lambda r: (
-        f"issues — {', '.join(r['failed'])} failed" if isinstance(r, dict) and r.get("failed") else "NAV, holdings & metrics updated"
+        f"issues — {', '.join(r['failed'])} failed"
+        if isinstance(r, dict) and r.get("failed")
+        else "NAV, holdings & metrics updated"
     ),
 )
 
@@ -71,7 +74,7 @@ def _render(txn_df: pl.DataFrame | None) -> None:
     active_names = (
         mapped.group_by("schemeName")
         .agg(pl.col("signed_qty").sum().alias("units"))
-        .filter(pl.col("units") > 0)
+        .filter(pl.col("units") > 1e-6)
         .sort("schemeName")["schemeName"]
         .to_list()
     )
@@ -81,22 +84,25 @@ def _render(txn_df: pl.DataFrame | None) -> None:
     active_registry = registry.filter(pl.col("schemeName").is_in(active_names))
 
     _REFRESH.consume()
-    if _REFRESH.is_running():
-        _REFRESH.poll()
-    elif is_fund_stale(active_names, active_slugs):
-        _, _btn = st.columns([12, 1], vertical_alignment="center")
-        with _btn:
+    holdings_df, sectors_df, assets_df = load_holdings_data(active_slugs)
+    pv_series = build_portfolio_value_series(mapped, portfolio_nav)
+    stale = not _REFRESH.is_running() and is_fund_stale(active_names, active_slugs)
+
+    def _refresh_action() -> None:
+        if stale:
             _REFRESH.start_button(
                 "",
                 lambda: _portfolio_refresh_task(active_names, active_slugs),
                 key="pf_refresh",
                 icon=":material/refresh:",
-                help="Some holdings have stale NAV/holdings — refetch them and recompute metrics now",
+                help="Some holdings have stale NAV or holdings. Refetch them and recompute metrics now.",
                 use_container_width=False,
             )
 
-    holdings_df, sectors_df, assets_df = load_holdings_data(active_slugs)
-    pv_series = build_portfolio_value_series(mapped, portfolio_nav)
+    as_of = f"as of {pv_series['date'].iloc[-1]:%d %b %Y}" if pv_series is not None and not pv_series.empty else ""
+    page_header("Portfolio", f"{len(active_names)} funds held{' · ' + as_of if as_of else ''}", actions=_refresh_action)
+    if _REFRESH.is_running():
+        _REFRESH.poll()
     if pv_series is None or pv_series.empty:
         st.info("Not enough data to compute portfolio analytics.")
         return

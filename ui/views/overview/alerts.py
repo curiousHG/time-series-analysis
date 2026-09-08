@@ -1,4 +1,5 @@
-"""Alerts panel — severity-grouped insights with deep-links to the relevant page."""
+"""Alerts panel — severity-grouped insights, one compact row each, with a deep-link to the
+relevant page."""
 
 from __future__ import annotations
 
@@ -12,29 +13,39 @@ from ui.state.loaders import load_overview_alerts_cached
 if TYPE_CHECKING:
     from services.insights_service import Alert
 
-_BOX = {"critical": st.error, "warn": st.warning, "info": st.info}
-_ICON = {"critical": "🚨", "warn": "⚠️", "info": "\N{INFORMATION SOURCE}️"}
+_DOT = {"critical": ":red[●]", "warn": ":orange[●]", "info": ":blue[●]"}
+_LABEL = {"critical": "critical", "warn": "warning", "info": "notice"}
 
 
 def _render_alert(alert: Alert, idx: int) -> None:
-    _BOX[alert.severity](alert.message, icon=_ICON[alert.severity])
-    if alert.scheme_name:
-        if st.button("Open in MF Analysis →", key=f"alert-open-{idx}"):
-            navigation.open_fund_in_analysis(alert.scheme_name)
-    elif alert.kind == "drawdown":
-        st.page_link(navigation.PORTFOLIO_PAGE, label="Open Portfolio →")
-    elif alert.kind == "staleness":
-        st.page_link(navigation.SETTINGS_PAGE, label="Refresh data in Settings →")
+    text_col, link_col = st.columns([12, 1], vertical_alignment="center")
+    text_col.markdown(f"{_DOT[alert.severity]}&nbsp; {alert.message}")
+    with link_col:
+        if alert.scheme_name:
+            if st.button(
+                "",
+                icon=":material/arrow_forward:",
+                key=f"alert-open-{idx}",
+                type="tertiary",
+                help="Open in MF Analysis",
+            ):
+                navigation.open_fund_in_analysis(alert.scheme_name)
+        elif alert.kind == "drawdown":
+            st.page_link(navigation.PORTFOLIO_PAGE, label="", icon=":material/arrow_forward:", help="Open Portfolio")
+        elif alert.kind == "staleness":
+            st.page_link(
+                navigation.SETTINGS_PAGE, label="", icon=":material/arrow_forward:", help="Refresh in Settings"
+            )
 
 
 def render() -> None:
     st.subheader("Alerts")
     alerts = load_overview_alerts_cached()
     if not alerts:
-        st.success("No alerts — funds are tracking their benchmarks and data is fresh.", icon="✅")
+        st.caption("Nothing to flag. Funds are tracking their benchmarks and data is fresh.")
         return
 
     counts = {s: sum(1 for a in alerts if a.severity == s) for s in ("critical", "warn", "info")}
-    st.caption(" · ".join(f"{_ICON[s]} {n}" for s, n in counts.items() if n))
+    st.caption(" · ".join(f"{n} {_LABEL[s]}{'s' if n != 1 else ''}" for s, n in counts.items() if n))
     for i, alert in enumerate(alerts):
         _render_alert(alert, i)

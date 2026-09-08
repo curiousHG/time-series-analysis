@@ -14,6 +14,7 @@ from data.repositories.nav import load_nav_df
 from mutual_funds.display import make_slug, short_scheme_name
 from services.mf_metrics import absolute_return
 from services.registry_service import backfill_missing, list_tracked
+from ui.components.chrome import page_header
 from ui.components.freshness_banner import clear_freshness_cache, is_fund_stale
 from ui.components.metric_tiles import Kpi, render_kpi_row
 from ui.state.loaders import load_metadata_cached, load_metrics_cached, load_txn_data
@@ -176,24 +177,27 @@ if meta.get("riskLevel"):
 if held:
     chips.append(f":green-background[**Held · {held['weight_pct']:.1f}% of portfolio**]")
 
-_name_col, _refresh_col = st.columns([9, 1], vertical_alignment="center")
-with _name_col:
-    st.markdown(f"### {short_scheme_name(selected)}")
-with _refresh_col:
-    if is_fund_stale([selected], [make_slug(selected)]) and st.button(
-        "", icon=":material/refresh:", key="mf_refresh_fund",
-        help="Refetch NAV, holdings & metadata and recompute metrics",
-    ):
-        _refresh_fund(selected)
-        st.rerun()
-st.markdown(" ".join(chips))
-_identity_bits = [f"**{amc}**"]
+_identity_bits = [amc]
 if benchmark:
-    _identity_bits.append(f"benchmarked to **{benchmark}**")
+    _identity_bits.append(f"benchmark {benchmark}")
 if launch:
     _age = (date.today() - launch).days / 365.25 if isinstance(launch, date) else None
     _identity_bits.append(f"launched {launch}" + (f" ({_age:.1f}y)" if _age else ""))
-st.markdown(" · ".join(_identity_bits))
+
+
+def _fund_refresh_action() -> None:
+    if is_fund_stale([selected], [make_slug(selected)]) and st.button(
+        "",
+        icon=":material/refresh:",
+        key="mf_refresh_fund",
+        help="Refetch NAV, holdings and metadata, then recompute metrics",
+    ):
+        _refresh_fund(selected)
+        st.rerun()
+
+
+page_header(short_scheme_name(selected), " · ".join(_identity_bits), actions=_fund_refresh_action)
+st.markdown(" ".join(chips))
 
 # At-a-glance: the major performance + risk/cost numbers up top, each with a good/bad rating
 # pill so the number self-explains. Fuller per-window detail lives in the tabs below.
@@ -209,7 +213,12 @@ render_kpi_row(
             delta=f"{_chg_1d * 100:+.2f}%" if _chg_1d is not None else None,
             help=f"As of {nav_pd.index.max():%d %b %Y}",
         ),
-        Kpi("1Y return", absolute_return(nav_pd, 252), fmt="pct", pill=ratings.rate_return_vs_benchmark(_m.get("alpha_1y"))),
+        Kpi(
+            "1Y return",
+            absolute_return(nav_pd, 252),
+            fmt="pct",
+            pill=ratings.rate_return_vs_benchmark(_m.get("alpha_1y")),
+        ),
         Kpi("3Y CAGR", _m.get("cagr_3y"), fmt="pct", pill=ratings.rate_cagr(_m.get("cagr_3y"))),
         Kpi("Sharpe (1Y)", _m.get("sharpe_1y"), fmt="ratio", pill=ratings.rate_sharpe(_m.get("sharpe_1y"))),
     ]

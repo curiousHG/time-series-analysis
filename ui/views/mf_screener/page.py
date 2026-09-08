@@ -9,6 +9,7 @@ import streamlit as st
 from data.repositories.amfi import get_scheme_count
 from services.registry_service import list_tracked
 from services.screener_service import apply_filters
+from ui.components.chrome import page_header
 from ui.state.loaders import load_screener_df_cached
 from ui.views.mf_screener.backfill import DISPLAY_ORDER_KEY, render_inline_backfill
 from ui.views.mf_screener.chart import render_risk_return_chart
@@ -48,6 +49,7 @@ if _amfi_count == 0:
     st.warning("AMFI master data not loaded. Run **Sync AMFI Master** from Settings first.")
     st.stop()
 
+page_header("MF Screener", "The AMFI universe with cached risk and return metrics")
 _df = load_screener_df_cached()
 
 # Sidebar + inline filters → resolved FilterState.

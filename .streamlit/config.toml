@@ -1,4 +1,37 @@
 [server]
 runOnSave = true
+
 [logger]
 level = "error"
+
+[theme]
+base = "dark"
+primaryColor = "#6366f1"
+backgroundColor = "#0f1117"
+secondaryBackgroundColor = "#161b26"
+textColor = "#e2e8f0"
+linkColor = "#a5b4fc"
+linkUnderline = false
+borderColor = "#252c3b"
+dataframeBorderColor = "#252c3b"
+dataframeHeaderBackgroundColor = "#161b26"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "6px"
+buttonRadius = "6px"
+font = "Inter, system-ui, sans-serif"
+headingFont = "Inter, system-ui, sans-serif"
+baseFontSize = 14
+headingFontSizes = ["1.75rem", "1.35rem", "1.1rem", "1rem", "0.95rem", "0.9rem"]
+headingFontWeights = [600, 600, 600, 600, 600, 600]
+chartCategoricalColors = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#ec4899"]
+
+[[theme.fontFaces]]
+family = "Inter"
+url = "https://fonts.gstatic.com/s/inter/v18/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2"
+weight = "100 900"
+style = "normal"
+
+[theme.sidebar]
+backgroundColor = "#12161f"
+secondaryBackgroundColor = "#1a2030"

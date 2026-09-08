@@ -10,6 +10,7 @@ from indicators import INDICATOR_REGISTRY, compute_indicators
 from services.benchmarks import index_display_name
 from stocks.constants import is_nse_exchange, to_bare_symbol
 from ui.components import etf_detail, index_detail
+from ui.components.chrome import page_header
 from ui.components.notifications import render_toasts
 from ui.state.loaders import (
     load_analysis_catalog_cached,
@@ -135,7 +136,7 @@ def _etf_view(ticker: str, frame: pl.DataFrame) -> None:
 
 # Unified ticker picker — one search across stocks, ETFs and indices (previously a confusing split).
 # The selected item's kind drives which view renders; every ticker is loaded on demand.
-_BADGE = {"stock": "📈 Stock", "etf": "🧺 ETF", "index": "📊 Index"}
+_BADGE = {"stock": "Stock · NSE", "etf": "ETF · NSE", "index": "Index"}
 _catalog = load_analysis_catalog_cached()
 if not _catalog:
     st.info("Universe not synced yet — run **Sync NSE master** / **Sync ETF list** in Settings.")
@@ -165,9 +166,7 @@ def _render_add_international() -> None:
     """Search Yahoo Finance for any world ticker and register it into the universe. Once added it's
     a first-class stock: OHLCV on demand (as-is symbol), yfinance fundamentals, CAPM vs S&P 500."""
     with st.expander("🌍 Can't find it? Add an international ticker", expanded=False, icon=":material/public:"):
-        q = st.text_input(
-            "Search Yahoo Finance", key="sa_intl_q", placeholder="e.g. apple, tesla, 7203.T, ASML.AS"
-        )
+        q = st.text_input("Search Yahoo Finance", key="sa_intl_q", placeholder="e.g. apple, tesla, 7203.T, ASML.AS")
         if not q or len(q) < 2:
             return
         with st.spinner("Searching…"):
@@ -185,9 +184,7 @@ def _render_add_international() -> None:
         if st.button("Add & open", type="primary", key="sa_intl_add"):
             from data.repositories.stock import register_stock  # noqa: PLC0415 — defer off boot
 
-            register_stock(
-                pick["symbol"], name=pick["name"], exchange=pick["exchange"], quote_type=pick["quote_type"]
-            )
+            register_stock(pick["symbol"], name=pick["name"], exchange=pick["exchange"], quote_type=pick["quote_type"])
             load_analysis_catalog_cached.clear()
             # The sa_ticker selectbox already rendered this run — a widget-keyed state can't be
             # written after instantiation. Stage the selection; it's applied pre-widget on rerun.
@@ -221,8 +218,8 @@ else:
     _disp = ticker
 _badge = _BADGE[_kind]
 if _kind == "stock" and not is_nse_exchange(_exchange):
-    _badge = f"🌍 Stock · {_exchange}"  # international listing — yfinance fundamentals, S&P 500 CAPM
-st.markdown(f"### {_disp} &nbsp;·&nbsp; {_badge}")  # show what's being displayed
+    _badge = f"Stock · {_exchange}"
+page_header(_disp, _badge)
 
 if _kind == "index":
     _index_view(ticker)

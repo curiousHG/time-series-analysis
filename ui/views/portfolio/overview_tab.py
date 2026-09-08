@@ -38,7 +38,9 @@ def _render_contribution(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame) -> N
         f"Fund P&L over the window ÷ portfolio start value. Sums to the portfolio's "
         f"{window_label} return (**{total:+.1f}%**); intra-window flows make it approximate."
     )
-    display = contrib.assign(fund=contrib["fund"].map(unique_short_names(contrib["fund"]))).rename(
+    display = contrib.assign(
+        fund=contrib["fund"].map(unique_short_names(contrib["fund"])), pnl=contrib["pnl"].round(0)
+    ).rename(
         columns={
             "fund": "Fund",
             "weight_start_pct": "Start weight %",
@@ -53,7 +55,7 @@ def _render_contribution(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame) -> N
         hide_index=True,
         column_config={
             "Start weight %": st.column_config.NumberColumn(format="%.1f%%"),
-            "P&L (₹)": st.column_config.NumberColumn(format="%,.0f"),
+            "P&L (₹)": st.column_config.NumberColumn(format="localized"),
             "Contribution %": st.column_config.NumberColumn(format="%+.2f%%"),
             "Fund return %": st.column_config.NumberColumn(format="%+.1f%%"),
         },

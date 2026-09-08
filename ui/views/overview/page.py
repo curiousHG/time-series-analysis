@@ -1,9 +1,12 @@
 """Overview — the landing desk: market pulse, sector board, portfolio snapshot, alerts, movers."""
 
+from datetime import date
+
 import streamlit as st
 
 from services.portfolio_service import build_portfolio_value_series, get_mapped_data
 from ui.components.background_refresh import BackgroundRefresh, progress_cb
+from ui.components.chrome import page_header
 from ui.state import navigation
 from ui.state.loaders import (
     load_fund_movers_cached,
@@ -52,18 +55,26 @@ _REFRESH = BackgroundRefresh(
     _REFRESH_KEY,
     "Data refresh",
     cache_clearers=(_clear_overview_caches,),
-    summarize=lambda r: f"{r.get('index_rows', 0):,} index + {r.get('stock_rows', 0):,} stock rows" if isinstance(r, dict) else str(r),
+    summarize=lambda r: f"{r.get('index_rows', 0):,} index + {r.get('stock_rows', 0):,} stock rows"
+    if isinstance(r, dict)
+    else str(r),
 )
 
 
 _REFRESH.consume()
 
-_hdr, _btn = st.columns([12, 1], vertical_alignment="center")
-with _btn:
-    _REFRESH.start_button(
-        "", _overview_refresh_task, key="ov_refresh", icon=":material/refresh:",
-        help="Update stock + index prices to today", use_container_width=False,
-    )
+page_header(
+    "Overview",
+    f"{date.today():%A, %d %b %Y}",
+    actions=lambda: _REFRESH.start_button(
+        "",
+        _overview_refresh_task,
+        key="ov_refresh",
+        icon=":material/refresh:",
+        help="Update stock and index prices to today",
+        use_container_width=False,
+    ),
+)
 if _REFRESH.is_running():
     _REFRESH.poll()
 

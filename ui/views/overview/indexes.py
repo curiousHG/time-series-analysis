@@ -80,7 +80,9 @@ def _render_chart() -> str | None:
 
     sdf = idf.sort("Date").with_columns(pl.col("Date").cast(pl.Utf8).alias("time")).to_pandas()
     interval = (
-        st.segmented_control("Candle interval", options=["Daily", "Weekly", "Monthly"], default="Daily", key="ov_idx_interval")
+        st.segmented_control(
+            "Candle interval", options=["Daily", "Weekly", "Monthly"], default="Daily", key="ov_idx_interval"
+        )
         or "Daily"
     )
     chart_df = chart_tab.resample_ohlc(sdf, interval)

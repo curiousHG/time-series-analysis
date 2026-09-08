@@ -21,17 +21,18 @@ def render() -> None:
         return
 
     pdf = movers.head(TOP_N).to_pandas()
-    pdf = pdf[["fund", "weight_pct", "chg_1w", "chg_1m"]].rename(
-        columns={"fund": "Fund", "weight_pct": "Weight %", "chg_1w": "1W", "chg_1m": "1M"}
-    )
+    pdf = pdf.assign(chg_1w=pdf["chg_1w"] * 100, chg_1m=pdf["chg_1m"] * 100)[
+        ["fund", "weight_pct", "chg_1w", "chg_1m"]
+    ].rename(columns={"fund": "Fund", "weight_pct": "Weight %", "chg_1w": "1W", "chg_1m": "1M"})
     st.dataframe(
         pdf,
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Weight %": st.column_config.NumberColumn(format="%.1f%%"),
-            "1W": st.column_config.NumberColumn(format="percent"),
-            "1M": st.column_config.NumberColumn(format="percent"),
+            "Fund": st.column_config.TextColumn(width="medium"),
+            "Weight %": st.column_config.NumberColumn("Weight", format="%.1f%%"),
+            "1W": st.column_config.NumberColumn(format="%+.1f%%"),
+            "1M": st.column_config.NumberColumn(format="%+.1f%%"),
         },
     )
-    st.caption("Sorted by absolute 1-week NAV move. Weight = share of portfolio value.")
+    st.caption("Sorted by the size of the 1-week NAV move. Weight is the share of portfolio value.")

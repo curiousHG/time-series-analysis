@@ -15,7 +15,7 @@ def render(sdf: pd.DataFrame, symbol: str):
         st.warning("No strategies registered.")
         return
 
-    strategy_name, params, init_cash, fees, use_sl, sl_pct, use_trail = _render_sidebar()
+    strategy_name, params, init_cash, fees, use_sl, sl_pct, use_trail = _render_controls()
 
     price = sdf.set_index("Date")["Close"].dropna()
     if len(price) < 30:
@@ -46,86 +46,84 @@ def render(sdf: pd.DataFrame, symbol: str):
     _render_trade_log(result.portfolio)
 
 
-def _render_sidebar():
-    with st.sidebar:
-        st.markdown("### Strategy")
-        strategy_name = st.selectbox(
-            "Select Strategy",
-            options=list(STRATEGY_REGISTRY.keys()),
-            key="_strategy_select",
+def _param_input(col, pname: str, pconfig: dict):
+    default = pconfig["default"]
+    label = pname.replace("_", " ").title()
+    if isinstance(default, float):
+        return col.number_input(
+            label,
+            value=default,
+            min_value=float(pconfig.get("min", 0)),
+            max_value=float(pconfig.get("max", 1000)),
+            step=float(pconfig.get("step", 0.1)),
+            help=pconfig.get("help", ""),
+            key=f"_strat_param_{pname}",
         )
+    return col.number_input(
+        label,
+        value=int(default),
+        min_value=int(pconfig.get("min", 1)),
+        max_value=int(pconfig.get("max", 1000)),
+        step=int(pconfig.get("step", 1)),
+        help=pconfig.get("help", ""),
+        key=f"_strat_param_{pname}",
+    )
+
+
+def _render_controls():
+    """Strategy, parameters, capital and risk controls, laid out in the tab rather than the
+    sidebar so they only appear when the backtest is on screen."""
+    with st.expander("Strategy settings", expanded=True):
+        top = st.columns(4)
+        strategy_name = top[0].selectbox("Strategy", options=list(STRATEGY_REGISTRY.keys()), key="_strategy_select")
         strategy_cls = STRATEGY_REGISTRY[strategy_name]
-
-        # Dynamic params from strategy definition
-        params = {}
-        if strategy_cls.params:
-            for pname, pconfig in strategy_cls.params.items():
-                default = pconfig["default"]
-                if isinstance(default, float):
-                    params[pname] = st.number_input(
-                        pname.replace("_", " ").title(),
-                        value=default,
-                        min_value=float(pconfig.get("min", 0)),
-                        max_value=float(pconfig.get("max", 1000)),
-                        step=float(pconfig.get("step", 0.1)),
-                        help=pconfig.get("help", ""),
-                        key=f"_strat_param_{pname}",
-                    )
-                else:
-                    params[pname] = st.number_input(
-                        pname.replace("_", " ").title(),
-                        value=int(default),
-                        min_value=int(pconfig.get("min", 1)),
-                        max_value=int(pconfig.get("max", 1000)),
-                        step=int(pconfig.get("step", 1)),
-                        help=pconfig.get("help", ""),
-                        key=f"_strat_param_{pname}",
-                    )
-
-        st.markdown("### Capital & Fees")
-        init_cash = st.number_input(
-            "Starting Capital (INR)",
+        init_cash = top[1].number_input(
+            "Starting capital (₹)",
             value=100_000,
             min_value=1_000,
             max_value=100_000_000,
             step=10_000,
             key="_backtest_capital",
         )
-        fees = st.number_input(
+        fees = top[2].number_input(
             "Fees per trade (%)",
             value=0.1,
             min_value=0.0,
             max_value=5.0,
             step=0.05,
-            help="Brokerage fee applied on each entry/exit. 0.1% is typical for Indian brokers.",
+            help="Brokerage applied on each entry and exit. 0.1% is typical for Indian brokers.",
             key="_backtest_fees",
         )
-
-        st.markdown("### Risk Management")
-        use_sl = st.checkbox(
-            "Enable Stoploss",
+        use_sl = top[3].checkbox(
+            "Stoploss",
             value=False,
             key="_backtest_use_sl",
-            help=f"Default: {strategy_cls.stoploss * 100:.0f}% from strategy",
+            help=f"Default: {strategy_cls.stoploss * 100:.0f}% from the strategy",
         )
         sl_pct = 0.0
         use_trail = False
         if use_sl:
-            sl_pct = st.number_input(
+            sl_pct = top[3].number_input(
                 "Stoploss (%)",
                 value=abs(strategy_cls.stoploss) * 100,
                 min_value=1.0,
                 max_value=50.0,
                 step=1.0,
-                help="Max loss % below entry price before forced exit.",
+                help="Max loss below the entry price before a forced exit.",
                 key="_backtest_sl_pct",
             )
-            use_trail = st.checkbox(
-                "Trailing Stoploss",
+            use_trail = top[3].checkbox(
+                "Trailing stoploss",
                 value=strategy_cls.trailing_stop,
                 key="_backtest_trail",
-                help="Stoploss trails upward as price rises, locking in gains.",
+                help="The stoploss follows the price up, locking in gains.",
             )
+
+        params = {}
+        if strategy_cls.params:
+            cols = st.columns(max(4, len(strategy_cls.params)))
+            for col, (pname, pconfig) in zip(cols, strategy_cls.params.items(), strict=False):
+                params[pname] = _param_input(col, pname, pconfig)
 
     return strategy_name, params, init_cash, fees / 100, use_sl, sl_pct / 100, use_trail
 
@@ -136,8 +134,8 @@ def _render_summary(portfolio, init_cash):
     total_trades = portfolio.trades.count()
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Starting Capital", f"INR {init_cash:,.0f}")
-    c2.metric("Final Value", f"INR {final_value:,.0f}")
+    c1.metric("Starting Capital", f"₹{init_cash:,.0f}")
+    c2.metric("Final Value", f"₹{final_value:,.0f}")
     c3.metric("Total Return", f"{total_return:+.2f}%")
     c4.metric("Total Trades", f"{total_trades}")
 
@@ -182,7 +180,7 @@ def _render_metrics(metrics: dict):
     c13, c14, c15, c16 = st.columns(4)
     c13.metric("Best Trade", f"{metrics['best_trade']:+.2f}%", help="Largest single trade return.")
     c14.metric("Worst Trade", f"{metrics['worst_trade']:+.2f}%", help="Worst single trade return.")
-    c15.metric("Expectancy", f"INR {metrics['expectancy']:,.2f}", help="Average P&L per trade.")
+    c15.metric("Expectancy", f"₹{metrics['expectancy']:,.0f}", help="Average P&L per trade.")
     c16.metric("SQN", f"{metrics['sqn']:.2f}", help="System Quality Number. >2 good, >3 excellent, >5 superb.")
 
     # Row 5 — tail risk & position sizing
@@ -220,7 +218,7 @@ def _render_charts(portfolio, price, returns, entries, exits, symbol):
     fig_eq.update_layout(
         height=400,
         title=f"Equity Curve — {symbol}",
-        yaxis_title="Portfolio Value (INR)",
+        yaxis_title="Portfolio value (₹)",
         hovermode="x unified",
     )
     st.plotly_chart(fig_eq, use_container_width=True, key="bt-equity-curve")
@@ -357,7 +355,7 @@ def _render_trade_log(portfolio):
         "Size",
         "Entry Price",
         "Exit Price",
-        "P&L (INR)",
+        "P&L (₹)",
         "Return (%)",
         "Direction",
         "Status",
@@ -367,7 +365,7 @@ def _render_trade_log(portfolio):
             {
                 "Entry Price": "{:.2f}",
                 "Exit Price": "{:.2f}",
-                "P&L (INR)": "{:,.2f}",
+                "P&L (₹)": "{:,.2f}",
                 "Return (%)": "{:+.2f}",
                 "Size": "{:.2f}",
             }
