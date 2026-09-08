@@ -7,7 +7,6 @@ interval (Daily/Weekly/Monthly) is chosen upstream via `resample_ohlc`.
 """
 
 import pandas as pd
-import streamlit as st
 from streamlit_lightweight_charts import renderLightweightCharts
 
 from indicators import INDICATOR_REGISTRY
