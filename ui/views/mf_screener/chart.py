@@ -162,7 +162,7 @@ def _holdings_overlay(
     Returns (overlay frame with __risk__/__return__ in %, portfolio highlight dict);
     (None, None) without a tradebook.
     """
-    from mutual_funds.display import short_scheme_name  # noqa: PLC0415 — deferred with the chart deps
+    from mutual_funds.display import unique_short_names  # noqa: PLC0415 — deferred with the chart deps
     from services.mf_metrics import portfolio_axis_metrics  # noqa: PLC0415
     from services.portfolio_analytics import fund_values_from_nav  # noqa: PLC0415
     from services.portfolio_service import build_portfolio_returns_series, get_mapped_data  # noqa: PLC0415
@@ -185,7 +185,7 @@ def _holdings_overlay(
         overlay = overlay.dropna(subset=[risk_db_col, "__return__"])
         overlay["__risk__"] = (overlay[risk_db_col].abs() if risk_take_abs else overlay[risk_db_col]) * 100
         overlay["__return__"] = overlay["__return__"] * 100
-        overlay["__label__"] = overlay["scheme_name"].map(short_scheme_name)
+        overlay["__label__"] = overlay["scheme_name"].map(unique_short_names(overlay["scheme_name"]))
         overlay_pdf = overlay if not overlay.empty else None
 
     # Portfolio net point from the time-weighted returns series, on the same axes.

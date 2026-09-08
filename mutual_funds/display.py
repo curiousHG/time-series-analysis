@@ -1,6 +1,7 @@
 """Display helpers — short labels for scheme names in charts and pickers."""
 
 import re
+from collections.abc import Iterable
 
 from mutual_funds.constants import (
     BONUS_RE,
@@ -36,6 +37,27 @@ def short_scheme_name(name: str) -> str:
 
 def short_scheme_names(names: list[str]) -> list[str]:
     return [short_scheme_name(n) for n in names]
+
+
+def unique_short_names(names: Iterable[str]) -> dict[str, str]:
+    """name -> short label, guaranteed unique across `names`.
+
+    Sibling variants (Growth vs IDCW, Direct vs Regular) shorten to the same label; a clashing
+    label gets its option, then its plan, appended, and the full name as a last resort.
+    """
+    names = list(dict.fromkeys(names))
+    labels = {n: short_scheme_name(n) for n in names}
+
+    def qualify(fn) -> None:
+        clashes = {label for label in labels.values() if list(labels.values()).count(label) > 1}
+        for n in names:
+            if labels[n] in clashes:
+                labels[n] = fn(n)
+
+    qualify(lambda n: f"{short_scheme_name(n)} ({detect_option(n)})")
+    qualify(lambda n: f"{short_scheme_name(n)} ({detect_plan(n) or 'Regular'}, {detect_option(n)})")
+    qualify(lambda n: n)
+    return labels
 
 
 def make_slug(name: str) -> str:

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from mutual_funds.display import short_scheme_name
+from mutual_funds.display import unique_short_names
 from services.portfolio_analytics import contribution_analysis
 from ui.views.portfolio import allocation, growth
 
@@ -38,7 +38,7 @@ def _render_contribution(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame) -> N
         f"Fund P&L over the window ÷ portfolio start value. Sums to the portfolio's "
         f"{window_label} return (**{total:+.1f}%**); intra-window flows make it approximate."
     )
-    display = contrib.assign(fund=contrib["fund"].map(short_scheme_name)).rename(
+    display = contrib.assign(fund=contrib["fund"].map(unique_short_names(contrib["fund"]))).rename(
         columns={
             "fund": "Fund",
             "weight_start_pct": "Start weight %",

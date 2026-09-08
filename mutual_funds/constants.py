@@ -20,6 +20,7 @@ ISIN_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}\d$")
 # multi-suffix tails like "- Direct Plan - Growth - IDCW" peel off layer by layer.
 # Anchoring avoids eating valid mid-name occurrences (e.g. "Axis Growth Opportunities Fund").
 NOISE_PATTERNS = [
+    r"\s*\(\d+\)\s*$",
     r"[\s\-]*\(direct\s+plan\)\s*$",
     r"[\s\-]*\(regular\s+plan\)\s*$",
     r"[\s\-]*direct\s+plan\s*$",

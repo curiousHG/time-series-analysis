@@ -11,7 +11,7 @@ import streamlit as st
 
 from data.repositories.amfi import load_amfi_df
 from data.repositories.scheme_metrics import load_metrics
-from mutual_funds.display import detect_option, detect_plan, short_scheme_name
+from mutual_funds.display import detect_option, detect_plan, unique_short_names
 from ui.persistence.selections import load_selection, save_selection
 from ui.state.filter_persistence import hydrate_filters, make_persist_callback
 
@@ -52,7 +52,8 @@ def _render_quick_access(tracked_set: set[str]) -> None:
     Each entry is tagged 📁 (held) / ⭐ (bookmarked)."""
     portfolio = {n for n in _portfolio_fund_names() if n in tracked_set}
     bookmarks = {n for n in load_selection(_BOOKMARKS_KEY, []) if n in tracked_set}
-    combined = sorted(portfolio | bookmarks, key=lambda n: short_scheme_name(n).lower())
+    labels = unique_short_names(portfolio | bookmarks)
+    combined = sorted(labels, key=lambda n: labels[n].lower())
     if not combined:
         return
 
@@ -60,7 +61,7 @@ def _render_quick_access(tracked_set: set[str]) -> None:
         if name is None:
             return "— jump to a portfolio / bookmarked fund —"
         tag = ("📁" if name in portfolio else "") + ("⭐" if name in bookmarks else "")
-        return f"{tag} {short_scheme_name(name)}"
+        return f"{tag} {labels[name]}"
 
     if st.session_state.get("mf_quick_access") not in (None, *combined):
         st.session_state.pop("mf_quick_access", None)

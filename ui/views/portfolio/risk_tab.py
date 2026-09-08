@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import streamlit as st
 
 from mutual_funds.correlation_analytics import correlation_matrix, daily_returns, hierarchical_order
-from mutual_funds.display import short_scheme_name
+from mutual_funds.display import unique_short_names
 from ui.charts.correlation_heatmap import render_correlation_heatmap
 from ui.views.portfolio import drawdown, risk_metrics, risk_vs_return
 
@@ -29,7 +29,7 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame, pv: pd.DataFrame) 
 def _render_correlation(portfolio_nav: pl.DataFrame) -> None:
     st.subheader("Fund correlation — are your funds actually diversified?")
     nav_pd = portfolio_nav.select(["date", "schemeName", "nav"]).to_pandas()
-    nav_pd["schemeName"] = nav_pd["schemeName"].map(short_scheme_name)
+    nav_pd["schemeName"] = nav_pd["schemeName"].map(unique_short_names(nav_pd["schemeName"].unique()))
     nav_pd = nav_pd.drop_duplicates(subset=["date", "schemeName"])
     returns = daily_returns(nav_pd)
     corr = correlation_matrix(returns)

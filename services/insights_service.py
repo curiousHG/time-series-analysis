@@ -19,7 +19,7 @@ from data.repositories.holdings import load_holdings
 from data.repositories.scheme_metrics import load_metrics
 from data.repositories.stock import ensure_stock_data
 from data.repositories.tradebook import load_tradebook_from_db
-from mutual_funds.display import make_slug, short_scheme_name
+from mutual_funds.display import make_slug, short_scheme_name, unique_short_names
 from mutual_funds.tradebook import normalize_transactions
 from services.benchmarks import SUBCATEGORY_BENCHMARK
 from services.data_freshness import compute_holdings_freshness, compute_nav_freshness
@@ -452,12 +452,13 @@ def fund_movers() -> pl.DataFrame:
         return pl.DataFrame()
 
     nav_pd = portfolio_nav.select(["date", "schemeName", "nav"]).to_pandas()
+    labels = unique_short_names(wts)
     rows: list[dict] = []
     for scheme, w in wts.items():
         s = nav_pd[nav_pd["schemeName"] == scheme].set_index("date")["nav"].astype(float).sort_index()
         rows.append(
             {
-                "fund": short_scheme_name(scheme),
+                "fund": labels[scheme],
                 "scheme_name": scheme,
                 "weight_pct": w * 100,
                 "chg_1w": trailing_return(s, 5),

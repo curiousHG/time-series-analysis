@@ -36,7 +36,7 @@ from data.repositories.metadata import fetch_and_save as fetch_metadata_and_save
 from data.repositories.metadata import load_metadata
 from data.repositories.nav import fetch_single_nav, save_nav_df
 from data.repositories.scheme_codes import resolve_or_mint_code
-from mutual_funds.display import make_slug, short_scheme_name
+from mutual_funds.display import make_slug, unique_short_names
 from services.constants import DORMANT_AFTER_DAYS, BackfillSource, SourceStatus
 
 logger = logging.getLogger(__name__)
@@ -344,10 +344,11 @@ def load_registry() -> pl.DataFrame:
     df = list_tracked()
     if df.height == 0:
         return pl.DataFrame(schema={"schemeName": pl.Utf8, "schemeSlug": pl.Utf8, "shortName": pl.Utf8})
+    short = unique_short_names(df["schemeName"].to_list())
     return df.select(
         pl.col("schemeName"),
         pl.col("schemeName").map_elements(make_slug, return_dtype=pl.Utf8).alias("schemeSlug"),
-        pl.col("schemeName").map_elements(short_scheme_name, return_dtype=pl.Utf8).alias("shortName"),
+        pl.col("schemeName").replace_strict(short, return_dtype=pl.Utf8).alias("shortName"),
     )
 
 

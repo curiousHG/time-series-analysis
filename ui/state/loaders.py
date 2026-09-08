@@ -17,7 +17,7 @@ from data.repositories.nav import ensure_nav_data
 from data.repositories.nav import refresh_nav_data as _refresh_nav
 from data.repositories.stock import ensure_stock_data, search_stock_symbols
 from data.repositories.tradebook import load_tradebook_from_db
-from mutual_funds.display import short_scheme_name
+from mutual_funds.display import unique_short_names
 from mutual_funds.tradebook import normalize_transactions
 from services.screener_service import build_screener_df
 from stocks.constants import to_bare_symbol
@@ -118,7 +118,7 @@ def load_metadata_cached(scheme_names: tuple[str, ...]) -> pl.DataFrame:
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def get_short_names(scheme_names: tuple[str, ...]) -> dict[str, str]:
-    return {n: short_scheme_name(n) for n in scheme_names}
+    return unique_short_names(scheme_names)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
