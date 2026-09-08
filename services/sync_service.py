@@ -114,6 +114,7 @@ def update_nav_incremental(
                     outcome = "updated"
                     detail = f"{df.height} new rows ({dates.min()} → {dates.max()})"
             except Exception as e:
+                logger.warning("NAV refresh failed for %s: %s", name, e)
                 result.failures.append((name, str(e)))
                 outcome, detail = "failed", str(e)
 
@@ -165,6 +166,7 @@ def refresh_holdings_for_schemes(
                 outcome = "updated"
                 detail = f"{h.height} holdings · {s.height} sectors · {a.height} asset types"
             except Exception as e:
+                logger.warning("holdings refresh failed for %s: %s", name, e)
                 result.failures.append((name, str(e)))
                 outcome, detail = "failed", str(e)
 

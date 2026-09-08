@@ -37,7 +37,7 @@ def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
         raise UpstreamFormatError("MFAPI", f"expected an object with a 'data' key, got {_shape_of(raw)}")
     data = raw["data"]
     if not data:
-        logger.warning("Empty NAV response from MFAPI for code=%s", scheme_code)
+        logger.debug("Empty NAV response from MFAPI for code=%s", scheme_code)
         raise ValueError(f"No NAV data from MFAPI for scheme code {scheme_code}")
     missing = {"date", "nav"} - set(data[0])
     if missing:
@@ -49,7 +49,7 @@ def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
         pl.col("nav").cast(pl.Float64),
         pl.lit(scheme_name).alias("schemeName"),
     ).sort("date")
-    logger.info("MFAPI NAV fetched: %d records for %s", result.height, scheme_name)
+    logger.debug("MFAPI NAV fetched: %d records for %s", result.height, scheme_name)
     return result
 
 
@@ -105,7 +105,7 @@ def resolve_mfapi_code(scheme_name: str) -> str | None:
 
 
 def fetch_portfolio_by_slug(slug: str):
-    logger.info("Fetching portfolio from AdvisorKhoj: slug=%s", slug)
+    logger.debug("Fetching portfolio from AdvisorKhoj: slug=%s", slug)
     body = f"scheme_amfi={slug}"
 
     URL = "https://www.advisorkhoj.com/mutual-funds-research/getPortfolioAnalysis"

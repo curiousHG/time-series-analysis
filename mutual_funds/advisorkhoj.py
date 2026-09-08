@@ -96,10 +96,55 @@ def name_candidates(base: str, plan: str | None, option: str | None, *, known: l
     return unique
 
 
+_SHARE_CLASS_WORDS = frozenset(
+    {
+        "option",
+        "options",
+        "plan",
+        "regular",
+        "direct",
+        "growth",
+        "idcw",
+        "dividend",
+        "payout",
+        "reinvestment",
+        "re",
+        "investment",
+        "bonus",
+        "institution",
+        "institutional",
+        "super",
+        "retail",
+        "wholesale",
+        "premium",
+        "daily",
+        "weekly",
+        "fortnightly",
+        "monthly",
+        "quarterly",
+        "half",
+        "yearly",
+        "annual",
+        "principal",
+        "units",
+        "unclaimed",
+    }
+)
+
+
 def same_fund(base_a: str, base_b: str) -> bool:
     """Whether two base names denote the same fund, tolerant of punctuation and case
-    ("Axis ELSS- Tax Saver Fund" vs "Axis ELSS Tax Saver Fund")."""
-    return _tokens(base_a) == _tokens(base_b)
+    ("Axis ELSS- Tax Saver Fund" vs "Axis ELSS Tax Saver Fund") and of trailing share-class
+    qualifiers AMFI embeds twice in some names ("JM Liquid Fund - Bonus Option",
+    "Franklin India Liquid Fund- Institution")."""
+    return _tokens(_strip_share_class(base_a)) == _tokens(_strip_share_class(base_b))
+
+
+def _strip_share_class(base: str) -> str:
+    segments = re.split(r"\s*-\s*", base.strip())
+    while len(segments) > 1 and set(_tokens(segments[-1])) <= _SHARE_CLASS_WORDS:
+        segments.pop()
+    return " - ".join(segments)
 
 
 def _tokens(s: str) -> tuple[str, ...]:

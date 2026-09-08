@@ -419,7 +419,7 @@ def resolve_and_fetch_portfolio(scheme_code: int) -> tuple[str, dict]:
             if slug != stored:
                 _store_advisorkhoj_slug(scheme_code, slug)
             return slug, resp
-        logger.info(
+        logger.debug(
             "AdvisorKhoj slug %r answered with scheme %s, not %s — rejected",
             slug,
             rows[0].get("scheme_code"),

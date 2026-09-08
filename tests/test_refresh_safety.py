@@ -3,7 +3,7 @@ from datetime import date
 import polars as pl
 
 
-def test_holdings_refresh_keeps_existing_rows_when_a_fetch_fails(monkeypatch):
+def test_holdings_refresh_keeps_existing_rows_when_a_fetch_fails(monkeypatch, caplog):
     from mutual_funds.display import make_slug
     from services import sync_service
 
@@ -27,11 +27,16 @@ def test_holdings_refresh_keeps_existing_rows_when_a_fetch_fails(monkeypatch):
         sync_service, "replace_holdings_atomic", lambda slug, h, s, a, scheme_code=None: replaced.append(slug)
     )
 
-    result = sync_service.refresh_holdings_for_schemes(["Good Fund", "Bad Fund"])
+    with caplog.at_level("WARNING", logger="services.sync_service"):
+        result = sync_service.refresh_holdings_for_schemes(["Good Fund", "Bad Fund"])
 
     assert result.success_count == 1
     assert result.failures == [("Bad Fund", "upstream failed")]
     assert replaced == [make_slug("Good Fund")]
+    failure_logs = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(failure_logs) == 1
+    assert "Bad Fund" in failure_logs[0].getMessage()
+    assert "upstream failed" in failure_logs[0].getMessage()
 
 
 def test_nav_refresh_deletes_only_successfully_fetched_schemes(monkeypatch):

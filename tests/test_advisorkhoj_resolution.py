@@ -80,6 +80,25 @@ def test_same_fund_ignores_punctuation_and_case():
     assert not same_fund("Axis ELSS Tax Saver Fund", "Axis Bluechip Fund")
 
 
+@pytest.mark.parametrize(
+    ("returned", "ours"),
+    [
+        ("JM Liquid Fund - Bonus Option", "JM Liquid Fund"),
+        ("Franklin India Liquid Fund- Institution", "Franklin India Liquid Fund"),
+        ("Franklin India Liquid Fund - Super Institutional", "Franklin India Liquid Fund"),
+        ("ICICI Prudential Money Market Fund - Option", "ICICI Prudential Money Market Fund"),
+    ],
+)
+def test_same_fund_ignores_trailing_share_class_qualifiers(returned, ours):
+    assert same_fund(returned, ours)
+
+
+def test_same_fund_keeps_qualifier_words_inside_the_fund_name():
+    assert not same_fund("Nippon India Growth Fund", "Nippon India Fund")
+    assert not same_fund("HDFC Retail Opportunities Fund", "HDFC Opportunities Fund")
+    assert not same_fund("Franklin India Liquid Fund", "Franklin India Bond Fund")
+
+
 # ---- fetcher guards ----------------------------------------------------------------------
 
 

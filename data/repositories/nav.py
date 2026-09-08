@@ -136,9 +136,9 @@ def fetch_single_nav(scheme_name: str) -> pl.DataFrame:
         try:
             return fetch_nav_from_mfapi(scheme_code, scheme_name)
         except Exception as e:
-            logger.warning("MFAPI failed for %s (code=%s): %s", scheme_name, scheme_code, e)
+            logger.debug("MFAPI failed for %s (code=%s): %s", scheme_name, scheme_code, e)
 
-    logger.info("Falling back to AdvisorKhoj for NAV: %s", scheme_name)
+    logger.debug("Falling back to AdvisorKhoj for NAV: %s", scheme_name)
     data = fetch_nav_from_advisorkhoj(scheme_name)
     return nav_json_to_df(data["nav_data"], scheme_name)
 
