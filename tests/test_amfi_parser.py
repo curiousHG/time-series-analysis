@@ -72,6 +72,47 @@ def test_blank_plan_option_keeps_the_bare_name():
     assert row["plan"] is None and row["option"] is None
 
 
+def test_variants_sharing_a_bare_name_get_unique_names():
+    """AMFI leaves Plan/Option blank on some open-ended funds, so every variant carries one name.
+    Option is inferred from the ISIN columns; the scheme code breaks any remaining tie."""
+    payload = _feed(
+        _NEW_HEADER,
+        [
+            "127044;INF247L01460;INF247L01452;Motilal Oswal Midcap Fund;;;49.29;08-Sep-2026",
+            "127042;INF247L01445;-;Motilal Oswal Midcap Fund;;;120.86;08-Sep-2026",
+            "127040;INF247L01437;INF247L01429;Motilal Oswal Midcap Fund;;;47.25;08-Sep-2026",
+            "127039;INF247L01411;-;Motilal Oswal Midcap Fund;;;104.56;08-Sep-2026",
+        ],
+    )
+    rows = {r["scheme_code"]: r for r in parse_amfi_master(payload) if r["scheme_code"] < 900000}
+
+    assert rows[127042]["scheme_name"] == "Motilal Oswal Midcap Fund - Growth (127042)"
+    assert rows[127039]["scheme_name"] == "Motilal Oswal Midcap Fund - Growth (127039)"
+    assert rows[127044]["scheme_name"] == "Motilal Oswal Midcap Fund - IDCW (127044)"
+    assert rows[127040]["scheme_name"] == "Motilal Oswal Midcap Fund - IDCW (127040)"
+    assert rows[127042]["option"] == "Growth" and rows[127044]["option"] == "IDCW"
+    assert all(r["plan"] is None for r in rows.values())
+    assert len({r["scheme_name"] for r in rows.values()}) == 4
+
+
+def test_two_variants_split_by_option_need_no_code_suffix():
+    payload = _feed(
+        _NEW_HEADER,
+        [
+            "200001;INF000000001;-;Some Fund;;;10.0;08-Sep-2026",
+            "200002;INF000000002;INF000000003;Some Fund;;;9.0;08-Sep-2026",
+        ],
+    )
+    names = {r["scheme_code"]: r["scheme_name"] for r in parse_amfi_master(payload) if r["scheme_code"] < 900000}
+    assert names == {200001: "Some Fund - Growth", 200002: "Some Fund - IDCW"}
+
+
+def test_parsed_names_are_unique_across_the_feed():
+    lines = [f"3000{i:02d};INF3000{i:02d}00;-;Serial Fund;;;10.0;08-Sep-2026" for i in range(6)]
+    names = [r["scheme_name"] for r in parse_amfi_master(_feed(_NEW_HEADER, lines)) if r["scheme_code"] < 900000]
+    assert len(names) == len(set(names)) == 6
+
+
 def test_columns_are_read_from_the_header_not_by_position():
     """A reordered feed is followed by name, so a future column move doesn't silently shift NAV."""
     header = (

@@ -533,6 +533,9 @@ def _validate_amfi(schemes: list[dict], *, header_seen: bool, header_layout: dic
     The checks are on the parsed rows, not just the header: the last AMFI change produced a
     full-sized result in which every NAV was None.
     """
+    names = [row["scheme_name"] for row in schemes]
+    if len(names) != len(set(names)):
+        raise UpstreamFormatError("AMFI master", "scheme names are not unique after disambiguation")
     if header_seen and header_layout is None:
         raise UpstreamFormatError("AMFI NAVAll.txt", "header row present but no recognisable columns in it")
     if not header_seen:
@@ -640,9 +643,46 @@ def parse_amfi_master(payload: str) -> list[dict]:
             }
         )
 
+    disambiguate_scheme_names(schemes)
     _validate_amfi(schemes, header_seen=header_seen, header_layout=header_layout)
     logger.info("Parsed %d schemes from AMFI master", len(schemes))
     return schemes
+
+
+def _option_from_isins(row: dict) -> str | None:
+    if row.get("isin_reinvestment"):
+        return "IDCW"
+    if row.get("isin_growth"):
+        return "Growth"
+    return None
+
+
+def disambiguate_scheme_names(schemes: list[dict]) -> None:
+    """Give every scheme a unique name, in place.
+
+    AMFI leaves Plan/Option blank on ~5,700 open-ended rows, so all variants of such a fund
+    arrive with one identical name (Motilal Oswal Midcap Fund: 4 codes). Every name-keyed path
+    (NAV refresh, portfolio value, screener) then mixes the variants. The option is inferred
+    from the ISIN columns (a reinvestment ISIN means IDCW) and stored in `option`; when that
+    still leaves a tie the scheme code is appended, which `base_name` strips again.
+    """
+    by_name: dict[str, list[dict]] = {}
+    for row in schemes:
+        by_name.setdefault(row["scheme_name"], []).append(row)
+    for name, rows in by_name.items():
+        if len(rows) < 2:
+            continue
+        for row in rows:
+            if row.get("plan") is None and row.get("option") is None:
+                row["option"] = _option_from_isins(row)
+                row["scheme_name"] = compose_scheme_name(name, None, row["option"])
+        by_variant: dict[str, list[dict]] = {}
+        for row in rows:
+            by_variant.setdefault(row["scheme_name"], []).append(row)
+        for variant_rows in by_variant.values():
+            if len(variant_rows) > 1:
+                for row in variant_rows:
+                    row["scheme_name"] = f"{row['scheme_name']} ({row['scheme_code']})"
 
 
 def fetch_amfi_master() -> list[dict]:

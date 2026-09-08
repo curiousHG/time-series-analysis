@@ -27,6 +27,11 @@ def test_base_name_strips_composed_suffix():
     assert base_name("X - Direct Plan", "Direct Plan", None) == "X"
 
 
+def test_base_name_strips_the_disambiguating_code_suffix():
+    assert base_name("Motilal Oswal Midcap Fund - Growth (127042)", None, "Growth") == "Motilal Oswal Midcap Fund"
+    assert base_name("Some Fund - IDCW", None, "IDCW") == "Some Fund"
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [

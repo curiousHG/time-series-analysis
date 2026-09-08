@@ -53,3 +53,21 @@ per page; the SAL API is `www.us-api.morningstar.com/sal/sal-service` (`clientId
 `X-SAL-ContentType`). Replaying it is a ToS violation, and `mstarpy` automates it only via a headless
 browser. Decision: **don't integrate** — stay on license-clean sources (MFAPI, AMFI, AdvisorKhoj,
 niftyindices).
+
+## Scheme identity: codes are the key, names are display
+
+AMFI's 8-column feed leaves Plan/Option blank on ~5,700 open-ended rows, so every variant of
+such a fund arrives with one identical name (Motilal Oswal Midcap Fund: four codes). Any
+name-keyed path then mixes variants — the NAV refresh once stored the IDCW series under the
+Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep 2026).
+
+- **Names are made unique at ingest** (`data.fetchers.mutual_fund.disambiguate_scheme_names`):
+  option inferred from the ISIN columns (a reinvestment ISIN ⇒ IDCW) and stored in `option`;
+  a remaining tie gets the scheme code appended, e.g. "Motilal Oswal Midcap Fund - Growth (127042)".
+  `base_name` strips the suffix again so AdvisorKhoj candidates are unaffected. The parser
+  raises `UpstreamFormatError` if names are still not unique.
+- **NAV fetch, save and the portfolio load are keyed by `scheme_code`** (`fetch_single_nav(name,
+  scheme_code)`, rows tagged with the code, `load_nav_by_codes`). Name-keyed loaders remain for
+  the screener and single-fund views, which is safe only because names are unique.
+- Plan (Direct/Regular) cannot be inferred offline when AMFI leaves it blank; Kuvera's bulk list
+  carries no ISIN, so the code suffix is the honest fallback.

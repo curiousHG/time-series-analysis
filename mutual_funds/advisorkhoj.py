@@ -23,12 +23,16 @@ _OPTION_SHORT = {
 }
 
 
+_CODE_SUFFIX_RE = re.compile(r"\s*\(\d+\)$")
+
+
 def base_name(scheme_name: str, plan: str | None, option: str | None) -> str:
     """The fund's name without its plan/option suffix — what every variant of a fund shares.
 
     Inverse of `compose_scheme_name`: strips " - <plan> - <option>", " - <plan>" or
     " - <option>" from the end, whichever was appended.
     """
+    scheme_name = _CODE_SUFFIX_RE.sub("", scheme_name)
     for suffix in (
         f" - {plan} - {option}" if plan and option else None,
         f" - {plan}" if plan else None,

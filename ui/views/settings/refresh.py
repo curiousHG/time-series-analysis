@@ -40,10 +40,13 @@ def _color_status(val: str) -> str:
 def _fund_freshness() -> dict:
     """Freshness reports for every tracked fund — cached so the view keeps showing the last-known
     state while a background refresh runs (cleared when the refresh finishes)."""
-    names = list_active()["schemeName"].to_list()
+    active = list_active()
+    names = active["schemeName"].to_list()
+    name_to_code = dict(zip(names, active["schemeCode"].to_list(), strict=True))
     slugs = [make_slug(n) for n in names]
     return {
         "names": names,
+        "name_to_code": name_to_code,
         "slugs": slugs,
         "nav": compute_nav_freshness(names, slugs),
         "holdings": compute_holdings_freshness(names, slugs),
@@ -102,7 +105,9 @@ def render() -> None:
     h4.metric("Unresolved sources", f"{list_unavailable_funds().height:,}")
 
     def _run(scope: str):
-        return lambda: refresh_all_fund_data(names, scope=scope, progress_cb=progress_cb(_REFRESH.key))
+        return lambda: refresh_all_fund_data(
+            names, name_to_code=fr["name_to_code"], scope=scope, progress_cb=progress_cb(_REFRESH.key)
+        )
 
     col1, col2, col3 = st.columns(3)
     with col1:

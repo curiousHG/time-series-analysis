@@ -4,7 +4,7 @@ import pandas as pd
 import polars as pl
 
 from core.timing import timeit
-from data.repositories.nav import load_nav_df
+from data.repositories.nav import load_nav_by_codes
 from mutual_funds.tradebook import compute_daily_units
 
 
@@ -13,15 +13,20 @@ def get_mapped_data(txn_df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame] |
     """Return (mapped_txn, portfolio_nav) or None if unavailable.
 
     Trusts the `scheme_code` / `schemeName` columns produced at load time by
-    `load_tradebook_from_db` (denormalised on import via ISIN→amfi_schemes resolution).
+    `load_tradebook_from_db` (denormalised on import via ISIN→amfi_schemes resolution). NAV is
+    loaded by those codes and labelled with the trade's own name, so a sibling scheme that
+    shares the name can never leak into the portfolio.
     """
     mapped = txn_df.filter(pl.col("schemeName").is_not_null() & (pl.col("schemeName") != ""))
 
     if mapped.is_empty():
         return None
 
-    all_schemes = mapped.select("schemeName").unique().to_series().to_list()
-    portfolio_nav = load_nav_df(all_schemes)
+    labels = mapped.select("scheme_code", "schemeName").unique(subset=["scheme_code"], keep="first")
+    codes = labels["scheme_code"].drop_nulls().cast(pl.Int64).to_list()
+    portfolio_nav = load_nav_by_codes(codes).join(
+        labels.with_columns(pl.col("scheme_code").cast(pl.Int64)), on="scheme_code", how="inner"
+    )
 
     return mapped, portfolio_nav
 

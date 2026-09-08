@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 import polars as pl
 
 from data.repositories.holdings import fetch_holdings_for_scheme, replace_holdings_atomic, slug_to_code_map
-from data.repositories.nav import fetch_single_nav, last_nav_date_by_name, save_nav_df
+from data.repositories.nav import codes_for_names, fetch_single_nav, last_nav_date_by_code, save_nav_df
 from mutual_funds.display import make_slug, short_scheme_name
 from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS, FetchOutcome
 
@@ -69,6 +69,7 @@ def _emit(progress_cb: ProgressCb | None, event: FetchEvent) -> None:
 def update_nav_incremental(
     scheme_names: list[str],
     *,
+    name_to_code: dict[str, int] | None = None,
     progress_cb: ProgressCb | None = None,
 ) -> NavUpdateResult:
     """Fetch latest NAV per name; save only rows newer than what's in DB.
@@ -79,13 +80,15 @@ def update_nav_incremental(
     if not scheme_names:
         return NavUpdateResult()
 
-    last_known_by_name = last_nav_date_by_name(scheme_names)
+    codes = name_to_code or codes_for_names(scheme_names)
+    last_by_code = last_nav_date_by_code(list(codes.values()))
+    last_known_by_name = {name: last_by_code[code] for name, code in codes.items() if code in last_by_code}
     total = len(scheme_names)
     result = NavUpdateResult()
     done = 0
 
     with ThreadPoolExecutor(max_workers=NAV_FETCH_WORKERS) as pool:
-        future_to_name = {pool.submit(fetch_single_nav, name): name for name in scheme_names}
+        future_to_name = {pool.submit(fetch_single_nav, name, codes.get(name)): name for name in scheme_names}
         for future in as_completed(future_to_name):
             name = future_to_name[future]
             done += 1
@@ -181,6 +184,7 @@ def refresh_holdings_for_schemes(
 def refresh_all_fund_data(
     scheme_names: list[str],
     *,
+    name_to_code: dict[str, int] | None = None,
     scope: str = "all",
     progress_cb: Callable[..., None] | None = None,
 ) -> dict:
@@ -211,7 +215,7 @@ def refresh_all_fund_data(
                 progress_cb(phase="NAV", done=ev.done, total=ev.total)
             _log_event("NAV", ev)
 
-        nav = update_nav_incremental(scheme_names, progress_cb=_nav_cb)
+        nav = update_nav_incremental(scheme_names, name_to_code=name_to_code, progress_cb=_nav_cb)
         out |= {"nav_updated": nav.updated_count, "nav_new_rows": nav.new_rows_total, "nav_failed": len(nav.failures)}
         if progress_cb:
             progress_cb(

@@ -41,12 +41,15 @@ def _resolve_names(scheme_codes: list[int]) -> dict[int, str]:
     return {r[0]: r[1] for r in rows}
 
 
-def _get_or_resolve_scheme_code(scheme_name: str) -> str | None:
-    """Resolve scheme_name to MFAPI/AMFI code: direct AMFI lookup, then fuzzy."""
-    code = lookup_scheme_code_by_exact_name(scheme_name)
-    if code:
-        return code
-    return resolve_mfapi_code(scheme_name)
+def codes_for_names(scheme_names: list[str]) -> dict[str, int]:
+    """scheme_name -> scheme_code from amfi_schemes (names are unique after AMFI sync)."""
+    if not scheme_names:
+        return {}
+    with get_session() as session:
+        rows = session.exec(
+            select(AmfiScheme.scheme_name, AmfiScheme.scheme_code).where(col(AmfiScheme.scheme_name).in_(scheme_names))
+        ).all()
+    return {r[0]: int(r[1]) for r in rows}
 
 
 def nav_json_to_df(nav_json: list[list], scheme_name: str) -> pl.DataFrame:
@@ -66,9 +69,10 @@ def nav_json_to_df(nav_json: list[list], scheme_name: str) -> pl.DataFrame:
 
 
 def _upsert_nav_rows(session, df: pl.DataFrame, name_to_code: dict[str, int]) -> None:
-    """Upsert df's (date, nav, schemeName) rows into mf_nav within the caller's session."""
+    """Upsert df's (date, nav, schemeName[, scheme_code]) rows into mf_nav within the caller's
+    session. A row's own scheme_code wins; the name map only serves rows without one."""
     for row in df.iter_rows(named=True):
-        code = name_to_code[row["schemeName"]]
+        code = row.get("scheme_code") or name_to_code[row["schemeName"]]
         stmt = (
             pg_insert(MfNav)
             .values(scheme_code=code, date=row["date"], nav=row["nav"])
@@ -84,11 +88,34 @@ def save_nav_df(df: pl.DataFrame) -> None:
     """Upsert NAV rows into the DB. Names with no AMFI match get a synthetic-negative code so the FK holds."""
     if df.height == 0:
         return
-    name_to_code = resolve_codes_with_synthetic(df["schemeName"].unique().to_list())
+    name_to_code = resolve_codes_with_synthetic(_names_without_code(df))
     with get_session() as session:
         _upsert_nav_rows(session, df, name_to_code)
         session.commit()
     logger.debug("Saved %d NAV rows to database", df.height)
+
+
+def _names_without_code(df: pl.DataFrame) -> list[str]:
+    if "scheme_code" not in df.columns:
+        return df["schemeName"].unique().to_list()
+    return df.filter(pl.col("scheme_code").is_null())["schemeName"].unique().to_list()
+
+
+def load_nav_by_codes(scheme_codes: list[int]) -> pl.DataFrame:
+    """NAV as (date, nav, scheme_code) for exactly these codes — the key-safe loader for callers
+    that already know their codes (tradebook positions)."""
+    if not scheme_codes:
+        return pl.DataFrame(schema={"date": pl.Date, "nav": pl.Float64, "scheme_code": pl.Int64})
+    with get_session() as session:
+        rows = session.exec(
+            select(MfNav.date, MfNav.nav, MfNav.scheme_code)
+            .where(col(MfNav.scheme_code).in_(scheme_codes))
+            .order_by(col(MfNav.date))
+        ).all()
+    return pl.DataFrame(
+        {"date": [r[0] for r in rows], "nav": [r[1] for r in rows], "scheme_code": [r[2] for r in rows]},
+        schema={"date": pl.Date, "nav": pl.Float64, "scheme_code": pl.Int64},
+    )
 
 
 def nav_record_stats(scheme_names: list[str] | None = None) -> dict[str, tuple[int, object]]:
@@ -129,26 +156,34 @@ def load_nav_df(scheme_names: list[str] | None = None) -> pl.DataFrame:
     )
 
 
-def fetch_single_nav(scheme_name: str) -> pl.DataFrame:
-    """Fetch NAV for a single scheme. Tries MFAPI first, falls back to AdvisorKhoj."""
-    scheme_code = _get_or_resolve_scheme_code(scheme_name)
-    if scheme_code:
+def fetch_single_nav(scheme_name: str, scheme_code: int | None = None) -> pl.DataFrame:
+    """Fetch NAV for a single scheme. Tries MFAPI first, falls back to AdvisorKhoj.
+
+    Pass `scheme_code` whenever the caller knows it: several AMFI variants share one name, so
+    resolving by name can land on a sibling plan. Rows come back tagged with the code used."""
+    known = scheme_code if scheme_code is not None else lookup_scheme_code_by_exact_name(scheme_name)
+    tag = int(known) if known is not None else None
+    mfapi_code = str(known) if known is not None else resolve_mfapi_code(scheme_name)
+    if mfapi_code:
         try:
-            return fetch_nav_from_mfapi(scheme_code, scheme_name)
+            df = fetch_nav_from_mfapi(mfapi_code, scheme_name)
+            return df.with_columns(pl.lit(tag, dtype=pl.Int64).alias("scheme_code"))
         except Exception as e:
-            logger.debug("MFAPI failed for %s (code=%s): %s", scheme_name, scheme_code, e)
+            logger.debug("MFAPI failed for %s (code=%s): %s", scheme_name, mfapi_code, e)
 
     logger.debug("Falling back to AdvisorKhoj for NAV: %s", scheme_name)
     data = fetch_nav_from_advisorkhoj(scheme_name)
-    return nav_json_to_df(data["nav_data"], scheme_name)
+    df = nav_json_to_df(data["nav_data"], scheme_name)
+    return df.with_columns(pl.lit(scheme_code, dtype=pl.Int64).alias("scheme_code"))
 
 
 @timeit("nav.fetch_nav_parallel")
-def fetch_nav_parallel(scheme_names: list[str]) -> list[pl.DataFrame]:
+def fetch_nav_parallel(scheme_names: list[str], name_to_code: dict[str, int] | None = None) -> list[pl.DataFrame]:
     """Fetch NAV data for multiple schemes in parallel."""
+    codes = name_to_code or codes_for_names(scheme_names)
     new_frames = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        future_to_scheme = {pool.submit(fetch_single_nav, scheme): scheme for scheme in scheme_names}
+        future_to_scheme = {pool.submit(fetch_single_nav, scheme, codes.get(scheme)): scheme for scheme in scheme_names}
         for future in as_completed(future_to_scheme):
             scheme = future_to_scheme[future]
             try:
@@ -381,6 +416,19 @@ def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool
     summary["rows_rescaled"] = total
     logger.warning("Rescaled %d scale-break NAV row(s) across %d fund(s)", total, len(fixes))
     return summary
+
+
+def last_nav_date_by_code(scheme_codes: list[int]) -> dict[int, object]:
+    """Map scheme_code -> most-recent NAV date in mf_nav."""
+    if not scheme_codes:
+        return {}
+    with get_session() as session:
+        rows = session.exec(
+            select(MfNav.scheme_code, func.max(MfNav.date))
+            .where(col(MfNav.scheme_code).in_(scheme_codes))
+            .group_by(MfNav.scheme_code)
+        ).all()
+    return {int(r[0]): r[1] for r in rows if r[1] is not None}
 
 
 def last_nav_date_by_name(scheme_names: list[str]) -> dict:
