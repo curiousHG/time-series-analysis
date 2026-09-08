@@ -35,6 +35,7 @@ dev = [
     "pre-commit>=4.0",   # runs ruff + hygiene hooks on every commit
     "vulture>=2.14",     # finds dead code (unused funcs/classes/vars)
     "basedpyright>=1.31", # type checker (config in [tool.basedpyright])
+    "playwright>=1.62.0",
 ]
 
 [tool.setuptools.packages.find]
