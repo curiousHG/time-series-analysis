@@ -19,6 +19,7 @@ from data.repositories.stock import ensure_stock_data, search_stock_symbols
 from data.repositories.tradebook import load_tradebook_from_db
 from mutual_funds.display import unique_short_names
 from mutual_funds.tradebook import normalize_transactions
+from services.benchmarks import daily_returns_from_ohlcv
 from services.screener_service import build_screener_df
 from stocks.constants import to_bare_symbol
 
@@ -49,11 +50,7 @@ def load_holdings_data(scheme_slugs: list[str]):
 def load_benchmark_returns(symbol: str, start: datetime, end: datetime) -> pd.Series:
     """Daily percent-change series for `symbol`. Raises on fetch/parse failure;
     empty Series only when the fetcher legitimately yields no rows."""
-    df = ensure_stock_data(symbol, start, end)
-    if df.is_empty():
-        return pd.Series(dtype="float64", name=symbol)
-    pdf = df.select(["Date", "Close"]).to_pandas().set_index("Date").sort_index()
-    return pdf["Close"].pct_change().dropna().rename(symbol)
+    return daily_returns_from_ohlcv(ensure_stock_data(symbol, start, end), symbol)
 
 
 def load_nifty_returns(start: datetime, end: datetime) -> pd.Series:

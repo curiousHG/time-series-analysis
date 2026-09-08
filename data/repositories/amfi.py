@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, func, select
 
 from core.database import get_session
+from core.frames import frame_from_rows
 from core.models import AmfiScheme, MfAmc, MfCategory
 from data.fetchers.mutual_fund import fetch_amfi_master
 from data.repositories.holdings import clear_slug_cache
@@ -199,79 +200,51 @@ def lookup_by_name(query: str) -> list[AmfiScheme]:
         return list(session.exec(select(AmfiScheme).where(col(AmfiScheme.scheme_name).ilike(f"%{query}%"))).all())
 
 
+_SEARCH_SCHEMA = {
+    "schemeName": pl.Utf8,
+    "schemeCode": pl.Int64,
+    "fundHouse": pl.Utf8,
+    "category": pl.Utf8,
+    "isinGrowth": pl.Utf8,
+    "score": pl.Float64,
+}
+
+
+def _search_sql(*, trigram: bool) -> str:
+    score = "similarity(s.scheme_name, :q)" if trigram else "0.0"
+    where = "s.scheme_name % :q OR s.scheme_name ILIKE :pattern" if trigram else "s.scheme_name ILIKE :pattern"
+    order = "score DESC, length(s.scheme_name) ASC" if trigram else "length(s.scheme_name) ASC"
+    return f"""
+        SELECT s.scheme_name, s.scheme_code, a.name AS fund_house, c.name AS category,
+               s.isin_growth, {score} AS score
+        FROM amfi_schemes s
+        LEFT JOIN mf_amc a ON s.fund_house_id = a.id
+        LEFT JOIN mf_category c ON s.category_id = c.id
+        WHERE {where}
+        ORDER BY {order}
+        LIMIT :limit
+    """
+
+
 def search_amfi(query: str, limit: int = 50) -> pl.DataFrame:
     """Fuzzy-search AMFI schemes by name via pg_trgm similarity, ILIKE fallback.
 
     Columns: schemeName, schemeCode, fundHouse, category, isinGrowth, score (0-1).
     """
     if not query or len(query.strip()) < 2:
-        return pl.DataFrame(
-            schema={
-                "schemeName": pl.Utf8,
-                "schemeCode": pl.Int64,
-                "fundHouse": pl.Utf8,
-                "category": pl.Utf8,
-                "isinGrowth": pl.Utf8,
-                "score": pl.Float64,
-            }
-        )
+        return pl.DataFrame(schema=_SEARCH_SCHEMA)
 
     q = query.strip()
+    params = {"q": q, "pattern": f"%{q}%", "limit": limit}
     with get_session() as session:
         try:
-            rows = session.exec(
-                sql_text(
-                    """
-                    SELECT s.scheme_name, s.scheme_code, a.name AS fund_house, c.name AS category,
-                           s.isin_growth, similarity(s.scheme_name, :q) AS score
-                    FROM amfi_schemes s
-                    LEFT JOIN mf_amc a ON s.fund_house_id = a.id
-                    LEFT JOIN mf_category c ON s.category_id = c.id
-                    WHERE s.scheme_name % :q OR s.scheme_name ILIKE :pattern
-                    ORDER BY score DESC, length(s.scheme_name) ASC
-                    LIMIT :limit
-                    """
-                ).bindparams(q=q, pattern=f"%{q}%", limit=limit)
-            ).all()
+            rows = session.exec(sql_text(_search_sql(trigram=True)).bindparams(**params)).all()
         except Exception:
-            # pg_trgm unavailable — plain ILIKE fallback
             rows = session.exec(
-                sql_text(
-                    """
-                    SELECT s.scheme_name, s.scheme_code, a.name AS fund_house, c.name AS category,
-                           s.isin_growth, 0.0 AS score
-                    FROM amfi_schemes s
-                    LEFT JOIN mf_amc a ON s.fund_house_id = a.id
-                    LEFT JOIN mf_category c ON s.category_id = c.id
-                    WHERE s.scheme_name ILIKE :pattern
-                    ORDER BY length(s.scheme_name) ASC
-                    LIMIT :limit
-                    """
-                ).bindparams(pattern=f"%{q}%", limit=limit)
+                sql_text(_search_sql(trigram=False)).bindparams(pattern=params["pattern"], limit=limit)
             ).all()
-
-    if not rows:
-        return pl.DataFrame(
-            schema={
-                "schemeName": pl.Utf8,
-                "schemeCode": pl.Int64,
-                "fundHouse": pl.Utf8,
-                "category": pl.Utf8,
-                "isinGrowth": pl.Utf8,
-                "score": pl.Float64,
-            }
-        )
-
-    return pl.DataFrame(
-        {
-            "schemeName": [r[0] for r in rows],
-            "schemeCode": [r[1] for r in rows],
-            "fundHouse": [r[2] for r in rows],
-            "category": [r[3] for r in rows],
-            "isinGrowth": [r[4] for r in rows],
-            "score": [float(r[5]) if r[5] is not None else 0.0 for r in rows],
-        }
-    )
+    rows = [(*r[:5], float(r[5]) if r[5] is not None else 0.0) for r in rows]
+    return frame_from_rows(rows, _SEARCH_SCHEMA)
 
 
 def lookup_scheme_code_by_exact_name(name: str) -> str | None:
@@ -355,11 +328,20 @@ def get_scheme_count() -> int:
         return int(session.exec(select(func.count()).select_from(AmfiScheme)).one() or 0)
 
 
+def _scheme_with_dims(*columns):
+    """SELECT over amfi_schemes with the AMC and category names joined in."""
+    return (
+        sa_select(*columns)
+        .join(MfAmc, col(AmfiScheme.fund_house_id) == col(MfAmc.id), isouter=True)
+        .join(MfCategory, col(AmfiScheme.category_id) == col(MfCategory.id), isouter=True)
+    )
+
+
 def load_recent_additions(limit: int = 25) -> pl.DataFrame:
     """Recent AMFI schemes added to the local database."""
     with get_session() as session:
         rows = session.execute(
-            sa_select(
+            _scheme_with_dims(
                 col(AmfiScheme.scheme_code),
                 col(AmfiScheme.scheme_name),
                 col(MfAmc.name).label("fund_house"),
@@ -367,35 +349,28 @@ def load_recent_additions(limit: int = 25) -> pl.DataFrame:
                 col(AmfiScheme.isin_growth),
                 col(AmfiScheme.db_added_at),
             )
-            .join(MfAmc, col(AmfiScheme.fund_house_id) == col(MfAmc.id), isouter=True)
-            .join(MfCategory, col(AmfiScheme.category_id) == col(MfCategory.id), isouter=True)
             .where(col(AmfiScheme.db_added_at).is_not(None))
             .order_by(col(AmfiScheme.db_added_at).desc(), col(AmfiScheme.scheme_code).desc())
             .limit(limit)
         ).all()
-    schema = {
-        "schemeCode": pl.Int64,
-        "schemeName": pl.Utf8,
-        "fundHouse": pl.Utf8,
-        "category": pl.Utf8,
-        "isinGrowth": pl.Utf8,
-        "dbAddedAt": pl.Datetime,
-    }
-    if not rows:
-        return pl.DataFrame(schema=schema)
-    cols = list(schema)
-    return pl.DataFrame({c: [r[i] for r in rows] for i, c in enumerate(cols)}, schema=schema)
+    return frame_from_rows(
+        rows,
+        {
+            "schemeCode": pl.Int64,
+            "schemeName": pl.Utf8,
+            "fundHouse": pl.Utf8,
+            "category": pl.Utf8,
+            "isinGrowth": pl.Utf8,
+            "dbAddedAt": pl.Datetime,
+        },
+    )
 
 
 def load_amfi_df() -> pl.DataFrame:
-    """Load all AMFI schemes as a polars DataFrame for the screener UI.
-
-    `fund_house` / `category` come via JOIN through the dim tables (forward-compatible
-    once the legacy text columns are dropped).
-    """
+    """All AMFI schemes for the screener UI, with AMC and category names joined in."""
     with get_session() as session:
         rows = session.execute(
-            sa_select(
+            _scheme_with_dims(
                 col(AmfiScheme.scheme_code),
                 col(AmfiScheme.scheme_name),
                 col(MfAmc.name).label("fund_house"),
@@ -405,31 +380,17 @@ def load_amfi_df() -> pl.DataFrame:
                 col(AmfiScheme.nav),
                 col(AmfiScheme.nav_date),
             )
-            .join(MfAmc, col(AmfiScheme.fund_house_id) == col(MfAmc.id), isouter=True)
-            .join(MfCategory, col(AmfiScheme.category_id) == col(MfCategory.id), isouter=True)
         ).all()
-    if not rows:
-        return pl.DataFrame(
-            schema={
-                "scheme_code": pl.Int64,
-                "scheme_name": pl.Utf8,
-                "fund_house": pl.Utf8,
-                "category": pl.Utf8,
-                "sub_category": pl.Utf8,
-                "isin_growth": pl.Utf8,
-                "nav": pl.Float64,
-                "nav_date": pl.Date,
-            }
-        )
-    return pl.DataFrame(
+    return frame_from_rows(
+        rows,
         {
-            "scheme_code": [r[0] for r in rows],
-            "scheme_name": [r[1] for r in rows],
-            "fund_house": [r[2] for r in rows],
-            "category": [r[3] for r in rows],
-            "sub_category": [r[4] for r in rows],
-            "isin_growth": [r[5] for r in rows],
-            "nav": [r[6] for r in rows],
-            "nav_date": [r[7] for r in rows],
-        }
+            "scheme_code": pl.Int64,
+            "scheme_name": pl.Utf8,
+            "fund_house": pl.Utf8,
+            "category": pl.Utf8,
+            "sub_category": pl.Utf8,
+            "isin_growth": pl.Utf8,
+            "nav": pl.Float64,
+            "nav_date": pl.Date,
+        },
     )

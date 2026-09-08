@@ -7,7 +7,9 @@ import polars as pl
 import quantstats as qs
 import streamlit as st
 
+from mutual_funds.tradebook import daily_net_invested
 from ui.charts import theme
+from ui.components.monthly_returns import render_monthly_returns
 from ui.constants import RISK_FREE
 
 
@@ -15,18 +17,7 @@ def render(pv: pd.DataFrame, mapped: pl.DataFrame):
     pv = pv.sort_values("date").copy()
 
     # Time-weighted daily returns: raw pct_change on SIP days includes new money, so subtract it.
-    cashflows = (
-        mapped.with_columns(
-            pl.when(pl.col("signed_qty") > 0)
-            .then(pl.col("trade_value"))
-            .otherwise(-pl.col("trade_value"))
-            .alias("cashflow")
-        )
-        .group_by("trade_date")
-        .agg(pl.sum("cashflow").alias("cashflow"))
-        .rename({"trade_date": "date"})
-        .to_pandas()
-    )
+    cashflows = daily_net_invested(mapped).select("date", pl.col("invested").alias("cashflow")).to_pandas()
 
     merged = pv.merge(cashflows, on="date", how="left")
     merged["cashflow"] = merged["cashflow"].fillna(0)
@@ -259,12 +250,4 @@ def _render_charts(returns: pd.Series, pv: pd.DataFrame):
     )
     st.plotly_chart(fig_sharpe, use_container_width=True, key="rolling-sharpe")
 
-    # Monthly returns table
-    st.subheader("Monthly Returns (%)")
-    monthly = qs.stats.monthly_returns(returns)
-    if monthly is not None and not monthly.empty:
-        monthly_pct = monthly * 100
-        st.dataframe(
-            monthly_pct.style.format("{:.1f}").background_gradient(cmap="RdYlGn", axis=None),
-            use_container_width=True,
-        )
+    render_monthly_returns(returns)

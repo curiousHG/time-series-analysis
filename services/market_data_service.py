@@ -44,9 +44,12 @@ def analysis_catalog() -> list[dict]:
         }
         for row in load_registry_catalog().iter_rows(named=True)
     ]
-    entries.extend({"id": name, "kind": "index", "name": name, "exchange": "NSE"} for name in list_bhavcopy_index_names())
     entries.extend(
-        {"id": sym, "kind": "index", "name": disp, "exchange": None} for sym, disp, _region in INTERNATIONAL_INDEX_SYMBOLS
+        {"id": name, "kind": "index", "name": name, "exchange": "NSE"} for name in list_bhavcopy_index_names()
+    )
+    entries.extend(
+        {"id": sym, "kind": "index", "name": disp, "exchange": None}
+        for sym, disp, _region in INTERNATIONAL_INDEX_SYMBOLS
     )
     return entries
 

@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, delete, func, select
 
 from core.database import get_session
+from core.frames import frame_from_rows
 from core.models import AmfiScheme, MfNav
 from core.timing import timeit
 from data.fetchers.mutual_fund import (
@@ -25,7 +26,7 @@ from data.fetchers.mutual_fund import (
     resolve_mfapi_code,
 )
 from data.repositories.amfi import lookup_scheme_code_by_exact_name
-from data.repositories.scheme_codes import resolve_codes_with_synthetic
+from data.repositories.scheme_codes import resolve_codes, resolve_codes_with_synthetic
 
 logger = logging.getLogger("data.repositories.nav")
 
@@ -39,17 +40,6 @@ def _resolve_names(scheme_codes: list[int]) -> dict[int, str]:
             select(AmfiScheme.scheme_code, AmfiScheme.scheme_name).where(col(AmfiScheme.scheme_code).in_(scheme_codes))
         ).all()
     return {r[0]: r[1] for r in rows}
-
-
-def codes_for_names(scheme_names: list[str]) -> dict[str, int]:
-    """scheme_name -> scheme_code from amfi_schemes (names are unique after AMFI sync)."""
-    if not scheme_names:
-        return {}
-    with get_session() as session:
-        rows = session.exec(
-            select(AmfiScheme.scheme_name, AmfiScheme.scheme_code).where(col(AmfiScheme.scheme_name).in_(scheme_names))
-        ).all()
-    return {r[0]: int(r[1]) for r in rows}
 
 
 def nav_json_to_df(nav_json: list[list], scheme_name: str) -> pl.DataFrame:
@@ -104,18 +94,15 @@ def _names_without_code(df: pl.DataFrame) -> list[str]:
 def load_nav_by_codes(scheme_codes: list[int]) -> pl.DataFrame:
     """NAV as (date, nav, scheme_code) for exactly these codes — the key-safe loader for callers
     that already know their codes (tradebook positions)."""
-    if not scheme_codes:
-        return pl.DataFrame(schema={"date": pl.Date, "nav": pl.Float64, "scheme_code": pl.Int64})
-    with get_session() as session:
-        rows = session.exec(
-            select(MfNav.date, MfNav.nav, MfNav.scheme_code)
-            .where(col(MfNav.scheme_code).in_(scheme_codes))
-            .order_by(col(MfNav.date))
-        ).all()
-    return pl.DataFrame(
-        {"date": [r[0] for r in rows], "nav": [r[1] for r in rows], "scheme_code": [r[2] for r in rows]},
-        schema={"date": pl.Date, "nav": pl.Float64, "scheme_code": pl.Int64},
-    )
+    rows = []
+    if scheme_codes:
+        with get_session() as session:
+            rows = session.exec(
+                select(MfNav.date, MfNav.nav, MfNav.scheme_code)
+                .where(col(MfNav.scheme_code).in_(scheme_codes))
+                .order_by(col(MfNav.date))
+            ).all()
+    return frame_from_rows(rows, {"date": pl.Date, "nav": pl.Float64, "scheme_code": pl.Int64})
 
 
 def nav_record_stats(scheme_names: list[str] | None = None) -> dict[str, tuple[int, object]]:
@@ -145,15 +132,7 @@ def load_nav_df(scheme_names: list[str] | None = None) -> pl.DataFrame:
             stmt = stmt.where(col(AmfiScheme.scheme_name).in_(scheme_names))
         rows = session.exec(stmt).all()
 
-    if not rows:
-        return pl.DataFrame(schema={"date": pl.Date, "nav": pl.Float64, "schemeName": pl.Utf8})
-    return pl.DataFrame(
-        {
-            "date": [r[0] for r in rows],
-            "nav": [r[1] for r in rows],
-            "schemeName": [r[2] for r in rows],
-        }
-    )
+    return frame_from_rows(rows, {"date": pl.Date, "nav": pl.Float64, "schemeName": pl.Utf8})
 
 
 def fetch_single_nav(scheme_name: str, scheme_code: int | None = None) -> pl.DataFrame:
@@ -180,7 +159,7 @@ def fetch_single_nav(scheme_name: str, scheme_code: int | None = None) -> pl.Dat
 @timeit("nav.fetch_nav_parallel")
 def fetch_nav_parallel(scheme_names: list[str], name_to_code: dict[str, int] | None = None) -> list[pl.DataFrame]:
     """Fetch NAV data for multiple schemes in parallel."""
-    codes = name_to_code or codes_for_names(scheme_names)
+    codes = name_to_code or resolve_codes(scheme_names)
     new_frames = []
     with ThreadPoolExecutor(max_workers=4) as pool:
         future_to_scheme = {pool.submit(fetch_single_nav, scheme, codes.get(scheme)): scheme for scheme in scheme_names}

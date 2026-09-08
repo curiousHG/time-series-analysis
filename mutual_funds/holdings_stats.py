@@ -6,6 +6,7 @@ import polars as pl
 from sqlmodel import func, select
 
 from core.database import get_session
+from core.frames import frame_from_rows
 from core.models import MfAssetAllocation, MfHolding
 from data.repositories.holdings import _resolve_slug
 
@@ -52,20 +53,21 @@ def asset_breakdown(slug: str) -> dict[str, float]:
     return dict(zip(classes, pct, strict=False))
 
 
+_HOLDING_SCHEMA = {
+    "instrument_name": pl.Utf8,
+    "weight": pl.Float64,
+    "asset_class": pl.Utf8,
+    "market_cap": pl.Utf8,
+    "credit_rating": pl.Utf8,
+    "industry": pl.Utf8,
+}
+
+
 def holdings_for_slug(slug: str) -> pl.DataFrame:
     """Load all `mf_holdings` rows for one slug as polars (used by helpers below)."""
     code = _resolve_slug(slug)
     if code is None:
-        return pl.DataFrame(
-            schema={
-                "instrument_name": pl.Utf8,
-                "weight": pl.Float64,
-                "asset_class": pl.Utf8,
-                "market_cap": pl.Utf8,
-                "credit_rating": pl.Utf8,
-                "industry": pl.Utf8,
-            }
-        )
+        return pl.DataFrame(schema=_HOLDING_SCHEMA)
     with get_session() as session:
         # Restrict to the latest portfolio_date — `mf_holdings` carries multiple snapshots
         # per scheme, and would otherwise inflate counts and weights.
@@ -84,27 +86,8 @@ def holdings_for_slug(slug: str) -> pl.DataFrame:
             .where(MfHolding.scheme_code == code)
             .where(MfHolding.portfolio_date == latest_date_subq)
         ).all()
-    if not rows:
-        return pl.DataFrame(
-            schema={
-                "instrument_name": pl.Utf8,
-                "weight": pl.Float64,
-                "asset_class": pl.Utf8,
-                "market_cap": pl.Utf8,
-                "credit_rating": pl.Utf8,
-                "industry": pl.Utf8,
-            }
-        )
-    return pl.DataFrame(
-        {
-            "instrument_name": [r[0] for r in rows],
-            "weight": [float(r[1] or 0.0) for r in rows],
-            "asset_class": [r[2] for r in rows],
-            "market_cap": [r[3] for r in rows],
-            "credit_rating": [r[4] for r in rows],
-            "industry": [r[5] for r in rows],
-        }
-    ).unique(subset=["instrument_name"], keep="first")
+    rows = [(r[0], float(r[1] or 0.0), *r[2:]) for r in rows]
+    return frame_from_rows(rows, _HOLDING_SCHEMA).unique(subset=["instrument_name"], keep="first")
 
 
 def market_cap_breakdown(holdings: pl.DataFrame) -> dict[str, float]:

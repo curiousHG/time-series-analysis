@@ -5,7 +5,7 @@ import polars as pl
 
 from core.timing import timeit
 from data.repositories.nav import load_nav_by_codes
-from mutual_funds.tradebook import compute_daily_units
+from mutual_funds.tradebook import compute_daily_units, signed_flow, signed_flows
 
 
 @timeit("portfolio.get_mapped_data")
@@ -104,12 +104,7 @@ def build_portfolio_returns_series(
     nav_dates = nav_pivot.index
 
     trades = (
-        mapped.with_columns(
-            pl.when(pl.col("signed_qty") > 0)
-            .then(pl.col("trade_value"))
-            .otherwise(-pl.col("trade_value"))
-            .alias("flow")
-        )
+        mapped.with_columns(signed_flow("flow"))
         .group_by(["schemeName", "trade_date"])
         .agg(pl.sum("signed_qty").alias("delta_units"), pl.sum("flow").alias("flow"))
         .sort("trade_date")
@@ -144,15 +139,5 @@ def build_portfolio_returns_series(
 
 
 def get_signed_invested(mapped: pl.DataFrame) -> pd.DataFrame:
-    """Build signed invested trades DataFrame (buys positive, sells negative)."""
-    return (
-        mapped.with_columns(
-            pl.when(pl.col("signed_qty") > 0)
-            .then(pl.col("trade_value"))
-            .otherwise(-pl.col("trade_value"))
-            .alias("signed_invested")
-        )
-        .select(["trade_date", "signed_invested"])
-        .to_pandas()
-        .rename(columns={"trade_date": "date"})
-    )
+    """Signed cash flows as pandas (date, signed_invested): buys positive, sells negative."""
+    return signed_flows(mapped).rename({"amount": "signed_invested"}).to_pandas()

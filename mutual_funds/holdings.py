@@ -61,59 +61,36 @@ def normalize_holdings(resp: dict, slug: str) -> pl.DataFrame:
     )
 
 
-def normalize_sector_allocation(resp: dict, slug: str) -> pl.DataFrame:
+def _normalize_weight_map(resp: dict, slug: str, *, map_key: str, column: str, schema: dict) -> pl.DataFrame:
+    """Sector and asset allocations share one shape: a {label: weight} map keyed off the first
+    portfolio row's scheme identity and date."""
     base = resp["schemePortfolioAnalysisResponse"]
-    if not base:
-        return empty_df(SECTOR_SCHEMA)
-    items = base["schemePortfolioList"]
-    sector_map = base.get("sectorAllocationMap", {})
-
-    if not items or not sector_map:
-        return empty_df(SECTOR_SCHEMA)
-
+    items = base["schemePortfolioList"] if base else None
+    weights = base.get(map_key, {}) if base else {}
+    if not items or not weights:
+        return empty_df(schema)
+    first = items[0]
     rows = [
         {
-            "schemeCode": items[0]["scheme_code"],
-            "schemeName": items[0]["scheme_name"],
+            "schemeCode": first["scheme_code"],
+            "schemeName": first["scheme_name"],
             "schemeSlug": slug,
-            "portfolioDate": datetime.strptime(items[0]["portfolio_date"], "%d-%m-%Y").date(),
-            "sector": k,
-            "weight": float(v),
+            "portfolioDate": datetime.strptime(first["portfolio_date"], "%d-%m-%Y").date(),
+            column: label,
+            "weight": float(weight),
         }
-        for k, v in sector_map.items()
+        for label, weight in weights.items()
     ]
-
     return (
         pl.DataFrame(rows)
-        .with_columns([pl.col(c).cast(t, strict=False) for c, t in SECTOR_SCHEMA.items()])
-        .select(SECTOR_SCHEMA.keys())
+        .with_columns([pl.col(c).cast(t, strict=False) for c, t in schema.items()])
+        .select(schema.keys())
     )
+
+
+def normalize_sector_allocation(resp: dict, slug: str) -> pl.DataFrame:
+    return _normalize_weight_map(resp, slug, map_key="sectorAllocationMap", column="sector", schema=SECTOR_SCHEMA)
 
 
 def normalize_asset_allocation(resp: dict, slug: str) -> pl.DataFrame:
-    base = resp["schemePortfolioAnalysisResponse"]
-    if not base:
-        return empty_df(ASSET_SCHEMA)
-    items = base["schemePortfolioList"]
-    asset_map = base.get("assetAllocationMap", {})
-
-    if not items or not asset_map:
-        return empty_df(ASSET_SCHEMA)
-
-    rows = [
-        {
-            "schemeCode": items[0]["scheme_code"],
-            "schemeName": items[0]["scheme_name"],
-            "schemeSlug": slug,
-            "portfolioDate": datetime.strptime(items[0]["portfolio_date"], "%d-%m-%Y").date(),
-            "assetClass": k,
-            "weight": float(v),
-        }
-        for k, v in asset_map.items()
-    ]
-
-    return (
-        pl.DataFrame(rows)
-        .with_columns([pl.col(c).cast(t, strict=False) for c, t in ASSET_SCHEMA.items()])
-        .select(ASSET_SCHEMA.keys())
-    )
+    return _normalize_weight_map(resp, slug, map_key="assetAllocationMap", column="assetClass", schema=ASSET_SCHEMA)

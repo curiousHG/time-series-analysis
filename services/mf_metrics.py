@@ -19,7 +19,7 @@ from data.repositories.scheme_codes import resolve_codes
 from data.repositories.scheme_metrics import clear_metrics, find_stale_schemes, load_metrics, upsert_metrics
 from data.repositories.stock import ensure_stock_data, refresh_stock_to_today
 from mutual_funds.display import make_slug  # noqa: F401 — back-compat re-export for callers
-from services.benchmarks import benchmark_for_fund
+from services.benchmarks import benchmark_for_fund, daily_returns_from_ohlcv
 from services.constants import RF_DAILY, TRADING_DAYS
 from services.price_adjust import adjust_splits
 
@@ -481,10 +481,7 @@ def _load_benchmark_returns(symbol: str) -> pd.Series:
     except Exception:
         logger.exception("Failed to load benchmark %s — alpha/beta/TE will be NaN", symbol)
         return pd.Series(dtype="float64")
-    if df.is_empty():
-        return pd.Series(dtype="float64")
-    pdf = df.select(["Date", "Close"]).to_pandas().set_index("Date").sort_index()
-    return pdf["Close"].pct_change().dropna().rename(symbol)
+    return daily_returns_from_ohlcv(df, symbol)
 
 
 def _subcategories(scheme_names: list[str]) -> dict[str, str | None]:

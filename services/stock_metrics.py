@@ -21,9 +21,9 @@ from sqlmodel import col, select
 from core.database import get_session
 from core.models import StockMetrics, StockRegistry
 from data.repositories.stock import ensure_stock_data
-from services.price_adjust import adjust_splits
 from services.constants import TRADING_DAYS
 from services.mf_metrics import compute_alpha_beta
+from services.price_adjust import adjust_splits
 from stocks.constants import is_nse_exchange
 
 logger = logging.getLogger(__name__)

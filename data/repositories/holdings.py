@@ -89,52 +89,42 @@ def _polars_row_to_holding(row: dict, scheme_code: int) -> MfHolding:
     return MfHolding(scheme_code=scheme_code, **fields)  # type: ignore[arg-type]
 
 
-def _add_holding_rows(session, df: pl.DataFrame, scheme_code: int | None = None) -> None:
-    """Stage MfHolding rows on `session` (no commit). Rows with unknown slugs are skipped."""
-    if df.height == 0:
-        return
+def _sector_row(row: dict, code: int) -> MfSectorAllocation:
+    return MfSectorAllocation(
+        scheme_code=code, portfolio_date=row.get("portfolioDate"), sector=row.get("sector"), weight=row.get("weight")
+    )
+
+
+def _asset_row(row: dict, code: int) -> MfAssetAllocation:
+    return MfAssetAllocation(
+        scheme_code=code,
+        portfolio_date=row.get("portfolioDate"),
+        asset_class=row.get("assetClass"),
+        weight=row.get("weight"),
+    )
+
+
+def _stage_rows(session, df: pl.DataFrame, build, scheme_code: int | None = None) -> None:
+    """Stage one ORM row per frame row on `session` (no commit). A row whose slug resolves to no
+    scheme is skipped with a warning."""
     for row in df.iter_rows(named=True):
         code = scheme_code if scheme_code is not None else _resolve_slug(row.get("schemeSlug") or "")
         if code is None:
-            logger.warning("save_holdings: no scheme_code for slug %r — skipping", row.get("schemeSlug"))
+            logger.warning("%s: no scheme_code for slug %r — skipping", build.__name__, row.get("schemeSlug"))
             continue
-        session.add(_polars_row_to_holding(row, code))
+        session.add(build(row, code))
+
+
+def _add_holding_rows(session, df: pl.DataFrame, scheme_code: int | None = None) -> None:
+    _stage_rows(session, df, _polars_row_to_holding, scheme_code)
 
 
 def _add_sector_rows(session, df: pl.DataFrame, scheme_code: int | None = None) -> None:
-    """Stage MfSectorAllocation rows on `session` (no commit)."""
-    if df.height == 0:
-        return
-    for row in df.iter_rows(named=True):
-        code = scheme_code if scheme_code is not None else _resolve_slug(row.get("schemeSlug") or "")
-        if code is None:
-            continue
-        session.add(
-            MfSectorAllocation(
-                scheme_code=code,
-                portfolio_date=row.get("portfolioDate"),
-                sector=row.get("sector"),
-                weight=row.get("weight"),
-            )
-        )
+    _stage_rows(session, df, _sector_row, scheme_code)
 
 
 def _add_asset_rows(session, df: pl.DataFrame, scheme_code: int | None = None) -> None:
-    """Stage MfAssetAllocation rows on `session` (no commit)."""
-    if df.height == 0:
-        return
-    for row in df.iter_rows(named=True):
-        code = scheme_code if scheme_code is not None else _resolve_slug(row.get("schemeSlug") or "")
-        if code is None:
-            continue
-        session.add(
-            MfAssetAllocation(
-                scheme_code=code,
-                portfolio_date=row.get("portfolioDate"),
-                asset_class=row.get("assetClass"),
-                weight=row.get("weight"),
-            )
-        )
+    _stage_rows(session, df, _asset_row, scheme_code)
 
 
 def save_holdings(df: pl.DataFrame, *, scheme_code: int | None = None) -> None:

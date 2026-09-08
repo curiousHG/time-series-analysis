@@ -309,16 +309,7 @@ def _render_cagr_vol(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None) -
             x=df["vol"],
             y=df["cagr"],
             mode="markers+text",
-            marker={
-                "size": BUBBLE_SIZE,
-                "color": df["allocation"],
-                "colorscale": "Viridis",
-                "cmin": 0,
-                "showscale": True,
-                "colorbar": {"title": "Allocation %", "thickness": 12, "len": 0.6},
-                "line": {"color": theme.GRID_COLOR, "width": 1},
-                "opacity": 0.9,
-            },
+            marker=_bubble_marker(df["allocation"]),
             text=df["label"],
             textposition="top center",
             textfont={"size": 11},
@@ -415,16 +406,7 @@ def _render_alpha_beta(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None,
                 x=has["beta"],
                 y=has["alpha"],
                 mode="markers+text",
-                marker={
-                    "size": BUBBLE_SIZE,
-                    "color": has["allocation"],
-                    "colorscale": "Viridis",
-                    "cmin": 0,
-                    "showscale": True,
-                    "colorbar": {"title": "Allocation %", "thickness": 12, "len": 0.6},
-                    "line": {"color": theme.GRID_COLOR, "width": 1},
-                    "opacity": 0.9,
-                },
+                marker=_bubble_marker(has["allocation"]),
                 text=has["label"],
                 textposition="top center",
                 textfont={"size": 11},
@@ -516,6 +498,20 @@ def _render_alpha_beta(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None,
     )
 
 
+def _bubble_marker(allocation) -> dict:
+    """One bubble style for both scatter modes: sized flat, coloured by portfolio allocation."""
+    return {
+        "size": BUBBLE_SIZE,
+        "color": allocation,
+        "colorscale": "Viridis",
+        "cmin": 0,
+        "showscale": True,
+        "colorbar": {"title": "Allocation %", "thickness": 12, "len": 0.6},
+        "line": {"color": theme.GRID_COLOR, "width": 1},
+        "opacity": 0.9,
+    }
+
+
 def _add_portfolio_marker(fig: go.Figure, portfolio: dict | None, *, x_key: str, y_key: str, mode: str) -> None:
     if not portfolio:
         return
@@ -561,65 +557,36 @@ def _add_portfolio_marker(fig: go.Figure, portfolio: dict | None, *, x_key: str,
     )
 
 
-def _render_table(df: pd.DataFrame, mode: str) -> None:
-    if mode == MODE_ALPHA_BETA:
-        table = (
-            df[["label", "allocation", "alpha", "beta", "r2", "cagr", "vol", "value"]]
-            .rename(
-                columns={
-                    "label": "Fund",
-                    "allocation": "Allocation %",
-                    "alpha": "Alpha %",
-                    "beta": "Beta",
-                    "r2": "R²",
-                    "cagr": "1Y CAGR %",
-                    "vol": "1Y Vol %",
-                    "value": "Invested (₹)",
-                }
-            )
-            .sort_values("Allocation %", ascending=False)
-        )
-        st.dataframe(
-            table,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Allocation %": st.column_config.NumberColumn(format="%.1f"),
-                "Alpha %": st.column_config.NumberColumn(format="%+.2f"),
-                "Beta": st.column_config.NumberColumn(format="%.2f"),
-                "R²": st.column_config.NumberColumn(format="%.2f"),
-                "1Y CAGR %": st.column_config.NumberColumn(format="%+.1f"),
-                "1Y Vol %": st.column_config.NumberColumn(format="%.1f"),
-                "Invested (₹)": st.column_config.NumberColumn(format="%,.0f"),
-            },
-        )
-        return
+_TABLE_COLUMNS = {
+    "label": ("Fund", None),
+    "allocation": ("Allocation %", "%.1f"),
+    "alpha": ("Alpha %", "%+.2f"),
+    "beta": ("Beta", "%.2f"),
+    "r2": ("R²", "%.2f"),
+    "cagr": ("1Y CAGR %", "%+.1f"),
+    "vol": ("1Y Vol %", "%.1f"),
+    "sharpe": ("Sharpe", "%.2f"),
+    "max_dd": ("Max DD %", "%+.1f"),
+    "value": ("Invested (₹)", "localized"),
+}
+_TABLE_MODE_COLUMNS = {
+    MODE_ALPHA_BETA: ["label", "allocation", "alpha", "beta", "r2", "cagr", "vol", "value"],
+    MODE_CAGR_VOL: ["label", "allocation", "cagr", "vol", "sharpe", "max_dd", "value"],
+}
 
+
+def _render_table(df: pd.DataFrame, mode: str) -> None:
+    keys = _TABLE_MODE_COLUMNS[mode]
     table = (
-        df[["label", "allocation", "cagr", "vol", "sharpe", "max_dd", "value"]]
-        .rename(
-            columns={
-                "label": "Fund",
-                "allocation": "Allocation %",
-                "cagr": "1Y CAGR %",
-                "vol": "1Y Vol %",
-                "sharpe": "Sharpe",
-                "max_dd": "Max DD %",
-                "value": "Invested (₹)",
-            }
-        )
-        .sort_values("Allocation %", ascending=False)
+        df[keys].rename(columns={k: _TABLE_COLUMNS[k][0] for k in keys}).sort_values("Allocation %", ascending=False)
     )
     st.dataframe(
         table,
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Allocation %": st.column_config.NumberColumn(format="%.1f"),
-            "1Y CAGR %": st.column_config.NumberColumn(format="%+.1f"),
-            "1Y Vol %": st.column_config.NumberColumn(format="%.1f"),
-            "Sharpe": st.column_config.NumberColumn(format="%.2f"),
-            "Max DD %": st.column_config.NumberColumn(format="%+.1f"),
-            "Invested (₹)": st.column_config.NumberColumn(format="%,.0f"),
+            _TABLE_COLUMNS[k][0]: st.column_config.NumberColumn(format=_TABLE_COLUMNS[k][1])
+            for k in keys
+            if _TABLE_COLUMNS[k][1]
         },
     )

@@ -7,6 +7,12 @@ portfolio Risk-vs-Return scatter — keeps the symbol map from drifting between 
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+import pandas as pd
+
+if TYPE_CHECKING:
+    import polars as pl
 
 # Map common Indian benchmark names → index_ohlcv symbols. NSE indices use their bhavcopy names
 # (maintained daily in bulk, carry P/E & valuation, a day fresher than Yahoo); Yahoo '^' tickers
@@ -117,6 +123,14 @@ INDEX_DISPLAY_NAMES: dict[str, str] = {
     "ACWI": "MSCI ACWI",
     "INR=X": "USD / INR",
 }
+
+
+def daily_returns_from_ohlcv(df: pl.DataFrame, name: str) -> pd.Series:
+    """Close-to-close daily returns of an OHLCV frame as a pandas Series indexed by Date."""
+    if df.is_empty():
+        return pd.Series(dtype="float64", name=name)
+    closes = df.select(["Date", "Close"]).to_pandas().set_index("Date").sort_index()["Close"]
+    return closes.pct_change().dropna().rename(name)
 
 
 def index_display_name(symbol: str) -> str:

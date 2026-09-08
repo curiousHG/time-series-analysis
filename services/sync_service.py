@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 import polars as pl
 
 from data.repositories.holdings import fetch_holdings_for_scheme, replace_holdings_atomic, slug_to_code_map
-from data.repositories.nav import codes_for_names, fetch_single_nav, last_nav_date_by_code, save_nav_df
+from data.repositories.nav import fetch_single_nav, last_nav_date_by_code, save_nav_df
+from data.repositories.scheme_codes import resolve_codes
 from mutual_funds.display import make_slug, short_scheme_name
 from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS, FetchOutcome
 
@@ -63,6 +64,12 @@ def _emit(progress_cb: ProgressCb | None, event: FetchEvent) -> None:
         logger.exception("progress_cb raised; continuing")
 
 
+def _record_failure(result, kind: str, name: str, error: Exception) -> tuple[FetchOutcome, str]:
+    logger.warning("%s refresh failed for %s: %s", kind, name, error)
+    result.failures.append((name, str(error)))
+    return "failed", str(error)
+
+
 # ---- NAV ---------------------------------------------------------------------------------
 
 
@@ -80,7 +87,7 @@ def update_nav_incremental(
     if not scheme_names:
         return NavUpdateResult()
 
-    codes = name_to_code or codes_for_names(scheme_names)
+    codes = name_to_code or resolve_codes(scheme_names)
     last_by_code = last_nav_date_by_code(list(codes.values()))
     last_known_by_name = {name: last_by_code[code] for name, code in codes.items() if code in last_by_code}
     total = len(scheme_names)
@@ -117,9 +124,7 @@ def update_nav_incremental(
                     outcome = "updated"
                     detail = f"{df.height} new rows ({dates.min()} → {dates.max()})"
             except Exception as e:
-                logger.warning("NAV refresh failed for %s: %s", name, e)
-                result.failures.append((name, str(e)))
-                outcome, detail = "failed", str(e)
+                outcome, detail = _record_failure(result, "NAV", name, e)
 
             _emit(progress_cb, FetchEvent(done, total, name, outcome, detail))
 
@@ -169,9 +174,7 @@ def refresh_holdings_for_schemes(
                 outcome = "updated"
                 detail = f"{h.height} holdings · {s.height} sectors · {a.height} asset types"
             except Exception as e:
-                logger.warning("holdings refresh failed for %s: %s", name, e)
-                result.failures.append((name, str(e)))
-                outcome, detail = "failed", str(e)
+                outcome, detail = _record_failure(result, "holdings", name, e)
 
             _emit(progress_cb, FetchEvent(done, total, name, outcome, detail))
 

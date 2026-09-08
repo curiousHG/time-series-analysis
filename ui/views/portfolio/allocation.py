@@ -7,6 +7,7 @@ import polars as pl
 import streamlit as st
 
 from mutual_funds.display import unique_short_names
+from mutual_funds.tradebook import signed_flows
 from services.portfolio_analytics import compute_xirr
 from ui.charts import theme
 from ui.components.metric_tiles import Kpi, fmt_inr_compact, render_kpi_row
@@ -18,9 +19,7 @@ def _position_rows(mapped: pl.DataFrame, nav_df: pl.DataFrame) -> list[dict]:
     rows = []
     for scheme in mapped.select("schemeName").unique().to_series().to_list():
         stxn = mapped.filter(pl.col("schemeName") == scheme)
-        buys = stxn.filter(pl.col("signed_qty") > 0)
-        sells = stxn.filter(pl.col("signed_qty") < 0)
-        net_invested = buys["trade_value"].sum() - sells["trade_value"].sum()
+        net_invested = float(signed_flows(stxn)["amount"].sum())
         net_units = stxn["signed_qty"].sum()
         sn = nav_df.filter(pl.col("schemeName") == scheme).sort("date").tail(1)
         if sn.height == 0 or net_units <= 1e-6:
@@ -28,17 +27,9 @@ def _position_rows(mapped: pl.DataFrame, nav_df: pl.DataFrame) -> list[dict]:
         current_nav = sn["nav"][0]
         current_value = net_units * current_nav
         pnl = current_value - net_invested
-        flows = (
-            stxn.with_columns(
-                pl.when(pl.col("signed_qty") > 0)
-                .then(pl.col("trade_value"))
-                .otherwise(-pl.col("trade_value"))
-                .alias("amount")
-            )
-            .select(pl.col("trade_date").alias("date"), "amount")
-            .to_pandas()
+        xirr = compute_xirr(
+            signed_flows(stxn).to_pandas(), terminal_value=float(current_value), terminal_date=sn["date"][0]
         )
-        xirr = compute_xirr(flows, terminal_value=float(current_value), terminal_date=sn["date"][0])
         rows.append(
             {
                 "Fund": scheme,
@@ -55,10 +46,7 @@ def _position_rows(mapped: pl.DataFrame, nav_df: pl.DataFrame) -> list[dict]:
 
 
 def _net_invested(mapped: pl.DataFrame) -> float:
-    signed = mapped.with_columns(
-        pl.when(pl.col("signed_qty") > 0).then(pl.col("trade_value")).otherwise(-pl.col("trade_value")).alias("s")
-    )
-    return float(signed["s"].sum())
+    return float(signed_flows(mapped)["amount"].sum())
 
 
 def render(mapped: pl.DataFrame, nav_df: pl.DataFrame):

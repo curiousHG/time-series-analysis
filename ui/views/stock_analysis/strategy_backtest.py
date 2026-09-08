@@ -8,6 +8,7 @@ import streamlit as st
 from services.backtest_service import run_backtest
 from services.constants import BACKTEST_RISK_FREE
 from strategies import STRATEGY_REGISTRY
+from ui.components.monthly_returns import render_monthly_returns
 
 
 def render(sdf: pd.DataFrame, symbol: str):
@@ -317,15 +318,7 @@ def _render_charts(portfolio, price, returns, entries, exits, symbol):
     )
     st.plotly_chart(fig_trades, use_container_width=True, key="bt-trade-signals")
 
-    # Monthly returns heatmap
-    st.subheader("Monthly Returns (%)")
-    monthly = qs.stats.monthly_returns(returns)
-    if monthly is not None and not monthly.empty:
-        monthly_pct = monthly * 100
-        st.dataframe(
-            monthly_pct.style.format("{:.1f}").background_gradient(cmap="RdYlGn", axis=None),
-            use_container_width=True,
-        )
+    render_monthly_returns(returns)
 
 
 def _render_trade_log(portfolio):

@@ -6,6 +6,7 @@ import polars as pl
 import streamlit as st
 
 from data.repositories.stock import ensure_stock_data
+from mutual_funds.tradebook import daily_net_invested
 from ui.charts import theme
 from ui.views.portfolio.helpers import get_signed_invested
 
@@ -47,21 +48,7 @@ def render_growth_comparison(mapped: pl.DataFrame, pv: pd.DataFrame):
     end_dt = pv["date"].max()
     signed_trades = get_signed_invested(mapped)
 
-    # Cumulative invested
-    cum_invested = (
-        mapped.with_columns(
-            pl.when(pl.col("signed_qty") > 0)
-            .then(pl.col("trade_value"))
-            .otherwise(-pl.col("trade_value"))
-            .alias("signed_invested")
-        )
-        .group_by("trade_date")
-        .agg(pl.sum("signed_invested").alias("invested"))
-        .sort("trade_date")
-        .with_columns(pl.col("invested").cum_sum().alias("cum_invested"))
-        .rename({"trade_date": "date"})
-    )
-    ci = cum_invested.select(["date", "cum_invested"]).to_pandas()
+    ci = daily_net_invested(mapped).select(["date", "cum_invested"]).to_pandas()
     merged = pd.merge_asof(pv.sort_values("date"), ci.sort_values("date"), on="date", direction="backward")
     merged["cum_invested"] = merged["cum_invested"].ffill().fillna(0)
 

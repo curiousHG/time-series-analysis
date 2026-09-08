@@ -92,7 +92,9 @@ def fetch_index_constituents(slug: str) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for a in soup.select("a[href^='/company/']"):
-        m = re.match(r"^/company/([A-Z][A-Z0-9&_-]{1,20})/", a.get("href", ""))  # href may be /company/DLF/consolidated/
+        m = re.match(
+            r"^/company/([A-Z][A-Z0-9&_-]{1,20})/", a.get("href", "")
+        )  # href may be /company/DLF/consolidated/
         if not m:
             continue
         sym = m.group(1)

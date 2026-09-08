@@ -12,6 +12,7 @@ import streamlit as st
 from data.repositories.amfi import get_scheme_details_by_name
 from data.repositories.nav import load_nav_df
 from mutual_funds.display import make_slug, short_scheme_name
+from mutual_funds.tradebook import signed_flows
 from services.mf_metrics import absolute_return
 from services.registry_service import backfill_missing, list_tracked
 from ui.components.chrome import page_header
@@ -45,17 +46,7 @@ def _held_position(scheme_name: str) -> dict | None:
         values = fund_values_from_nav(mapped, portfolio_nav)
         if scheme_name not in values:
             return None
-        flows = (
-            mapped.filter(pl.col("schemeName") == scheme_name)
-            .with_columns(
-                pl.when(pl.col("signed_qty") > 0)
-                .then(pl.col("trade_value"))
-                .otherwise(-pl.col("trade_value"))
-                .alias("amount")
-            )
-            .select(pl.col("trade_date").alias("date"), "amount")
-            .to_pandas()
-        )
+        flows = signed_flows(mapped, scheme_name).to_pandas()
         as_of = portfolio_nav.filter(pl.col("schemeName") == scheme_name)["date"].max()
         return {
             "value": values[scheme_name],
