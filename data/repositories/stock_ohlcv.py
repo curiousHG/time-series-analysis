@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, delete, select
 
 from core.database import get_session
+from core.frames import frame_from_rows
 from core.models import StockOhlcv, StockRegistry
 from data.fetchers.stock import fetch_nse_equity_list, fetch_symbol_data, query_stocks
 from data.repositories._ohlcv_io import _to_date, _upsert_ohlcv
@@ -26,6 +27,17 @@ if TYPE_CHECKING:
     from datetime import date, datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+OHLCV_MANY_SCHEMA = {
+    "Symbol": pl.Utf8,
+    "Date": pl.Date,
+    "Open": pl.Float64,
+    "High": pl.Float64,
+    "Low": pl.Float64,
+    "Close": pl.Float64,
+    "Volume": pl.Int64,
+}
+SYMBOL_CHUNK = 500
 
 
 def sync_nse_universe() -> int:
@@ -292,6 +304,47 @@ def load_registry_catalog() -> pl.DataFrame:
         },
         schema={"symbol": pl.Utf8, "name": pl.Utf8, "quote_type": pl.Utf8, "exchange": pl.Utf8},
     )
+
+
+def load_stock_ohlcv_many(symbols: list[str], start: date, end: date) -> pl.DataFrame:
+    """OHLCV rows for many equities in one read per chunk of `SYMBOL_CHUNK` symbols, ordered by
+    symbol then date. Columns: Symbol, Date, Open, High, Low, Close, Volume. No fetching — callers
+    run `ensure_stock_data` per symbol first."""
+    wanted = sorted(set(symbols))
+    parts: list[pl.DataFrame] = []
+    with get_session() as session:
+        for i in range(0, len(wanted), SYMBOL_CHUNK):
+            chunk = wanted[i : i + SYMBOL_CHUNK]
+            rows = session.exec(
+                select(
+                    col(StockOhlcv.symbol),
+                    col(StockOhlcv.date),
+                    col(StockOhlcv.open),
+                    col(StockOhlcv.high),
+                    col(StockOhlcv.low),
+                    col(StockOhlcv.close),
+                    col(StockOhlcv.volume),
+                )
+                .where(col(StockOhlcv.symbol).in_(chunk), col(StockOhlcv.date) >= start, col(StockOhlcv.date) <= end)
+                .order_by(col(StockOhlcv.symbol), col(StockOhlcv.date))
+            ).all()
+            parts.append(frame_from_rows(rows, OHLCV_MANY_SCHEMA))
+    if not parts:
+        return pl.DataFrame(schema=OHLCV_MANY_SCHEMA)
+    return pl.concat(parts)
+
+
+def load_instrument_kinds(symbols: list[str]) -> dict[str, str]:
+    """{symbol: 'etf' | 'equity'} from stock_registry.quote_type; symbols absent from the registry
+    default to 'equity'. The backtest cost model charges ETF and equity legs differently."""
+    if not symbols:
+        return {}
+    with get_session() as session:
+        rows = session.exec(
+            select(StockRegistry.symbol, StockRegistry.quote_type).where(col(StockRegistry.symbol).in_(symbols))
+        ).all()
+    quote_type = dict(rows)
+    return {s: "etf" if (quote_type.get(s) or "").upper() == "ETF" else "equity" for s in symbols}
 
 
 def nse_trading_days(start: date, end: date) -> list[date]:

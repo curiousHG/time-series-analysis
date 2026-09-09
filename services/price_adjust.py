@@ -70,16 +70,39 @@ def detect_splits(series: pd.Series) -> list[tuple[pd.Timestamp, float]]:
     return out
 
 
+def split_factors(close: pd.Series) -> pd.Series:
+    """Cumulative multiplier per date that puts every value on the post-split scale of the last
+    detected split: the product of the ratios of all splits that happen *after* that date, so it
+    is 1.0 from the last split onwards. Indexed like `close`."""
+    factors = pd.Series(1.0, index=close.index, dtype=float)
+    for day, ratio in detect_splits(close):
+        factors.loc[factors.index < day] *= ratio
+    return factors
+
+
 def adjust_splits(series: pd.Series) -> pd.Series:
     """`series` rescaled so every value before a split is on the post-split scale.
 
     Returns the input unchanged when no split is detected. Only the values *before* each split
     day are touched, so the latest levels always match the source.
     """
-    splits = detect_splits(series)
-    if not splits:
+    factors = split_factors(series)
+    if (factors == 1.0).all():
         return series
-    adjusted = series.astype(float).copy()
-    for day, ratio in splits:
-        adjusted.loc[adjusted.index < day] *= ratio
-    return adjusted
+    return series.astype(float) * factors
+
+
+def adjust_ohlc_splits(df: pd.DataFrame) -> pd.DataFrame:
+    """A Date-indexed OHLCV frame with the Close-derived split factor applied to Open/High/Low/
+    Close and Volume divided by it, so pre-split bars are on the post-split scale. Returns a new
+    frame; the input is untouched. Passes through when no split is detected."""
+    factors = split_factors(df["Close"])
+    if (factors == 1.0).all():
+        return df
+    out = df.copy()
+    for column in ("Open", "High", "Low", "Close"):
+        if column in out.columns:
+            out[column] = out[column].astype(float) * factors
+    if "Volume" in out.columns:
+        out["Volume"] = out["Volume"].astype(float) / factors
+    return out

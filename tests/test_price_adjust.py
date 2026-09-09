@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from services.price_adjust import adjust_splits, detect_splits
+from services.price_adjust import adjust_ohlc_splits, adjust_splits, detect_splits, split_factors
 
 
 def _series(values: list[float], start: str = "2024-01-01") -> pd.Series:
@@ -66,3 +66,50 @@ def test_short_or_empty_series_pass_through():
     assert adjust_splits(pd.Series(dtype=float)).empty
     s = _series([10.0, 1.0, 1.1])
     assert adjust_splits(s).equals(s)
+
+
+def test_split_factors_are_cumulative_and_one_after_the_last_split():
+    s = _series([1000.0] * 6 + [500.0] * 6 + [100.0] * 6)
+    factors = split_factors(s)
+    assert factors.index.equals(s.index)
+    assert factors.iloc[0] == pytest.approx(0.1)
+    assert factors.iloc[8] == pytest.approx(0.2)
+    assert (factors.iloc[12:] == 1.0).all()
+    assert (adjust_splits(s) == s * factors).all()
+
+
+def test_split_factors_are_all_ones_without_a_split():
+    s = _series([10.0, 10.5, 10.2, 10.8, 10.4, 10.6, 10.9])
+    assert (split_factors(s) == 1.0).all()
+    assert split_factors(pd.Series(dtype=float)).empty
+
+
+def test_adjust_ohlc_splits_scales_prices_and_divides_volume():
+    close = _series([100.0, 101.0, 99.0, 100.0, 102.0, 21.0, 20.8, 21.2, 20.9, 21.1, 21.3])
+    df = pd.DataFrame(
+        {
+            "Open": close * 0.99,
+            "High": close * 1.02,
+            "Low": close * 0.98,
+            "Close": close,
+            "Volume": [1000] * 5 + [5000] * 6,
+        }
+    )
+    out = adjust_ohlc_splits(df)
+    assert out.index.equals(df.index)
+    assert out["Close"].iloc[0] == pytest.approx(20.0)
+    assert out["Open"].iloc[0] == pytest.approx(19.8)
+    assert out["High"].iloc[0] == pytest.approx(20.4)
+    assert out["Low"].iloc[0] == pytest.approx(19.6)
+    assert out["Volume"].iloc[0] == pytest.approx(5000)
+    assert out["Close"].iloc[-1] == 21.3
+    assert out["Volume"].iloc[-1] == 5000
+    assert df["Close"].iloc[0] == 100.0
+
+
+def test_adjust_ohlc_splits_passes_through_without_a_split():
+    close = _series([10.0, 10.5, 10.2, 10.8, 10.4, 10.6, 10.9])
+    df = pd.DataFrame({"Open": close, "High": close, "Low": close, "Close": close, "Volume": 10})
+    out = adjust_ohlc_splits(df)
+    assert out["Close"].equals(df["Close"])
+    assert (out["Volume"] == 10).all()
