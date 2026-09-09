@@ -86,6 +86,16 @@ def _render_status(key: str, label: str) -> None:
     _render_log(key)
 
 
+def compact_summary(running: Sequence[tuple[str, str]]) -> str:
+    """One-line digest of running tasks for dense views: `2 running · Run A [3/10] · Run B`."""
+    parts = []
+    for key, label in running:
+        meta = task_state(key).meta
+        total = meta.get("total")
+        parts.append(f"{label} [{meta.get('done', 0)}/{total}]" if total else label)
+    return " · ".join([f"{len(running)} running", *parts])
+
+
 @dataclass
 class BackgroundRefresh:
     """One background refresh task, keyed by `key`. `summarize(result)` builds the done-toast body;
@@ -145,7 +155,9 @@ class BackgroundRefreshGroup:
     def any_running(self) -> bool:
         return any(r.is_running() for r in self.refreshes)
 
-    def poll(self) -> None:
+    def poll(self, *, compact: bool = False) -> None:
+        """Poll the running tasks: per-task banners + logs by default, or one caption line when
+        `compact` (for grids that show progress in their own columns)."""
         keys_labels = [(r.key, r.label) for r in self.refreshes]
 
         @st.fragment(run_every=self.poll_every)
@@ -153,6 +165,9 @@ class BackgroundRefreshGroup:
             running = [(k, lbl) for k, lbl in keys_labels if is_running(k)]
             if not running:
                 st.rerun(scope="app")  # a task just finished → rerun the page to consume + show fresh
+                return
+            if compact:
+                st.caption(compact_summary(running))
                 return
             for key, label in running:
                 _render_status(key, label)

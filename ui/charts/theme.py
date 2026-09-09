@@ -38,6 +38,16 @@ LINK = "#5aa9ff"  # clickable cell/link styling
 # (no Plotly title) — trims the default whitespace so more fits on screen without scrolling.
 COMPACT_MARGIN = {"l": 48, "r": 16, "t": 24, "b": 36}
 
+
+def with_alpha(hex_color: str, alpha: float) -> str:
+    """Translate a 6-digit hex colour into an `rgba(r, g, b, a)` string for fills and soft lines."""
+    digits = hex_color.lstrip("#")
+    if len(digits) != 6:
+        raise ValueError(f"expected a 6-digit hex colour, got {hex_color!r}")
+    r, g, b = (int(digits[i : i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
 DASHBOARD_TEMPLATE = go.layout.Template(
     layout=go.Layout(
         font=dict(family=FONT_FAMILY, color=TEXT_COLOR, size=13),

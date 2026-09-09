@@ -23,6 +23,11 @@ from services.benchmarks import daily_returns_from_ohlcv
 from services.screener_service import build_screener_df
 from stocks.constants import to_bare_symbol
 
+TTL_FAST = 300
+TTL_INTRADAY = 900
+TTL_HOURLY = 3600
+TTL_DAILY = 24 * 3600
+
 # Instrumentation note: only the heavy loaders carry @timeit (screener / metrics / stock
 # bulk loads). @st.cache_data is the outermost decorator, so cache hits skip @timeit and
 # anything in logs/perf.log is a real cache miss — work that actually ran.
@@ -36,17 +41,17 @@ def load_txn_data() -> pl.DataFrame | None:
     return normalize_transactions(tradebook)
 
 
-@st.cache_data(show_spinner="Loading NAV data...", ttl=3600)
+@st.cache_data(show_spinner="Loading NAV data...", ttl=TTL_HOURLY)
 def load_nav_data(scheme_names: list[str]) -> pl.DataFrame:
     return ensure_nav_data(scheme_names)
 
 
-@st.cache_data(show_spinner="Loading holdings data...", ttl=3600)
+@st.cache_data(show_spinner="Loading holdings data...", ttl=TTL_HOURLY)
 def load_holdings_data(scheme_slugs: list[str]):
     return ensure_holdings_data(scheme_slugs)
 
 
-@st.cache_data(ttl=3600, show_spinner="Loading benchmark…")
+@st.cache_data(ttl=TTL_HOURLY, show_spinner="Loading benchmark…")
 def load_benchmark_returns(symbol: str, start: datetime, end: datetime) -> pd.Series:
     """Daily percent-change series for `symbol`. Raises on fetch/parse failure;
     empty Series only when the fetcher legitimately yields no rows."""
@@ -102,30 +107,30 @@ def load_index_ohlcv(symbol: str, start: datetime | None = None, end: datetime |
     return df.select(["Date", "Open", "Close", "High", "Low", "Volume"]).with_columns(pl.lit(symbol).alias("Symbol"))
 
 
-@st.cache_data(ttl=24 * 3600)
+@st.cache_data(ttl=TTL_DAILY)
 def cached_search(query: str) -> pl.DataFrame:
     """Fuzzy-search AMFI schemes by name. Returns a DataFrame with schemeName + metadata."""
     return search_amfi(query)
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=TTL_INTRADAY, show_spinner=False)
 def load_metadata_cached(scheme_names: tuple[str, ...]) -> pl.DataFrame:
     return load_metadata(list(scheme_names))
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=TTL_DAILY, show_spinner=False)
 def get_short_names(scheme_names: tuple[str, ...]) -> dict[str, str]:
     return unique_short_names(scheme_names)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
 @timeit("loaders.load_screener_df")
 def load_screener_df_cached() -> pl.DataFrame:
     """Cached wrapper around build_screener_df; assembly lives in the service module."""
     return build_screener_df()
 
 
-@st.cache_data(ttl=3600, show_spinner="Loading risk metrics…")
+@st.cache_data(ttl=TTL_HOURLY, show_spinner="Loading risk metrics…")
 @timeit("loaders.load_metrics_cached")
 def load_metrics_cached() -> pl.DataFrame:
     """Read pre-computed metrics from mf_scheme_metrics (recomputed on every NAV save)."""
@@ -134,12 +139,12 @@ def load_metrics_cached() -> pl.DataFrame:
     return load_cached_metrics()
 
 
-@st.cache_data(ttl=24 * 3600)
+@st.cache_data(ttl=TTL_DAILY)
 def cached_search_stock(query: str) -> pd.DataFrame:
     return search_stock_symbols(query)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
 @timeit("loaders.load_stock_screener_df")
 def load_stock_screener_df_cached() -> pl.DataFrame:
     """Cached wrapper around build_stock_screener_df (registry ⨝ stock_metrics + alpha tag)."""
@@ -148,7 +153,7 @@ def load_stock_screener_df_cached() -> pl.DataFrame:
     return build_stock_screener_df()
 
 
-@st.cache_data(ttl=900, show_spinner="Scanning for alerts…")
+@st.cache_data(ttl=TTL_INTRADAY, show_spinner="Scanning for alerts…")
 def load_overview_alerts_cached():
     """Cached alert scan for the Overview page (underperformance, concentration, staleness…)."""
     from services.insights_service import build_alerts  # noqa: PLC0415 — defer heavy import off boot
@@ -156,21 +161,21 @@ def load_overview_alerts_cached():
     return build_alerts()
 
 
-@st.cache_data(ttl=900, show_spinner="Loading market data…")
+@st.cache_data(ttl=TTL_INTRADAY, show_spinner="Loading market data…")
 def load_market_pulse_cached() -> pl.DataFrame:
     from services.insights_service import market_pulse  # noqa: PLC0415 — defer heavy import off boot
 
     return market_pulse()
 
 
-@st.cache_data(ttl=900, show_spinner="Loading sector performance…")
+@st.cache_data(ttl=TTL_INTRADAY, show_spinner="Loading sector performance…")
 def load_index_performance_cached() -> pl.DataFrame:
     from services.insights_service import index_performance  # noqa: PLC0415 — defer heavy import off boot
 
     return index_performance()
 
 
-@st.cache_data(ttl=900, show_spinner="Loading international indices…")
+@st.cache_data(ttl=TTL_INTRADAY, show_spinner="Loading international indices…")
 def load_international_pulse_cached() -> pl.DataFrame:
     from services.insights_service import INTERNATIONAL_PULSE_SYMBOLS, market_pulse  # noqa: PLC0415
 
@@ -185,7 +190,7 @@ def load_index_chart_ohlcv(symbol: str, start: datetime | None = None, end: date
     return read_index_ohlcv(symbol, start, end)
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=TTL_INTRADAY, show_spinner=False)
 def load_index_valuation_cached(symbol: str) -> dict | None:
     """Latest P/E, P/B, Div Yield, turnover (₹ cr) for an index (from the bhavcopy)."""
     from data.repositories.stock import latest_index_valuation  # noqa: PLC0415 — defer off boot
@@ -193,7 +198,7 @@ def load_index_valuation_cached(symbol: str) -> dict | None:
     return latest_index_valuation(symbol)
 
 
-@st.cache_data(ttl=24 * 3600, show_spinner=False)
+@st.cache_data(ttl=TTL_DAILY, show_spinner=False)
 def load_index_constituents_cached(index_name: str) -> list[str]:
     """Constituent stock symbols of an NSE index (via screener.in), best-effort + long-cached."""
     from services.market_data_service import index_constituents  # noqa: PLC0415 — defer off boot
@@ -201,7 +206,7 @@ def load_index_constituents_cached(index_name: str) -> list[str]:
     return index_constituents(index_name)
 
 
-@st.cache_data(ttl=6 * 3600, show_spinner=False)
+@st.cache_data(ttl=6 * TTL_HOURLY, show_spinner=False)
 def load_analysis_catalog_cached() -> list[dict]:
     """Unified picker universe (stocks + ETFs + indices), each tagged with its kind. Long-cached; the
     ETF-classification sync (Settings) clears it."""
@@ -210,7 +215,7 @@ def load_analysis_catalog_cached() -> list[dict]:
     return analysis_catalog()
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=TTL_HOURLY, show_spinner=False)
 def load_etf_metadata_cached() -> dict:
     """Live NSE ETF metadata keyed by symbol (underlying, NAV, 52-week range, 30d/1Y perf)."""
     from services.market_data_service import etf_metadata  # noqa: PLC0415 — defer off boot
@@ -226,7 +231,7 @@ def load_global_search_cached(query: str) -> list[dict]:
     return global_ticker_search(query)
 
 
-@st.cache_data(ttl=24 * 3600, show_spinner=False)
+@st.cache_data(ttl=TTL_DAILY, show_spinner=False)
 def load_global_fundamentals_cached(symbol: str) -> dict | None:
     """yfinance fundamentals snapshot for an international ticker (live source, day-cached —
     mirrors the ETF-metadata pattern; not persisted to the screener tables, which are NSE/INR-based)."""
@@ -235,7 +240,7 @@ def load_global_fundamentals_cached(symbol: str) -> dict | None:
     return global_fundamentals(symbol)
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=TTL_INTRADAY, show_spinner=False)
 def load_fund_movers_cached() -> pl.DataFrame:
     from services.insights_service import fund_movers  # noqa: PLC0415 — defer heavy import off boot
 

@@ -63,7 +63,22 @@ def _line(times, values, color: str, title: str) -> dict:
     }
 
 
-def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: list[str], symbol: str):
+def _series_markers(markers: list[dict], known_times: set[str]) -> list[dict]:
+    """Lightweight-charts requires markers sorted by time and anchored to a bar that exists."""
+    return sorted((m for m in markers if m["time"] in known_times), key=lambda m: m["time"])
+
+
+def render(
+    sdf: pd.DataFrame,
+    overlays: dict,
+    panels: dict,
+    selected_panels: list[str],
+    symbol: str,
+    markers: list[dict] | None = None,
+):
+    """Draw the price / volume / indicator panes. `markers` (optional) are lightweight-charts marker
+    dicts (`time`, `position`, `color`, `shape`, `text`) attached to the price series — trade entries and
+    exits on the candles."""
     df = sdf.reset_index(drop=True)
     if "time" not in df.columns:
         df = df.assign(time=pd.to_datetime(df["Date"]).dt.strftime("%Y-%m-%d"))
@@ -92,6 +107,8 @@ def render(sdf: pd.DataFrame, overlays: dict, panels: dict, selected_panels: lis
         # Some indices (e.g. "CNX 100 Equal Weight") only carry close values — fall back to a line.
         price = _line(times, df["Close"], _UP, "Close")
         price["options"]["lineWidth"] = 2
+    if markers:
+        price["markers"] = _series_markers(markers, {point["time"] for point in price["data"]})
     price_series = [
         price,
         *[

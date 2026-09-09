@@ -57,6 +57,23 @@ def test_close_only_index_falls_back_to_line_without_crashing(captured):
     assert len(vol["data"]) == 3
 
 
+def test_markers_land_on_price_series(captured):
+    markers = [
+        {"time": "2024-01-03", "position": "aboveBar", "color": "#ef4444", "shape": "arrowDown", "text": "exit"},
+        {"time": "2024-01-01", "position": "belowBar", "color": "#10b981", "shape": "arrowUp", "text": "entry"},
+        {"time": "2030-01-01", "position": "belowBar", "color": "#10b981", "shape": "arrowUp", "text": "orphan"},
+    ]
+    chart.render(_frame([100, 101, 102], [99, 100, 101]), {}, {}, [], "RELIANCE", markers=markers)
+    price = captured["charts"][0]["series"][0]
+    assert [m["time"] for m in price["markers"]] == ["2024-01-01", "2024-01-03"]
+    assert "markers" not in captured["charts"][0]["series"][0]["options"]
+
+
+def test_no_markers_key_without_markers(captured):
+    chart.render(_frame([100, 101, 102], [99, 100, 101]), {}, {}, [], "RELIANCE")
+    assert "markers" not in captured["charts"][0]["series"][0]
+
+
 def test_partial_null_rows_are_skipped_in_candles(captured):
     # One row has a null open — it must be dropped from candles, not crash.
     chart.render(_frame([100, 101, 102], [99, None, 101]), {}, {}, [], "SOMESTOCK")
