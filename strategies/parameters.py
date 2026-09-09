@@ -82,7 +82,7 @@ class DecimalParameter(Parameter):
         return len(text.split(".")[1]) if "." in text else 0
 
     def grid(self) -> list[float]:
-        count = int(round((self.high - self.low) / self.step))
+        count = round((self.high - self.low) / self.step)
         return [round(self.low + i * self.step, self.decimals) for i in range(count + 1)]
 
 

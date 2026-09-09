@@ -1,5 +1,6 @@
 """SQLModel ORM models — re-exports all models for backward compatibility."""
 
+from core.models.backtest import BacktestOptimization, BacktestRun, BacktestTrade, BacktestTrial
 from core.models.mutual_fund import (
     AmfiScheme,
     MfAmc,
