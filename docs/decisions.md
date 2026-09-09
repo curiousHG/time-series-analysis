@@ -71,3 +71,27 @@ Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep
   the screener and single-fund views, which is safe only because names are unique.
 - Plan (Direct/Regular) cannot be inferred offline when AMFI leaves it blank; Kuvera's bulk list
   carries no ISIN, so the code suffix is the honest fallback.
+
+## Backtest Lab (Sep 2026)
+
+- **Custom daily loop, not vectorbt** (`services/backtest/engine.py`). vectorbt's `from_signals`
+  cannot express per-order rupee charges (DP charge, brokerage cap), integer shares with a cash
+  floor, next-open fills with an intrabar stop ladder, or rank rebalancing with hysteresis. The
+  numpy `(symbols × days)` loop is a few hundred lines and touches only open trades and the day's
+  candidates per bar. vectorbt stays for the single-stock preview on the Stock Analysis page.
+- **No lookahead by construction.** A signal or score on row T is acted on at row T+1's open; the
+  engine does the shift, strategies never see fills, ML predictions are written on the bar they
+  were made. Truncation-invariance tests (deleting future bars must not change earlier output)
+  guard the engine, the features and the walk-forward.
+- **Costs are Zerodha's published schedule** (`services/backtest/costs.py`, checked 2026-09-09):
+  STT 0.1% both sides on equity delivery, 0.001% sell-only on ETFs, stamp duty on buys, DP
+  charge per sell, GST on brokerage + exchange + SEBI. `NSE_TXN_PCT` defaults to the page value
+  0.00307%; older notes said 0.00297%, confirm against a contract note. The intraday preset is a
+  cost comparison only: the engine holds overnight.
+- **Names are display, codes are keys, and strategy parameters are descriptors**
+  (`strategies/parameters.py`): the run form and the Optuna optimiser read the declared space
+  instead of introspecting widgets, and `optimize=False` keeps model-shape parameters out of the
+  search by default. Stoploss is not optimised by default (freq_strategies lesson: better
+  backtests, worse live results).
+- **Equity-curve objectives.** Trade-based Sharpe/Calmar are degenerate for hold-and-rebalance
+  books, so optimiser objectives and headline risk metrics come from the daily equity series.
