@@ -8,6 +8,7 @@ def register_strategy(cls):
 
 
 # Auto-register all strategies on import
+import strategies.ml  # noqa: E402
 from strategies.bollinger import BollingerStrategy  # noqa: E402
 from strategies.macd import MACDStrategy  # noqa: E402
 from strategies.rsi import RSIStrategy  # noqa: E402
