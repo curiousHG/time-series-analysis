@@ -8,6 +8,8 @@ from pathlib import Path
 # Database connection (override via DATABASE_URL env var).
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://harshit@localhost:5432/trading")
 
+TRADING_DAYS = 252
+
 # SQLModel: allow re-registration of table classes across Streamlit hot reloads.
 TABLE_ARGS = {"extend_existing": True}
 

@@ -6,6 +6,8 @@ from typing import Literal
 
 from sqlalchemy import text
 
+from core.constants import TRADING_DAYS
+
 # String-flag vocabularies used across the services layer.
 BackfillSource = Literal["nav", "metadata", "holdings"]
 SourceStatus = Literal["available", "pending", "unavailable"]
@@ -17,8 +19,7 @@ BACKTEST_RISK_FREE = 0.065
 
 # NAV-derived MF risk/return metrics (services.mf_metrics).
 RISK_FREE_ANNUAL = 0.06
-RF_DAILY = RISK_FREE_ANNUAL / 252
-TRADING_DAYS = 252
+RF_DAILY = RISK_FREE_ANNUAL / TRADING_DAYS
 
 # Data-freshness thresholds (services.data_freshness).
 NAV_STALE_BUSINESS_DAYS = 1

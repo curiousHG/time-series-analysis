@@ -24,6 +24,9 @@ dependencies = [
     "streamlit-lightweight-charts>=0.7",
     "watchdog>=6.0.0",
     "streamlit-aggrid>=1.2.1.post2",
+    "scikit-learn>=1.5",
+    "lightgbm>=4.5",
+    "optuna>=4.0",
 ]
 
 [dependency-groups]
