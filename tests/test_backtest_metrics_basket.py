@@ -59,11 +59,15 @@ def _trades() -> pd.DataFrame:
 
 
 def test_compute_metrics_annualises_with_trading_days():
+    """No calendar literal in the metrics function, and its risk-free rate is the shared constant
+    that is itself derived from TRADING_DAYS."""
     from services import backtest_service
+    from services.constants import BACKTEST_RF_DAILY, BACKTEST_RISK_FREE
 
     source = inspect.getsource(backtest_service.compute_metrics)
     assert "252" not in source
-    assert "TRADING_DAYS" in source
+    assert "BACKTEST_RF_DAILY" in source
+    assert BACKTEST_RF_DAILY == BACKTEST_RISK_FREE / TRADING_DAYS
     assert TRADING_DAYS == 252
 
 
