@@ -7,9 +7,13 @@ scores each symbol by its trailing return and lets the engine hold the top-K wit
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
-import pandas as pd
 import talib
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 from strategies.basket import ENTER, ENTER_TAG, EXIT, EXIT_TAG, SCORE, BasketStrategy, register_basket_strategy
 from strategies.parameters import IntParameter

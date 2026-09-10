@@ -57,7 +57,7 @@ def summarize_result(result: BacktestResult) -> dict:
     benchmark = _benchmark_summary(returns, result.benchmark_returns, total_return_pct)
     metrics.update(
         {
-            "total_trades": int(len(trades)),
+            "total_trades": len(trades),
             "final_equity": final_equity,
             "total_profit_abs": final_equity - init_cash,
             "total_return_pct": total_return_pct,

@@ -1,4 +1,4 @@
-"""Basket backtest engine: a daily loop over (symbols × bars) with next-open fills.
+"""Basket backtest engine: a daily loop over (symbols x bars) with next-open fills.
 
 Per bar `t` from `start_pos`, in this order: exits at Open[t] from yesterday's signals (or a
 rank drop on a rebalance day); the intrabar ladder for trades opened before `t` (stop, then ROI,
@@ -150,7 +150,7 @@ def size_order(
     instrument: str = "equity",
     max_shares: int | None = None,
 ) -> int:
-    """Whole shares for `stake` at `price`, walked down until shares × price + entry costs fit in
+    """Whole shares for `stake` at `price`, walked down until shares x price + entry costs fit in
     `cash`, so a fill never takes cash negative."""
     if not np.isfinite(price) or price <= 0:
         return 0
