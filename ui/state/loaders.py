@@ -257,3 +257,52 @@ def refresh_all_data(scheme_names: list[str], scheme_slugs: list[str]):
     load_holdings_data.clear()
     _refresh_nav(scheme_names)
     _refresh_holdings(scheme_slugs)
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_backtest_runs_cached() -> pl.DataFrame:
+    """Every stored Backtest Lab run, newest first — id/name/status/config plus the summary metrics."""
+    from services.backtest.runs import list_runs  # noqa: PLC0415 — pulls the engine + quantstats in
+
+    return list_runs()
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner="Loading run…")
+def load_backtest_run_cached(run_id: int):
+    """One run in full: config, metrics, trades, equity, benchmark and the per-symbol/exit splits."""
+    from services.backtest.runs import load_run  # noqa: PLC0415 — pulls the engine + quantstats in
+
+    return load_run(run_id)
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_optimization_cached(optimization_id: int):
+    """One optimisation with its persisted trials (never a live Optuna study)."""
+    from services.backtest.runs import load_optimization  # noqa: PLC0415 — pulls the engine in
+
+    return load_optimization(optimization_id)
+
+
+@st.cache_data(ttl=TTL_DAILY, show_spinner=False)
+def load_strategy_catalog_cached() -> dict:
+    """Registered basket strategies with their declared parameters — drives the run form."""
+    from services.backtest.runs import strategy_catalog  # noqa: PLC0415 — pulls the engine in
+
+    return strategy_catalog()
+
+
+@st.cache_data(ttl=TTL_HOURLY, show_spinner=False)
+def load_universe_cached(kind: str, name: str, symbols: tuple[str, ...], watchlist: tuple[str, ...] = ()) -> list[str]:
+    """Bare NSE symbols a universe spec resolves to: index constituents, the watchlist, or a list."""
+    from services.backtest.config import UniverseSpec  # noqa: PLC0415 — keeps the service off page boot
+    from services.backtest.universe import resolve_universe  # noqa: PLC0415
+
+    return resolve_universe(UniverseSpec(kind=kind, name=name, symbols=tuple(symbols)), watchlist=list(watchlist))
+
+
+def clear_backtest_caches() -> None:
+    """Drop the run caches after a create/launch/edit/delete. The strategy catalog and resolved
+    universes are left alone — they don't change with a run and re-resolving an index costs a fetch."""
+    load_backtest_runs_cached.clear()
+    load_backtest_run_cached.clear()
+    load_optimization_cached.clear()

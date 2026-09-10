@@ -54,6 +54,15 @@ STOCK_FILTER_DEFAULTS: dict = {
     "stock_scr_visible": None,  # None → seeded by the page with DEFAULT_VISIBLE_COLS
 }
 
+# Backtest Lab grid filters + the open run (ui.views.backtest_lab), persisted like the screeners'.
+BACKTEST_PERSIST_KEY = "backtest_filters"
+BACKTEST_FILTER_DEFAULTS: dict = {
+    "bt_filter_name": "",
+    "bt_filter_status": [],
+    "bt_filter_strategy": [],
+}
+BACKTEST_SELECTION_KEY = "backtest_selected_run"
+
 # Screener add-to-tracked control help (ui.views.mf_screener.backfill).
 BACKFILL_HELP_TEXT = (
     "Fetch NAV + metadata for the top-N filtered rows and compute their risk/return metrics. "

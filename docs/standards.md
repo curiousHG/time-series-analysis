@@ -78,7 +78,7 @@ naming-alignment pass; new code follows the table from day one.
 - **Long-running work never runs inline under `st.spinner`** — anything that scrapes, fetches
   multi-symbol, or recomputes goes through `ui/components/background_refresh.py`
   (stale-while-revalidate + progress). `portfolio/page.py` is the reference implementation.
-- **Widget/session keys are page-prefixed**: `pf_`, `sa_`, `mf_`, `ov_`, `stock_scr_`, `set_`. No
+- **Widget/session keys are page-prefixed**: `pf_`, `sa_`, `mf_`, `ov_`, `stock_scr_`, `set_`, `bt_`. No
   bare generic keys (`drawdown`, `alpha`) — they are duplicate-key hazards.
 - **Selections that should survive a restart** (picked ticker/fund, indicator sets, filters) persist
   via `ui/persistence/selections.py`, not raw `session_state`.

@@ -177,14 +177,18 @@ def start_run(run_id: int, *, progress_cb: Callable[..., None] | None = None) ->
         raise
     if progress_cb is not None:
         progress_cb(phase="Saving", done=1, total=1)
+    summary = _json_safe(result.metrics)
+    diagnostics = diagnostics_payload(result.diagnostics)
+    if diagnostics is not None:
+        summary["ml_diagnostics"] = diagnostics
     repo.save_backtest_result(
         run_id,
-        summary=_json_safe(result.metrics),
+        summary=summary,
         equity=equity_payload(result),
         trades=trade_records(result.trades),
         duration_s=time.perf_counter() - started,
     )
-    return _json_safe(result.metrics)
+    return summary
 
 
 def load_run(run_id: int) -> RunDetail | None:
@@ -194,7 +198,8 @@ def load_run(run_id: int) -> RunDetail | None:
     config = BacktestConfig.from_dict(row["config"])
     trades = repo.load_backtest_trades(run_id).to_pandas()
     equity, benchmark = _equity_from_payload(row.get("equity"))
-    metrics = row.get("summary") or {}
+    metrics = dict(row.get("summary") or {})
+    diagnostics = diagnostics_from_payload(metrics.pop("ml_diagnostics", None))
     return RunDetail(
         run_id=run_id,
         name=row["name"],
@@ -210,6 +215,7 @@ def load_run(run_id: int) -> RunDetail | None:
         costs=cost_breakdown(trades),
         duration_s=row.get("duration_s"),
         error=row.get("error"),
+        diagnostics=diagnostics,
     )
 
 
@@ -400,3 +406,66 @@ def param_columns(trials: pd.DataFrame) -> list[str]:
     """The parameter columns in a trials frame, in declaration order."""
     fixed = {"number", "state", "value", "oos_value", "n_trades", "duration_s"}
     return [c for c in trials.columns if c not in fixed and not c.startswith("metric_")]
+
+
+MAX_STORED_PREDICTIONS = 20_000
+
+
+def diagnostics_payload(diagnostics) -> dict | None:
+    """ML diagnostics in a JSON-safe shape. The prediction column is kept for the distribution
+    chart and capped, because a wide basket over ten years is far more detail than the chart
+    can show."""
+    if diagnostics is None:
+        return None
+    predictions = diagnostics.predictions
+    values: list[float] = []
+    if len(predictions) and "pred" in predictions.columns:
+        column = predictions["pred"].dropna()
+        if len(column) > MAX_STORED_PREDICTIONS:
+            column = column.sample(MAX_STORED_PREDICTIONS, random_state=0).sort_index()
+        values = [float(v) for v in column]
+    return {
+        "summary": _json_safe(diagnostics.summary),
+        "windows": _records(diagnostics.windows),
+        "importance": _records(diagnostics.importance.reset_index()),
+        "coverage": {str(k): float(v) for k, v in diagnostics.coverage.items()},
+        "predictions": values,
+    }
+
+
+def diagnostics_from_payload(payload: dict | None):
+    """Rebuild the frames the diagnostic charts read. Returns None when the run carried none."""
+    if not payload:
+        return None
+    from strategies.ml.diagnostics import MLDiagnostics  # noqa: PLC0415 — domain import, only for ML runs
+
+    windows = pd.DataFrame(payload.get("windows") or [])
+    for column in ("train_start", "train_end", "test_start", "test_end"):
+        if column in windows.columns:
+            windows[column] = pd.to_datetime(windows[column])
+    importance = pd.DataFrame(payload.get("importance") or [])
+    if "feature" in importance.columns:
+        importance = importance.set_index("feature")
+    return MLDiagnostics(
+        summary=payload.get("summary") or {},
+        windows=windows,
+        importance=importance,
+        predictions=pd.DataFrame({"pred": payload.get("predictions") or []}, dtype=float),
+        coverage=pd.Series(payload.get("coverage") or {}, dtype=float),
+    )
+
+
+def _records(frame: pd.DataFrame) -> list[dict]:
+    if frame is None or frame.empty:
+        return []
+    out = frame.copy()
+    for column in out.columns:
+        if pd.api.types.is_datetime64_any_dtype(out[column]):
+            out[column] = out[column].dt.date.astype(str)
+    return [{k: _cell(v) for k, v in record.items()} for record in out.to_dict("records")]
+
+
+def _cell(value):
+    if value is None or (isinstance(value, float) and value != value):
+        return None
+    return value.item() if hasattr(value, "item") else value

@@ -153,3 +153,53 @@ def test_strategy_catalog_exposes_declared_parameters_and_attributes():
 
 def test_task_key_is_stable():
     assert runs.task_key(7) == "bt_run_7"
+
+
+def test_ml_diagnostics_survive_a_save_and_load_round_trip():
+    """The detail page reads diagnostics back from the stored run, so a run that trained models
+    must carry its windows, importance, coverage and prediction sample."""
+    import numpy as np
+
+    from strategies.ml.diagnostics import MLDiagnostics
+
+    diagnostics = MLDiagnostics(
+        summary={"kind": "classifier", "n_windows": 2, "auc_mean": np.float64(0.53)},
+        windows=pd.DataFrame(
+            {
+                "idx": [0, 1],
+                "test_start": pd.to_datetime(["2024-01-01", "2024-04-01"]),
+                "auc": [0.51, 0.55],
+                "n_train": [500, 500],
+            }
+        ),
+        importance=pd.DataFrame(
+            {"importance": [0.4, 0.1], "std": [0.05, 0.02]}, index=pd.Index(["%-rsi", "%-natr"], name="feature")
+        ),
+        predictions=pd.DataFrame({"pred": [0.4, 0.6, 0.55]}),
+        coverage=pd.Series({"2024-01-01": 0.8}),
+    )
+
+    payload = runs.diagnostics_payload(diagnostics)
+    restored = runs.diagnostics_from_payload(payload)
+
+    assert restored.summary["kind"] == "classifier"
+    assert list(restored.windows["auc"]) == [0.51, 0.55]
+    assert restored.windows["test_start"].dtype.kind == "M"
+    assert restored.importance.index.tolist() == ["%-rsi", "%-natr"]
+    assert restored.importance["importance"].tolist() == [0.4, 0.1]
+    assert restored.predictions["pred"].tolist() == [0.4, 0.6, 0.55]
+    assert runs.diagnostics_from_payload(None) is None
+
+
+def test_start_run_stores_diagnostics_under_the_summary(fake_repo, monkeypatch):
+    config = _config()
+    run_id = runs.create_run(config, "ML run")
+    result = _result(config)
+    result.diagnostics = object()
+    monkeypatch.setattr(runs, "load_backtest_inputs", lambda *a, **k: object())
+    monkeypatch.setattr(runs, "run_engine", lambda *a, **k: result)
+    monkeypatch.setattr(runs, "diagnostics_payload", lambda d: {"summary": {"kind": "classifier"}})
+
+    runs.start_run(run_id)
+
+    assert fake_repo["runs"][run_id]["summary"]["ml_diagnostics"]["summary"]["kind"] == "classifier"
