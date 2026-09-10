@@ -35,6 +35,7 @@ DEFAULT_TRIALS = 50
 ML_TRIALS = 30
 MAX_TRIALS = 500
 IS_FRACTION_KEY = "bt_opt_is_fraction"
+DEFAULT_IS_FRACTION = 0.7
 _TRIAL_COLUMN_CONFIG = {
     "value": st.column_config.NumberColumn("Objective", format="%.4f"),
     "oos_value": st.column_config.NumberColumn("Out of sample", format="%.4f"),
@@ -55,12 +56,15 @@ def _task_handle(run_id: int) -> BackgroundRefresh:
 
 
 def _bounds(param: Any, name: str) -> tuple[float, float]:
+    """Bound inputs that keep the parameter's own type, so an integer knob is not offered in
+    hundredths."""
     low_key, high_key = f"bt_opt_low_{name}", f"bt_opt_high_{name}"
-    seed(low_key, float(param.low))
-    seed(high_key, float(param.high))
+    cast = int if param.kind == "int" else float
+    seed(low_key, cast(param.low))
+    seed(high_key, cast(param.high))
     left, right = st.columns(2)
-    low = left.number_input(f"{name} — low", key=low_key, step=float(param.step))
-    high = right.number_input(f"{name} — high", key=high_key, step=float(param.step))
+    low = left.number_input(f"{name} — low", key=low_key, step=cast(param.step))
+    high = right.number_input(f"{name} — high", key=high_key, step=cast(param.step))
     return float(low), float(high)
 
 
@@ -115,8 +119,18 @@ def _render_form(run_id: int, detail: RunDetail, spec: StrategySpec, handle: Bac
         seed("bt_opt_min_trades", DEFAULT_MIN_TRADES)
         min_trades = int(st.number_input("Min trades", min_value=0, max_value=500, step=5, key="bt_opt_min_trades"))
     with far:
-        seed(IS_FRACTION_KEY, 1.0)
-        is_fraction = float(st.slider("In-sample share", 0.5, 1.0, step=0.05, key=IS_FRACTION_KEY))
+        seed(IS_FRACTION_KEY, DEFAULT_IS_FRACTION)
+        is_fraction = float(
+            st.slider(
+                "In-sample share",
+                0.5,
+                1.0,
+                step=0.05,
+                key=IS_FRACTION_KEY,
+                help="The rest of the period is held out: the best trials are re-scored on it, "
+                "which is how you see whether a winning parameter set was just fitted to noise.",
+            )
+        )
 
     chosen = st.multiselect("Parameters to search", tunable, default=tunable, key="bt_opt_params")
     pinned = [name for name in spec.parameters if name not in chosen]

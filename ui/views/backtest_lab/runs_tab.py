@@ -8,6 +8,7 @@ those retrain a model per walk-forward window and would otherwise starve each ot
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -81,6 +82,13 @@ def _status_cell(record: dict) -> str:
     return _progress(record["id"]) if status in ACTIVE_STATUSES else status
 
 
+def _payload(value) -> dict:
+    """The repository hands JSON columns back as strings so the cached frame stays picklable."""
+    if not value:
+        return {}
+    return json.loads(value) if isinstance(value, str) else dict(value)
+
+
 def records(runs: pl.DataFrame) -> list[dict]:
     """Run rows as plain dicts — `list_runs` carries JSON columns polars keeps as objects."""
     return [] if runs.is_empty() else list(runs.iter_rows(named=True))
@@ -93,17 +101,17 @@ def display_frame(rows: list[dict]) -> pd.DataFrame:
             {
                 "Name": r["name"],
                 "Strategy": r["strategy"],
-                "Universe": universe_label(r["universe"]),
-                "Params": params_summary(r["params"]),
-                "Costs": PRESET_LABELS.get((r["costs"] or {}).get("name"), "Custom"),
+                "Universe": universe_label(_payload(r["universe"])),
+                "Params": params_summary(_payload(r["params"])),
+                "Costs": PRESET_LABELS.get(_payload(r["costs"]).get("name"), "Custom"),
                 "Period": f"{r['start']:%b %Y} to {r['end']:%b %Y}",
                 "Status": _status_cell(r),
-                "CAGR %": (r["summary"] or {}).get("cagr"),
-                "Sharpe": (r["summary"] or {}).get("sharpe"),
-                "Max DD %": (r["summary"] or {}).get("max_drawdown"),
-                "Win %": (r["summary"] or {}).get("win_rate"),
-                "Trades": (r["summary"] or {}).get("total_trades"),
-                "Net P&L": (r["summary"] or {}).get("total_profit_abs"),
+                "CAGR %": _payload(r["summary"]).get("cagr"),
+                "Sharpe": _payload(r["summary"]).get("sharpe"),
+                "Max DD %": _payload(r["summary"]).get("max_drawdown"),
+                "Win %": _payload(r["summary"]).get("win_rate"),
+                "Trades": _payload(r["summary"]).get("total_trades"),
+                "Net P&L": _payload(r["summary"]).get("total_profit_abs"),
                 "Ran": r.get("finished_at"),
             }
             for r in rows

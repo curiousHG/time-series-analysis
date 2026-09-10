@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 
 import polars as pl
@@ -38,15 +39,15 @@ RUN_SCHEMA = {
     "finished_at": pl.Datetime,
     "strategy": pl.Utf8,
     "mode": pl.Utf8,
-    "params": pl.Object,
-    "universe": pl.Object,
-    "costs": pl.Object,
+    "params": pl.Utf8,
+    "universe": pl.Utf8,
+    "costs": pl.Utf8,
     "start": pl.Date,
     "end": pl.Date,
     "init_cash": pl.Float64,
     "status": pl.Utf8,
     "error": pl.Utf8,
-    "summary": pl.Object,
+    "summary": pl.Utf8,
     "duration_s": pl.Float64,
 }
 
@@ -146,10 +147,21 @@ def save_backtest_result(
         session.commit()
 
 
+JSON_COLUMNS = ("params", "universe", "costs", "summary")
+
+
 def load_backtest_runs() -> pl.DataFrame:
+    """Every run, newest first. The JSON columns come back as strings: a polars frame of dicts
+    cannot be pickled, and the UI caches this frame."""
     with get_session() as session:
         rows = session.exec(select(BacktestRun).order_by(col(BacktestRun.created_at).desc())).all()
-    records = [tuple(getattr(r, name) for name in RUN_SCHEMA) for r in rows]
+    records = [
+        tuple(
+            json.dumps(getattr(r, name)) if name in JSON_COLUMNS and getattr(r, name) is not None else getattr(r, name)
+            for name in RUN_SCHEMA
+        )
+        for r in rows
+    ]
     return frame_from_rows(records, RUN_SCHEMA)
 
 

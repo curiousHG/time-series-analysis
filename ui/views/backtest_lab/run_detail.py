@@ -66,7 +66,15 @@ def _pct(value: Any, decimals: int = 1) -> str:
 
 
 def _ratio(value: Any) -> str:
-    return EM_DASH if value is None or pd.isna(value) else f"{float(value):.2f}"
+    """Two decimals for a number, the value itself for anything else — the ML summary mixes
+    counts and ratios with labels such as the model kind."""
+    if value is None:
+        return EM_DASH
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or pd.isna(value):
+        return EM_DASH if not isinstance(value, bool) else str(value)
+    return f"{float(value):.2f}"
 
 
 def config_caption(detail: RunDetail) -> str:

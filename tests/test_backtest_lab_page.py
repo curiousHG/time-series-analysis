@@ -4,6 +4,7 @@ it says it does. The loaders and the runs service are monkeypatched, so nothing 
 from __future__ import annotations
 
 import datetime
+import json
 from types import SimpleNamespace
 
 import pandas as pd
@@ -132,22 +133,24 @@ def _run_row(run_id: int, name: str, status: str = "done") -> dict:
         "finished_at": datetime.datetime(2023, 7, 1, 10, 5),
         "strategy": "RSI Basket",
         "mode": "signal",
-        "params": payload["params"],
-        "universe": payload["universe"],
-        "costs": payload["costs"],
+        "params": json.dumps(payload["params"]),
+        "universe": json.dumps(payload["universe"]),
+        "costs": json.dumps(payload["costs"]),
         "start": datetime.date(2023, 1, 2),
         "end": datetime.date(2023, 6, 30),
         "init_cash": 1_000_000.0,
         "status": status,
         "error": None,
-        "summary": {
-            "cagr": 6.2,
-            "sharpe": 1.1,
-            "max_drawdown": -4.4,
-            "win_rate": 66.0,
-            "total_trades": 3,
-            "total_profit_abs": 29_750.0,
-        },
+        "summary": json.dumps(
+            {
+                "cagr": 6.2,
+                "sharpe": 1.1,
+                "max_drawdown": -4.4,
+                "win_rate": 66.0,
+                "total_trades": 3,
+                "total_profit_abs": 29_750.0,
+            }
+        ),
         "duration_s": 4.2,
     }
 
@@ -348,3 +351,15 @@ def test_launch_respects_the_concurrency_cap(lab, monkeypatch):
     rows = [_run_row(rid, f"Run {rid}", status="draft") for rid in (9001, 9002, 9003)]
     launched = runs_tab.launch([9001, 9002, 9003], rows, lab["catalog"])
     assert launched == [9001, 9002]
+
+
+def test_ml_summary_tiles_accept_labels_as_well_as_numbers():
+    """The ML summary mixes the model kind (a string) with counts and ratios; the tile formatter
+    must not try to parse the label as a float."""
+    from ui.views.backtest_lab.run_detail import _ratio
+
+    assert _ratio("classifier") == "classifier"
+    assert _ratio(0.5213) == "0.52"
+    assert _ratio(19) == "19.00"
+    assert _ratio(None) == "—"
+    assert _ratio(float("nan")) == "—"
