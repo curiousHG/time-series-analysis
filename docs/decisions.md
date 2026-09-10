@@ -95,3 +95,50 @@ Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep
   backtests, worse live results).
 - **Equity-curve objectives.** Trade-based Sharpe/Calmar are degenerate for hold-and-rebalance
   books, so optimiser objectives and headline risk metrics come from the daily equity series.
+
+## Strategy authoring and the ported rules (Sep 2026)
+
+- **Strategies are discovered from files** (`strategies/resolver.py`), the way freqtrade reads
+  `user_data/strategies`. A `.py` file dropped in that directory is imported, scanned for
+  `BasketStrategy` subclasses and offered in the picker with no decorator and no restart; the
+  directory is re-read whenever a file's timestamp moves. Built-ins keep the decorator registry and
+  the resolver merges the two, with a user file winning a name clash. A file that fails to import
+  becomes a load error on the Strategies view rather than a strategy that quietly disappears.
+- **`custom_exit` is not gated behind `use_exit_signal`.** freq_strategies lost six months of
+  holding period to exactly that bug in freqtrade: turning the exit signal off silently disabled a
+  72-hour time exit and trades ran 184 days. Here the hook is checked separately, so a bars-held
+  exit fires either way. It is asked at each bar's close and fills at the next open, which means it
+  beats the *next* bar's stop, the same as an exit signal.
+- **A bars-held hook must ask one bar early.** The decision is made at a close and the order rests
+  at the next open, so `bars_held + 1 >= hold` is what makes the realised holding period equal the
+  parameter. The engine deliberately includes the entry bar in the check: its close is known, so
+  selling at tomorrow's open is a decision that bar supports.
+- **Ported constants were recalibrated, not copied** (`strategies/ported.py`). The reversion rule's
+  "30% below the 50-day average" is common in alt-coins and close to absent in NSE large caps, so
+  it defaults to 10%. Reversion books ship with the stop parked out of the way: freq_strategies
+  measured a 15% stop taking a window from +34.98% to −0.13%, because the stop fires at the low the
+  reversion starts from. The momentum basket's exit band is three times its position count, since a
+  band only slightly wider than `top_k` was worse than no band at all in their tests.
+- **The Donchian channel is shifted a bar.** The source compares the close against a rolling maximum
+  that includes the current bar, which only a bar closing exactly on its own high can clear. On
+  daily equity bars that never fires.
+
+## Transition matrix over bucketed returns (Sep 2026)
+
+- **Confidence is P(up | the move leaves the flat band)**, not the raw share of positive buckets.
+  With an eleven-bucket scheme the flat band holds about a fifth of every row, so a raw P(up) tops
+  out near 0.48 on NSE bars and no sensible threshold could ever be met. Renormalising against the
+  down side puts 0.5 at genuine neutrality.
+- **Counts roll with a cumulative sum** (`strategies/markov.py`), so every bar carries its own
+  matrix from a single pass and the matrix in force on a bar sums only transitions that had already
+  landed. The same structure accumulates the realised next return, which makes a row a conditional
+  expected return rather than a bucket-centre approximation.
+- **The edge is real and mostly unreachable.** On Nifty 50 over 2019–2025 the deepest down bucket
+  lifts the directional odds to 55.9% against a 51.5% base rate, with a +0.29% average next bar —
+  textbook short-term reversal, decaying monotonically across the buckets. But the matrix forecasts
+  a close-to-close move while the engine fills at the next open: on called bars the predicted move
+  averages +0.168%, the overnight gap takes +0.264% of it, and an open-to-open trade keeps +0.131%
+  against a +0.092% baseline. That is a 4bp edge against a round trip of roughly 30bp on the
+  delivery preset with slippage, which is why the signal book loses about 18% over the period.
+  The diagnostics report both gradings side by side so the gap is visible rather than inferred;
+  the strategy is kept as an honest negative result, not tuned until a number looks good.

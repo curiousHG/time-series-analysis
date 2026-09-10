@@ -28,6 +28,12 @@ createdb trading
 # Idempotent — safe to re-run; on an existing pre-Alembic DB just run upgrade head.
 uv run alembic upgrade head
 
+# Scaffold a new backtest strategy into user_data/strategies (then edit it there)
+uv run python -c "from strategies.resolver import new_strategy_file; print(new_strategy_file('MyIdea'))"
+
+# List every strategy the Backtest Lab can run
+uv run python -c "from strategies.resolver import discover; print(list(discover(refresh=True).strategies))"
+
 # Sync AMFI master data (14K+ mutual fund schemes with ISIN codes)
 # Also available via "Sync AMFI Master" button in Settings
 uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi_master()"
@@ -45,7 +51,7 @@ uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi
 4. **MF Screener** — AMFI universe filters, risk/return metrics, bulk fetch for tracked funds
 5. **Stock Analysis** — TradingView candlestick charts, 37 TA-Lib indicators, Fundamentals (momentum + screener.in percentiles + quarterly trend), strategy backtesting
 6. **Stock Screener** — screener.in fundamentals + CAPM alpha/beta categorisation, AgGrid table
-7. **Backtest Lab** — multi-stock basket backtesting: run grid, per-run visualizer, comparison, Optuna optimiser
+7. **Backtest Lab** — multi-stock basket backtesting: run grid, per-run visualizer, comparison, Optuna optimiser, strategy catalogue
 8. **Settings** — data inputs and freshness, maintenance jobs, source/schema reference
 
 ### Layer Structure
@@ -63,7 +69,7 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
            stock_analysis/page.py      # Stock page entry point
            stock_analysis/             # Stock chart + fundamentals + strategy backtest
            stock_screener/             # screener.in fundamentals + alpha/beta screener
-           backtest_lab/page.py        # Backtest Lab entry point (Runs / Detail / Compare / Optimise)
+           backtest_lab/page.py        # Backtest Lab entry (Runs / Detail / Compare / Optimise / Strategies)
            backtest_lab/               # run grid, run form, detail visualizer, compare, optimise
            settings/page.py            # Data/source/settings page entry point
            settings/                   # AMFI, tradebook, refresh, metrics cache, DB stats
@@ -103,7 +109,11 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
            rsi.py, macd.py, bollinger.py, sma_crossover.py
            parameters.py               # Int/Decimal/Categorical/Bool parameter descriptors
            basket.py                   # BasketStrategy contract + registry (signal / rank modes)
+           resolver.py                 # file discovery from user_data/strategies + new-file template
            basket_examples.py          # RSI Basket, Momentum Rank
+           ported.py                   # six rules ported from freq_strategies to NSE daily bars
+           markov.py                   # bucketed returns + rolling transition matrix
+           markov_strategy.py          # Transition Matrix, Transition Edge Rank
            ml/                          # features, labels, predictors, walk-forward, ML strategies
          mutual_funds/                 # MF domain logic
            analytics.py, tradebook.py, holdings.py, table_schema.py
@@ -172,6 +182,10 @@ Connection: `DATABASE_URL` env var (default: `postgresql://harshit@localhost:543
 - **Services layer** — business logic separated from UI; callable by bot, CLI, and Streamlit
 - **Repository pattern** — `data/repositories/` for DB CRUD, `data/fetchers/` for HTTP
 - **Strategy registry** — `@register_strategy` decorator, `STRATEGY_REGISTRY` dict
+- **Basket strategy discovery** — built-ins register on import; user strategies are plain `.py`
+  files in `user_data/strategies/` picked up by `strategies/resolver.py` with no decorator and no
+  restart (set `BT_STRATEGY_DIR` to move the directory). The Backtest Lab's Strategies view lists
+  them, reports files that failed to import, and scaffolds new ones from a template.
 - **Indicator registry** — `@register` decorator in `indicators/`, UI reads from `INDICATOR_REGISTRY`
 - **Ruff** for both linting and formatting (config in `pyproject.toml`)
 - **File-based selections** (`data/user/selections.json`) for UI state persistence
