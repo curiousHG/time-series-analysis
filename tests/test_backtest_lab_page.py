@@ -26,12 +26,15 @@ CONSUMERS = (
     "ui.views.backtest_lab.run_detail",
     "ui.views.backtest_lab.compare_tab",
     "ui.views.backtest_lab.optimise_tab",
+    "ui.views.backtest_lab.strategies_tab",
 )
 
 
-def _spec() -> StrategySpec:
+def _spec(
+    name: str = "RSI Basket", *, origin: str = "builtin", source: str = "strategies/basket_examples.py"
+) -> StrategySpec:
     return StrategySpec(
-        name="RSI Basket",
+        name=name,
         mode="signal",
         parameters={
             "window": IntParameter(14, 5, 30, 1, help="RSI period"),
@@ -46,6 +49,9 @@ def _spec() -> StrategySpec:
         rebalance_every="M",
         startup_candle_count=50,
         is_ml=False,
+        origin=origin,
+        source=source,
+        doc="Enters on the RSI crossing up through the oversold level.",
     )
 
 
@@ -186,7 +192,14 @@ def lab(monkeypatch, tmp_path):
     monkeypatch.setattr("ui.persistence.selections.SELECTIONS_PATH", tmp_path / "selections.json")
     import ui.state.loaders as loaders
 
-    state = {"rows": [], "details": {}, "catalog": {"RSI Basket": _spec()}, "optimization": None, "opt_id": None}
+    state = {
+        "rows": [],
+        "details": {},
+        "catalog": {"RSI Basket": _spec()},
+        "optimization": None,
+        "opt_id": None,
+        "health": {"errors": [], "warnings": [], "directory": str(tmp_path / "strategies")},
+    }
 
     def patch(name, fn):
         monkeypatch.setattr(loaders, name, fn, raising=False)
@@ -194,6 +207,8 @@ def lab(monkeypatch, tmp_path):
             monkeypatch.setattr(module + "." + name, fn, raising=False)
 
     patch("load_strategy_catalog_cached", lambda: state["catalog"])
+    patch("load_strategy_health_cached", lambda: state["health"])
+    patch("reload_strategies", lambda: None)
     patch("load_backtest_runs_cached", lambda: _runs_frame(state["rows"]))
     patch("load_backtest_run_cached", lambda run_id: state["details"].get(int(run_id)))
     patch("load_optimization_cached", lambda opt_id: state["optimization"])
@@ -363,3 +378,65 @@ def test_ml_summary_tiles_accept_labels_as_well_as_numbers():
     assert _ratio(19) == "19.00"
     assert _ratio(None) == "—"
     assert _ratio(float("nan")) == "—"
+
+
+# ---------------------------------------------------------------- Strategies view
+
+
+def test_strategies_view_lists_the_catalogue_with_its_source(lab):
+    lab["catalog"] = {
+        "RSI Basket": _spec(),
+        "Dropped In": _spec("Dropped In", origin="user", source="/tmp/user/dropped_in.py"),
+    }
+    app = _app("Strategies").run()
+    assert not app.exception
+    catalogue = app.dataframe[0].value
+    assert set(catalogue["Strategy"]) == {"RSI Basket", "Dropped In"}
+    assert "Your file" in list(catalogue["Source"])
+    assert "/tmp/user/dropped_in.py" in list(catalogue["File"])
+
+
+def test_strategies_view_shows_the_selected_strategys_parameters(lab):
+    app = _app("Strategies").run()
+    assert not app.exception
+    assert any("crossing up through the oversold" in md.value for md in app.markdown)
+    parameters = app.dataframe[1].value
+    assert set(parameters["Parameter"]) == {"window", "oversold"}
+    assert "5 to 30" in list(parameters["Range"]), "an integer step of one is noise, not information"
+    assert "RSI period" in list(parameters["What it does"])
+
+
+def test_strategies_view_reports_a_file_that_would_not_import(lab):
+    lab["health"]["errors"] = [("/tmp/user/broken.py", "ModuleNotFoundError: no_such_module")]
+    app = _app("Strategies").run()
+    assert not app.exception
+    assert any("could not be imported" in err.value for err in app.error)
+    assert any("no_such_module" in block.value for block in app.get("code"))
+
+
+def test_strategies_view_surfaces_a_name_clash_as_a_warning(lab):
+    lab["health"]["warnings"] = ["user strategy 'RSI Basket' shadows the built-in of the same name"]
+    app = _app("Strategies").run()
+    assert not app.exception
+    assert any("shadows the built-in" in warning.value for warning in app.warning)
+
+
+def test_strategies_view_survives_an_empty_catalogue(lab):
+    lab["catalog"] = {}
+    app = _app("Strategies").run()
+    assert not app.exception
+    assert any("No strategies were found" in info.value for info in app.info)
+
+
+def test_backtest_this_hands_the_strategy_to_the_run_composer(lab):
+    """The button jumps to the Runs view with the composer already pointed at that strategy."""
+    lab["catalog"] = {
+        "RSI Basket": _spec(),
+        "Dropped In": _spec("Dropped In", origin="user", source="/tmp/user/dropped_in.py"),
+    }
+    app = _app("Strategies")
+    app.session_state["bt_strategy_detail"] = "Dropped In"
+    app = _click(app.run(), "bt_strategy_backtest", view="Strategies")
+    assert not app.exception
+    assert app.session_state["bt_view"] == "Runs"
+    assert app.session_state["bt_form_strategy"] == "Dropped In"

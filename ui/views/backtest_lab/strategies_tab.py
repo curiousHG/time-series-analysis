@@ -28,6 +28,8 @@ PICKER_KEY = "bt_strategy_detail"
 NEW_NAME_KEY = "bt_new_strategy_name"
 NEW_LABEL_KEY = "bt_new_strategy_label"
 NEW_MODE_KEY = "bt_new_strategy_mode"
+BACKTEST_BUTTON_KEY = "bt_strategy_backtest"
+RELOAD_BUTTON_KEY = "bt_strategy_reload"
 ORIGIN_LABELS = {"builtin": "Built-in", "user": "Your file"}
 MODE_HELP = {
     "signal": "Per-symbol entry and exit signals, capped at `max_open_trades` open positions.",
@@ -52,7 +54,7 @@ def _render_toolbar(health: dict) -> None:
     with left:
         st.caption(f"Strategy directory: `{health.get('directory', '')}`")
     with right:
-        if st.button("Reload from disk", use_container_width=True, icon=":material/refresh:"):
+        if st.button("Reload from disk", key=RELOAD_BUTTON_KEY, use_container_width=True, icon=":material/refresh:"):
             reload_strategies()
             st.rerun(scope="app")
 
@@ -118,8 +120,9 @@ def _parameter_frame(spec: StrategySpec) -> pd.DataFrame:
 def _range_text(param) -> str:
     if param.kind in ("categorical", "bool"):
         return ", ".join(str(c) for c in param.choices)
-    step = f" step {param.step:g}" if getattr(param, "step", None) else ""
-    return f"{param.low:g} to {param.high:g}{step}"
+    step = getattr(param, "step", None)
+    suffix = f" step {step:g}" if step and not (param.kind == "int" and step == 1) else ""
+    return f"{param.low:g} to {param.high:g}{suffix}"
 
 
 def _render_detail(catalog: dict[str, StrategySpec]) -> None:
@@ -133,7 +136,7 @@ def _render_detail(catalog: dict[str, StrategySpec]) -> None:
     with header:
         section_header(spec.name, MODE_HELP.get(spec.mode, ""))
     with action:
-        if st.button("Backtest this", use_container_width=True, icon=":material/play_arrow:"):
+        if st.button("Backtest this", key=BACKTEST_BUTTON_KEY, use_container_width=True, icon=":material/play_arrow:"):
             st.session_state[state.PREFILL_PENDING] = {"strategy": spec.name}
             state.go_to("Runs")
 

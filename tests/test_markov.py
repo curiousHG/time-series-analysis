@@ -121,7 +121,8 @@ def test_confidence_renormalises_against_the_down_side_not_the_whole_row():
     directional = stats.directional[-1]
     assert np.nanmax(raw) < np.nanmax(directional)
     assert np.allclose(directional, stats.p_up[-1] / (stats.p_up[-1] + stats.p_down[-1]), equal_nan=True)
-    assert 0.0 <= np.nanmin(directional) and np.nanmax(directional) <= 1.0
+    assert np.nanmin(directional) >= 0.0
+    assert np.nanmax(directional) <= 1.0
     assert 0.3 < stats.base_directional[-1] < 0.7
 
 
