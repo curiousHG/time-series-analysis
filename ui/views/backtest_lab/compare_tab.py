@@ -14,6 +14,7 @@ import streamlit as st
 from services.backtest.config import UniverseSpec
 from ui.charts import backtest as charts
 from ui.components.chrome import section_header
+from ui.components.metric_tiles import fmt_inr_compact
 from ui.state.loaders import load_backtest_run_cached, load_backtest_runs_cached
 from ui.views.backtest_lab import state
 
@@ -22,26 +23,42 @@ if TYPE_CHECKING:
 
 PICKER_KEY = "bt_compare_pick"
 METRIC_LABELS = {
-    "total_return_pct": "Total return %",
-    "cagr": "CAGR %",
-    "sharpe": "Sharpe",
-    "sortino": "Sortino",
-    "calmar": "Calmar",
-    "max_drawdown": "Max drawdown %",
-    "win_rate": "Win rate %",
-    "profit_factor": "Profit factor",
-    "total_trades": "Trades",
-    "total_costs": "Costs paid ₹",
-    "avg_exposure": "Avg exposure %",
-    "final_equity": "Final equity ₹",
+    "total_return_pct": ("Total return", "signed_pct"),
+    "cagr": ("CAGR", "signed_pct"),
+    "sharpe": ("Sharpe", "ratio"),
+    "sortino": ("Sortino", "ratio"),
+    "calmar": ("Calmar", "ratio"),
+    "max_drawdown": ("Max drawdown", "pct"),
+    "win_rate": ("Win rate", "pct"),
+    "profit_factor": ("Profit factor", "ratio"),
+    "total_trades": ("Trades", "count"),
+    "total_costs": ("Costs paid", "rupees"),
+    "avg_exposure": ("Avg exposure", "pct"),
+    "final_equity": ("Final equity", "rupees"),
 }
+
+
+def _format(value: Any, style: str) -> str:
+    """Each metric carries its own unit, so the table is formatted per row rather than per
+    column."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "—"
+    if style == "signed_pct":
+        return f"{float(value):+.1f}%"
+    if style == "pct":
+        return f"{float(value):.1f}%"
+    if style == "ratio":
+        return f"{float(value):.2f}"
+    if style == "count":
+        return f"{int(value):,}"
+    return fmt_inr_compact(float(value))
 
 
 def metrics_table(details: list[RunDetail]) -> pd.DataFrame:
     """Headline metrics with one column per run — the shape a side-by-side read wants."""
     return pd.DataFrame(
-        {d.name: [d.metrics.get(key) for key in METRIC_LABELS] for d in details},
-        index=list(METRIC_LABELS.values()),
+        {d.name: [_format(d.metrics.get(key), style) for key, (_, style) in METRIC_LABELS.items()] for d in details},
+        index=[label for label, _ in METRIC_LABELS.values()],
     )
 
 
