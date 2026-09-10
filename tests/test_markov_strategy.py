@@ -250,11 +250,24 @@ def test_the_diagnostics_hit_rate_beats_a_coin_flip_on_a_planted_edge():
     assert strategy.diagnostics().summary["next_bar_mean_return"] > 0
 
 
-def test_the_exit_fires_when_confidence_falls_away():
+def test_the_exit_fires_when_confidence_falls_a_margin_below_the_entry_bar():
     frames = _frames()
-    frame = _populate(TransitionMatrixStrategy(min_samples=50, exit_confidence=0.52), frames)["SYM0"]
+    strategy = TransitionMatrixStrategy(min_samples=50, entry_confidence=0.60, exit_margin=0.08)
+    frame = _populate(strategy, frames)["SYM0"]
     assert frame[EXIT].any()
     assert (frame.loc[frame[EXIT] & frame[CONFIDENCE].notna(), CONFIDENCE] <= 0.52).all()
+    assert not (frame[ENTER] & frame[EXIT]).any(), "a bar must never signal both, the engine drops such an entry"
+
+
+def test_the_exit_threshold_follows_the_confidence_scale_in_lift_mode():
+    """In lift mode confidence sits near zero, so an absolute exit level would fire on every bar
+    and the engine would drop every entry that shared it. The margin keeps the two on one scale."""
+    frames = _frames()
+    strategy = TransitionMatrixStrategy(min_samples=50, confidence_mode="lift", entry_confidence=0.05, exit_margin=0.04)
+    frame = _populate(strategy, frames)["SYM0"]
+    assert frame[ENTER].any(), "lift mode must still be able to open a position"
+    assert not frame[EXIT].all()
+    assert not (frame[ENTER] & frame[EXIT]).any()
 
 
 def test_bucket_settings_reach_the_scheme_and_change_the_matrix_shape():

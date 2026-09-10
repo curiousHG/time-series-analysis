@@ -215,7 +215,9 @@ class TransitionMatrixStrategy(TransitionMatrixBase):
     mode = "signal"
 
     entry_confidence = DecimalParameter(0.55, 0.30, 0.90, step=0.01, help="Confidence a symbol needs to be bought")
-    exit_confidence = DecimalParameter(0.48, 0.20, 0.80, step=0.01, help="Confidence below which a holding is sold")
+    exit_margin = DecimalParameter(
+        0.07, 0.0, 0.40, step=0.01, help="How far below the entry bar confidence must fall before a holding is sold"
+    )
     max_hold = IntParameter(5, 1, 40, help="Bars a position may live before it is closed regardless of signal")
 
     max_open_trades = 10
@@ -237,7 +239,14 @@ class TransitionMatrixStrategy(TransitionMatrixBase):
         return df
 
     def populate_exit(self, df: pd.DataFrame, symbol: str, ctx: MarketContext) -> pd.DataFrame:
-        weak = df[CONFIDENCE] <= float(self.exit_confidence)
+        """Sell once confidence has fallen a margin below the bar that bought it.
+
+        The threshold is a band under `entry_confidence` rather than a level of its own, so it
+        stays on whatever scale the confidence mode is using. An absolute threshold here would be
+        met by every bar in `lift` mode, where confidence sits around zero, and the engine drops an
+        entry whose bar also carries an exit — which is a book that never opens a position.
+        """
+        weak = df[CONFIDENCE] <= float(self.entry_confidence) - float(self.exit_margin)
         df[EXIT] = (weak | df[CONFIDENCE].isna()).fillna(False).astype(bool)
         return df
 
