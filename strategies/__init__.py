@@ -8,9 +8,11 @@ def register_strategy(cls):
 
 
 # Auto-register all strategies on import
+import strategies.markov_strategy  # noqa: E402
 import strategies.ml  # noqa: E402
+import strategies.ported  # noqa: E402
+from strategies.basket_examples import MomentumRankStrategy, RsiBasketStrategy  # noqa: E402
 from strategies.bollinger import BollingerStrategy  # noqa: E402
 from strategies.macd import MACDStrategy  # noqa: E402
 from strategies.rsi import RSIStrategy  # noqa: E402
 from strategies.sma_crossover import SMACrossoverStrategy  # noqa: E402
-from strategies.basket_examples import MomentumRankStrategy, RsiBasketStrategy  # noqa: E402
