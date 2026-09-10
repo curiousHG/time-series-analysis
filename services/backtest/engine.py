@@ -1,7 +1,8 @@
 """Basket backtest engine: a daily loop over (symbols x bars) with next-open fills.
 
 Per bar `t` from `start_pos`, in this order: exits at Open[t] from yesterday's signals (or a
-rank drop on a rebalance day); the intrabar ladder for trades opened before `t` (stop, then ROI,
+rank drop on a rebalance day, or a `custom_exit` raised at the previous close); the intrabar
+ladder for trades opened before `t` (stop, then ROI,
 then the trailing level for `t+1`, then max/min tracking); entries at Open[t] from yesterday's
 signals or ranks; delisting and final-bar force exits at Close[t]; mark to market at Close[t].
 
@@ -21,7 +22,17 @@ import pandas as pd
 
 from services.backtest import metrics as result_metrics
 from services.backtest.costs import apply_costs, fill_price
-from strategies.basket import ENTER, ENTER_TAG, EXIT, EXIT_TAG, SCORE, MarketContext, finalize_signals
+from strategies.basket import (
+    ENTER,
+    ENTER_TAG,
+    EXIT,
+    EXIT_TAG,
+    SCORE,
+    MarketContext,
+    TradeSnapshot,
+    finalize_signals,
+    overrides,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -281,6 +292,7 @@ class _Book:
         self.cash = float(config.init_cash)
         self.positions: dict[int, _Position] = {}
         self.trades: list[dict] = []
+        self.pending_exits: dict[int, str] = {}
 
     def kind(self, index: int) -> str:
         return self.kinds.get(self.symbols[index], "equity")
@@ -340,6 +352,7 @@ class _Book:
             }
         )
         del self.positions[position.index]
+        self.pending_exits.pop(position.index, None)
 
 
 def run_engine(
@@ -370,6 +383,8 @@ def run_engine(
     last_price = np.full(n_symbols, np.nan)
     rank_mode = strategy.mode == "rank"
     exit_rank = strategy.exit_rank if strategy.exit_rank is not None else strategy.top_k
+    wants_custom_exit = overrides(strategy_cls, "custom_exit")
+    wants_custom_stake = overrides(strategy_cls, "custom_stake_amount")
 
     for t in range(start_pos, n_bars):
         rebalance = rank_mode and is_rebalance_day(calendar, t, start_pos, strategy.rebalance_every)
@@ -382,6 +397,8 @@ def run_engine(
                 continue
             if strategy.use_exit_signal and t > 0 and sig.exit[i, t - 1]:
                 book.close(position, t, open_, "exit_signal", tag=sig.exit_tag[i, t - 1])
+            elif i in book.pending_exits:
+                book.close(position, t, open_, "custom_exit", tag=book.pending_exits[i])
             elif ranks_prev is not None and (ranks_prev[i] == 0 or ranks_prev[i] > exit_rank):
                 book.close(position, t, open_, "rank_drop")
 
@@ -398,9 +415,9 @@ def run_engine(
 
         if rank_mode:
             if ranks_prev is not None:
-                _rank_entries(book, sig, strategy, ranks_prev, t, last_price)
+                _rank_entries(book, sig, strategy, ranks_prev, t, last_price, wants_custom_stake)
         else:
-            _signal_entries(book, sig, strategy, t)
+            _signal_entries(book, sig, strategy, t, wants_custom_stake)
 
         for position in list(book.positions.values()):
             i = position.index
@@ -412,6 +429,8 @@ def run_engine(
 
         valid = ~np.isnan(sig.close[:, t])
         last_price[valid] = sig.close[valid, t]
+        if wants_custom_exit:
+            _collect_custom_exits(book, sig, strategy, ctx, t, last_price)
         held = sum(p.shares * last_price[p.index] for p in book.positions.values())
         k = t - start_pos
         cash[k] = book.cash
@@ -424,7 +443,46 @@ def run_engine(
     return _build_result(book, inputs, config, strategy, params, equity, cash, invested, open_count, start_pos)
 
 
-def _signal_entries(book: _Book, sig: _Signals, strategy, t: int) -> None:
+def _resize(strategy, symbol: str, proposed: float, free_cash: float, portfolio_value: float) -> float:
+    stake = strategy.custom_stake_amount(symbol, proposed, free_cash, portfolio_value)
+    if stake is None or not np.isfinite(stake):
+        return 0.0
+    return max(0.0, min(float(stake), free_cash))
+
+
+def _collect_custom_exits(book: _Book, sig: _Signals, strategy, ctx, t: int, last_price) -> None:
+    """Ask the strategy, at this bar's close, which open trades to exit at the next open.
+
+    A trade opened this morning is included: its close is known, so deciding to sell at tomorrow's
+    open is a decision the bar supports. `bars_held` is therefore 0 on the entry bar, and a hook
+    that wants a fill after N bars must ask one bar early.
+    """
+    for position in book.positions.values():
+        i = position.index
+        rate = sig.close[i, t]
+        if np.isnan(rate):
+            rate = last_price[i]
+        if np.isnan(rate):
+            continue
+        verdict = strategy.custom_exit(
+            TradeSnapshot(
+                symbol=position.symbol,
+                date=book.calendar[t],
+                bars_held=t - position.open_pos,
+                open_rate=position.open_rate,
+                current_rate=float(rate),
+                current_profit=float(rate) / position.open_rate - 1,
+                max_rate=position.max_rate,
+                min_rate=position.min_rate,
+                enter_tag=position.enter_tag,
+            ),
+            ctx,
+        )
+        if verdict:
+            book.pending_exits[i] = verdict if isinstance(verdict, str) else "custom"
+
+
+def _signal_entries(book: _Book, sig: _Signals, strategy, t: int, custom_stake: bool = False) -> None:
     free = strategy.max_open_trades - len(book.positions)
     if free <= 0 or t == 0:
         return
@@ -440,12 +498,18 @@ def _signal_entries(book: _Book, sig: _Signals, strategy, t: int) -> None:
         if free <= 0:
             break
         stake = book.config.stake_amount if book.config.stake_amount is not None else book.cash / free
+        if custom_stake:
+            stake = _resize(strategy, book.symbols[i], stake, book.cash, book.cash)
+        if stake <= 0:
+            continue
         if book.open(i, t, sig.open[i, t], stake, sig.enter_tag[i, t - 1], strategy.stoploss, sig.volume[i, t]):
             track_bar(book.positions[i], sig.high[i, t], sig.low[i, t], strategy)
             free -= 1
 
 
-def _rank_entries(book: _Book, sig: _Signals, strategy, ranks_prev: np.ndarray, t: int, last_price) -> None:
+def _rank_entries(
+    book: _Book, sig: _Signals, strategy, ranks_prev: np.ndarray, t: int, last_price, custom_stake: bool = False
+) -> None:
     top = [i for i in np.argsort(ranks_prev, kind="stable") if 0 < ranks_prev[i] <= strategy.top_k]
     if not top:
         return
@@ -459,6 +523,10 @@ def _rank_entries(book: _Book, sig: _Signals, strategy, ranks_prev: np.ndarray, 
         if i in book.positions or np.isnan(sig.open[i, t]) or sig.exit[i, t - 1]:
             continue
         stake = min(weights[i], book.cash)
+        if custom_stake:
+            stake = _resize(strategy, book.symbols[i], stake, book.cash, portfolio_value)
+        if stake <= 0:
+            continue
         if book.open(i, t, sig.open[i, t], stake, sig.enter_tag[i, t - 1], strategy.stoploss, sig.volume[i, t]):
             track_bar(book.positions[i], sig.high[i, t], sig.low[i, t], strategy)
 

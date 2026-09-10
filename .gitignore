@@ -14,3 +14,5 @@ logs/
 *.egg-info
 .env
 graphify-out/
+# user strategies are personal; the folder and its README are tracked
+user_data/strategies/*.py

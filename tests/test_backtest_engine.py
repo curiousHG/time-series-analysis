@@ -573,3 +573,107 @@ def test_truncating_future_bars_does_not_change_earlier_trades_or_equity():
     closed_full = result_full.trades[result_full.trades["close_date"] <= full.index[cut - 1]].reset_index(drop=True)
     closed_cut = result_cut.trades[result_cut.trades["exit_reason"] != "force_exit"].reset_index(drop=True)
     pd.testing.assert_frame_equal(closed_full, closed_cut)
+
+
+# ------------------------------------------------------- freqtrade-style hooks
+
+
+def test_custom_exit_closes_the_trade_at_the_next_open_with_its_own_reason():
+    class Timed(scripted(entries={"A": [0]})):
+        name = "Timed"
+
+        def custom_exit(self, trade, ctx):
+            return "timed_out" if trade.bars_held >= 2 else None
+
+    frames = {"A": _frame([100, 101, 102, 103, 104, 105])}
+    result = _run(frames, Timed)
+    trade = result.trades.iloc[0]
+    assert trade["exit_reason"] == "custom_exit"
+    assert trade["exit_tag"] == "timed_out"
+    assert trade["bars_held"] == 3
+    assert trade["open_rate"] == pytest.approx(101.0), "the signal on bar 0 fills at bar 1's open"
+    assert trade["close_rate"] == pytest.approx(104.0), "the hook fires at bar 3's close and fills at bar 4's open"
+
+
+def test_custom_exit_sees_the_trade_as_of_the_bar_being_priced():
+    seen = []
+
+    class Watcher(scripted(entries={"A": [0]})):
+        name = "Watcher"
+
+        def custom_exit(self, trade, ctx):
+            seen.append((trade.symbol, trade.bars_held, trade.current_rate, round(trade.current_profit, 4)))
+            return ""
+
+    _run({"A": _frame([100, 110, 120, 130], opens=[100, 100, 110, 120])}, Watcher)
+    assert seen[0] == ("A", 0, 110.0, 0.1), "on the entry bar the hook already sees that bar's close"
+    assert seen[1] == ("A", 1, 120.0, 0.2)
+
+
+def test_an_exit_decided_at_the_close_fills_before_the_next_bars_stop():
+    """The hook runs at a bar's close and the order rests at the next open, so it is filled before
+    that day's low can take out the stop. The exit signal path behaves the same way."""
+
+    class Both(scripted(entries={"A": [0]}, stoploss=-0.05)):
+        name = "Both"
+
+        def custom_exit(self, trade, ctx):
+            return "mine"
+
+    frames = {"A": _frame([100, 100, 100, 100], lows=[100, 100, 80, 80])}
+    result = _run(frames, Both)
+    trade = result.trades.iloc[0]
+    assert trade["exit_reason"] == "custom_exit"
+    assert trade["close_rate"] == pytest.approx(100.0)
+
+
+def test_the_stop_still_fires_on_a_bar_the_hook_left_alone():
+    class Patient(scripted(entries={"A": [0]}, stoploss=-0.05)):
+        name = "Patient"
+
+        def custom_exit(self, trade, ctx):
+            return False
+
+    frames = {"A": _frame([100, 100, 100, 100], lows=[100, 100, 80, 80])}
+    assert _run(frames, Patient).trades.iloc[0]["exit_reason"] == "stop_loss"
+
+
+def test_the_engine_skips_the_hooks_entirely_when_a_strategy_does_not_use_them():
+    result = _run({"A": _frame([100, 101, 102])}, scripted(entries={"A": [0]}))
+    assert set(result.trades["exit_reason"]) == {"force_exit"}
+
+
+def test_custom_stake_amount_resizes_the_entry():
+    class Small(scripted(entries={"A": [0]})):
+        name = "Small"
+
+        def custom_stake_amount(self, symbol, proposed_stake, free_cash, portfolio_value):
+            return proposed_stake * 0.1
+
+    frames = {"A": _frame([100, 101, 102])}
+    full_shares = _run(frames, scripted(entries={"A": [0]})).trades.iloc[0]["shares"]
+    trimmed_shares = _run(frames, Small).trades.iloc[0]["shares"]
+    assert 0 < trimmed_shares <= full_shares * 0.1
+    assert trimmed_shares == pytest.approx(full_shares * 0.1, abs=1)
+
+
+def test_a_zero_stake_from_the_hook_skips_the_trade():
+    class Refuses(scripted(entries={"A": [0]})):
+        name = "Refuses"
+
+        def custom_stake_amount(self, symbol, proposed_stake, free_cash, portfolio_value):
+            return 0.0
+
+    assert _run({"A": _frame([100, 101, 102])}, Refuses).trades.empty
+
+
+def test_the_hook_can_never_spend_more_cash_than_the_book_holds():
+    class Greedy(scripted(entries={"A": [0]})):
+        name = "Greedy"
+
+        def custom_stake_amount(self, symbol, proposed_stake, free_cash, portfolio_value):
+            return free_cash * 100
+
+    result = _run({"A": _frame([100, 101, 102])}, Greedy)
+    assert result.cash.min() >= 0
+    assert result.trades.iloc[0]["stake_amount"] <= 100_000.0

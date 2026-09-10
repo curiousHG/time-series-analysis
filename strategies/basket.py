@@ -56,6 +56,21 @@ class MarketContext:
     informative: dict[str, pd.DataFrame] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class TradeSnapshot:
+    """One open trade as `custom_exit` and `custom_stake_amount` see it, at the bar being priced."""
+
+    symbol: str
+    date: pd.Timestamp
+    bars_held: int
+    open_rate: float
+    current_rate: float
+    current_profit: float
+    max_rate: float
+    min_rate: float
+    enter_tag: str | None = None
+
+
 class BasketStrategy:
     name: ClassVar[str] = "Basket"
     mode: ClassVar[Mode] = "signal"
@@ -129,19 +144,55 @@ class BasketStrategy:
         return frames
 
     def populate_entry(self, df: pd.DataFrame, symbol: str, ctx: MarketContext) -> pd.DataFrame:
+        if overrides(type(self), "populate_entry_trend"):
+            return self.populate_entry_trend(df, {"pair": symbol, "ctx": ctx})
         df[ENTER] = False
         return df
 
     def populate_exit(self, df: pd.DataFrame, symbol: str, ctx: MarketContext) -> pd.DataFrame:
+        if overrides(type(self), "populate_exit_trend"):
+            return self.populate_exit_trend(df, {"pair": symbol, "ctx": ctx})
         df[EXIT] = False
         return df
+
+    def populate_entry_trend(self, dataframe: pd.DataFrame, metadata: dict) -> pd.DataFrame:
+        """freqtrade's name for `populate_entry`; override either one."""
+        dataframe[ENTER] = False
+        return dataframe
+
+    def populate_exit_trend(self, dataframe: pd.DataFrame, metadata: dict) -> pd.DataFrame:
+        """freqtrade's name for `populate_exit`; override either one."""
+        dataframe[EXIT] = False
+        return dataframe
 
     def populate_score(self, df: pd.DataFrame, symbol: str, ctx: MarketContext) -> pd.DataFrame:
         df[SCORE] = np.nan
         return df
 
+    def custom_exit(self, trade: TradeSnapshot, ctx: MarketContext) -> str | bool | None:
+        """Return an exit reason (or True) to close `trade` at the next open.
+
+        Called once per open trade at each bar's close, after that bar's stop and ROI ladder has
+        been evaluated, and the resulting order fills at the next bar's open. It therefore beats
+        the *next* bar's stop, the same way an exit signal does. The engine skips the call entirely
+        unless a subclass overrides it, and does not gate it behind `use_exit_signal`, so a
+        bars-held exit still fires with the signal exit switched off.
+        """
+        return None
+
+    def custom_stake_amount(
+        self, symbol: str, proposed_stake: float, free_cash: float, portfolio_value: float
+    ) -> float:
+        """Resize an entry before it is placed. Return 0 to skip the trade."""
+        return proposed_stake
+
     def diagnostics(self) -> Any | None:
         return None
+
+
+def overrides(cls: type, hook: str) -> bool:
+    """True when `cls` supplies its own `hook` rather than inheriting the no-op from the base."""
+    return getattr(cls, hook, None) is not getattr(BasketStrategy, hook, None)
 
 
 def finalize_signals(df: pd.DataFrame, *, mode: Mode) -> pd.DataFrame:

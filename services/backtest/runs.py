@@ -10,6 +10,7 @@ explicit list before creating the run, so later edits to the watchlist cannot ch
 
 from __future__ import annotations
 
+import inspect
 import logging
 import time
 from dataclasses import dataclass, field
@@ -22,7 +23,7 @@ from services.backtest.config import BacktestConfig
 from services.backtest.engine import run_engine
 from services.backtest.metrics import periodic_breakdown
 from services.backtest.universe import load_backtest_inputs
-from strategies.basket import BASKET_STRATEGY_REGISTRY
+from strategies.resolver import discover, new_strategy_file, resolve, user_strategy_dir
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -55,6 +56,9 @@ class StrategySpec:
     rebalance_every: int | str
     startup_candle_count: int
     is_ml: bool
+    origin: str = "builtin"
+    source: str = ""
+    doc: str = ""
 
 
 @dataclass
@@ -81,14 +85,28 @@ def task_key(run_id: int) -> str:
     return f"{TASK_PREFIX}{run_id}"
 
 
-def strategy_catalog() -> dict[str, StrategySpec]:
-    """Every registered basket strategy with the parameters and attributes the run form needs."""
+def strategy_catalog(*, refresh: bool = False) -> dict[str, StrategySpec]:
+    """Every discoverable basket strategy with the parameters and attributes the run form needs.
+
+    Built-ins come from the registry; user strategies are picked up from the strategy directory on
+    every call, so a file dropped in there shows up without restarting the app. A user file that
+    fails to import is reported by `strategy_load_errors`, not raised here.
+    """
     catalog: dict[str, StrategySpec] = {}
-    for name, cls in BASKET_STRATEGY_REGISTRY.items():
-        instance = cls()
+    for name, record in discover(refresh=refresh).strategies.items():
+        cls = record.cls
+        if cls is None:
+            continue
+        try:
+            instance = cls()
+        except Exception as exc:
+            logger.warning("strategy %s could not be instantiated: %s", name, exc)
+            continue
         catalog[name] = StrategySpec(
             name=name,
             mode=cls.mode,
+            origin=record.origin,
+            source=record.source,
             parameters=cls.parameter_space(),
             stoploss=instance.stoploss,
             trailing_stop=instance.trailing_stop,
@@ -99,14 +117,32 @@ def strategy_catalog() -> dict[str, StrategySpec]:
             rebalance_every=instance.rebalance_every,
             startup_candle_count=int(instance.startup_candle_count),
             is_ml=hasattr(instance, "wf_config"),
+            doc=inspect.getdoc(cls) or "",
         )
     return catalog
 
 
 def get_strategy(name: str) -> type:
-    if name not in BASKET_STRATEGY_REGISTRY:
-        raise KeyError(f"no basket strategy named {name!r}")
-    return BASKET_STRATEGY_REGISTRY[name]
+    return resolve(name)
+
+
+def strategy_load_errors() -> list[tuple[str, str]]:
+    """User strategy files that failed to import, as (file, traceback) pairs."""
+    return [(record.source, record.error or "") for record in discover().errors]
+
+
+def strategy_warnings() -> list[str]:
+    return list(discover().warnings)
+
+
+def strategy_directory() -> str:
+    """Where a dropped-in strategy file is picked up from."""
+    return str(user_strategy_dir())
+
+
+def create_strategy_file(class_name: str, *, display_name: str | None = None, mode: str = "signal") -> str:
+    """Scaffold a new strategy file in the strategy directory and return its path."""
+    return str(new_strategy_file(class_name, display_name=display_name, mode=mode))
 
 
 def create_run(config: BacktestConfig, name: str) -> int:
@@ -412,11 +448,15 @@ MAX_STORED_PREDICTIONS = 20_000
 
 
 def diagnostics_payload(diagnostics) -> dict | None:
-    """ML diagnostics in a JSON-safe shape. The prediction column is kept for the distribution
-    chart and capped, because a wide basket over ten years is far more detail than the chart
-    can show."""
+    """A strategy's diagnostics in a JSON-safe shape, dispatched on what the strategy produced.
+
+    The prediction column of an ML run is kept for the distribution chart and capped, because a
+    wide basket over ten years is far more detail than the chart can show.
+    """
     if diagnostics is None:
         return None
+    if hasattr(diagnostics, "matrix"):
+        return _transition_payload(diagnostics)
     predictions = diagnostics.predictions
     values: list[float] = []
     if len(predictions) and "pred" in predictions.columns:
@@ -433,10 +473,43 @@ def diagnostics_payload(diagnostics) -> dict | None:
     }
 
 
+TRANSITION_KIND = "transition_matrix"
+
+
+def _transition_payload(diagnostics) -> dict:
+    matrix = diagnostics.matrix
+    return {
+        "kind": TRANSITION_KIND,
+        "summary": _json_safe(diagnostics.summary),
+        "matrix": {"labels": [str(v) for v in matrix.index], "rows": matrix.to_numpy().tolist()},
+        "states": _records(diagnostics.states),
+        "coverage": {str(k): float(v) for k, v in diagnostics.coverage.items()},
+    }
+
+
+def _transition_from_payload(payload: dict):
+    from strategies.markov import TransitionDiagnostics  # noqa: PLC0415 — domain import, only for these runs
+
+    block = payload.get("matrix") or {"labels": [], "rows": []}
+    labels = pd.Index(block["labels"], name="from")
+    matrix = pd.DataFrame(block["rows"], index=labels, columns=pd.Index(block["labels"], name="to"))
+    coverage = pd.Series(payload.get("coverage") or {}, dtype=float)
+    if not coverage.empty:
+        coverage.index = pd.to_datetime(coverage.index)
+    return TransitionDiagnostics(
+        matrix=matrix,
+        states=pd.DataFrame(payload.get("states") or []),
+        summary=payload.get("summary") or {},
+        coverage=coverage,
+    )
+
+
 def diagnostics_from_payload(payload: dict | None):
     """Rebuild the frames the diagnostic charts read. Returns None when the run carried none."""
     if not payload:
         return None
+    if payload.get("kind") == TRANSITION_KIND:
+        return _transition_from_payload(payload)
     from strategies.ml.diagnostics import MLDiagnostics  # noqa: PLC0415 — domain import, only for ML runs
 
     windows = pd.DataFrame(payload.get("windows") or [])
