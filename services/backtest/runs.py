@@ -279,3 +279,124 @@ def _json_safe(metrics: dict) -> dict:
         else:
             out[key] = value
     return out
+
+
+OPT_TASK_PREFIX = "bt_opt_"
+
+
+@dataclass
+class OptimizationDetail:
+    optimization_id: int
+    run_id: int
+    status: str
+    objective: str
+    n_trials: int
+    best_params: dict
+    best_value: float | None
+    param_importance: dict[str, float]
+    trials: pd.DataFrame
+    is_end: Any | None = None
+    oos_start: Any | None = None
+    error: str | None = None
+
+
+def optimization_task_key(run_id: int) -> str:
+    return f"{OPT_TASK_PREFIX}{run_id}"
+
+
+def start_optimization(
+    run_id: int,
+    spec,
+    *,
+    progress_cb: Callable[..., None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> int:
+    """Search the base run's parameter space and persist every trial. Returns the optimisation id."""
+    from services.backtest.optimizer import optimize  # noqa: PLC0415 — pulls optuna in only when used
+
+    row = repo.get_backtest_run(run_id)
+    if row is None:
+        raise KeyError(run_id)
+    config = BacktestConfig.from_dict(row["config"])
+    optimization_id = repo.save_optimization(
+        run_id=run_id, objective=spec.objective, n_trials=spec.n_trials, spec=spec.to_dict()
+    )
+    try:
+        result = optimize(config, spec, progress_cb=progress_cb, should_stop=should_stop)
+    except Exception as exc:
+        logger.exception("optimisation for run %s failed", run_id)
+        repo.save_optimization_result(
+            optimization_id,
+            status="failed",
+            best_params=None,
+            best_value=None,
+            param_importance=None,
+            is_end=None,
+            oos_start=None,
+            trials=[],
+            error=str(exc),
+        )
+        raise
+    repo.save_optimization_result(
+        optimization_id,
+        status="done",
+        best_params=result.best_params,
+        best_value=result.best_value,
+        param_importance=result.param_importance,
+        is_end=result.is_end,
+        oos_start=result.oos_start,
+        trials=[t.as_row() for t in result.trials],
+    )
+    return optimization_id
+
+
+def load_optimization(optimization_id: int) -> OptimizationDetail | None:
+    row = repo.get_optimization(optimization_id)
+    if row is None:
+        return None
+    return OptimizationDetail(
+        optimization_id=optimization_id,
+        run_id=row["run_id"],
+        status=row["status"],
+        objective=row["objective"],
+        n_trials=row["n_trials"],
+        best_params=row.get("best_params") or {},
+        best_value=row.get("best_value"),
+        param_importance=row.get("param_importance") or {},
+        trials=trials_frame(repo.load_trials(optimization_id)),
+        is_end=row.get("is_end"),
+        oos_start=row.get("oos_start"),
+        error=row.get("error"),
+    )
+
+
+def latest_optimization(run_id: int) -> int | None:
+    rows = repo.load_optimizations(run_id)
+    return rows[0]["id"] if rows else None
+
+
+def trials_frame(trials: list[dict]) -> pd.DataFrame:
+    """One row per trial with the suggested parameters flattened into columns, which is what the
+    trials table and the parallel-coordinates chart read."""
+    if not trials:
+        return pd.DataFrame(columns=["number", "state", "value", "oos_value", "n_trades", "duration_s"])
+    rows = []
+    for trial in trials:
+        row = {
+            "number": trial["number"],
+            "state": trial["state"],
+            "value": trial["value"],
+            "oos_value": trial.get("oos_value"),
+            "n_trades": trial["n_trades"],
+            "duration_s": trial["duration_s"],
+            **(trial.get("params") or {}),
+            **{f"metric_{k}": v for k, v in (trial.get("is_metrics") or {}).items()},
+        }
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def param_columns(trials: pd.DataFrame) -> list[str]:
+    """The parameter columns in a trials frame, in declaration order."""
+    fixed = {"number", "state", "value", "oos_value", "n_trades", "duration_s"}
+    return [c for c in trials.columns if c not in fixed and not c.startswith("metric_")]
