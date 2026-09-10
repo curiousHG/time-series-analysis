@@ -7,7 +7,7 @@ import streamlit as st
 from ui.components.chrome import page_header
 from ui.components.notifications import render_toasts
 from ui.state.loaders import load_strategy_catalog_cached
-from ui.views.backtest_lab import compare_tab, optimise_tab, run_detail, runs_tab, state
+from ui.views.backtest_lab import compare_tab, optimise_tab, run_detail, runs_tab, state, strategies_tab
 
 SUBTITLE = "Basket backtests with real Zerodha costs, walk-forward ML and an Optuna optimiser"
 
@@ -19,6 +19,8 @@ def _dispatch(view: str) -> None:
         compare_tab.render()
     elif view == "Optimise":
         optimise_tab.render(load_strategy_catalog_cached())
+    elif view == "Strategies":
+        strategies_tab.render(load_strategy_catalog_cached())
     else:
         runs_tab.render(load_strategy_catalog_cached())
 

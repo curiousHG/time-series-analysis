@@ -283,12 +283,33 @@ def load_optimization_cached(optimization_id: int):
     return load_optimization(optimization_id)
 
 
-@st.cache_data(ttl=TTL_DAILY, show_spinner=False)
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
 def load_strategy_catalog_cached() -> dict:
-    """Registered basket strategies with their declared parameters — drives the run form."""
+    """Discoverable basket strategies with their declared parameters — drives the run form.
+
+    Cached briefly rather than daily: a strategy file dropped into the strategy directory should
+    appear without restarting the app, and the Strategies view can clear this outright."""
     from services.backtest.runs import strategy_catalog  # noqa: PLC0415 — pulls the engine in
 
     return strategy_catalog()
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_strategy_health_cached() -> dict:
+    """Strategy files that failed to import, name clashes, and where the directory lives."""
+    from services.backtest.runs import (  # noqa: PLC0415 — pulls the engine in
+        strategy_directory,
+        strategy_load_errors,
+        strategy_warnings,
+    )
+
+    return {"errors": strategy_load_errors(), "warnings": strategy_warnings(), "directory": strategy_directory()}
+
+
+def reload_strategies() -> None:
+    """Re-scan the strategy directory on the next read."""
+    load_strategy_catalog_cached.clear()
+    load_strategy_health_cached.clear()
 
 
 @st.cache_data(ttl=TTL_HOURLY, show_spinner=False)

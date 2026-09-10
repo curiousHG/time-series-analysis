@@ -17,6 +17,7 @@ from services.backtest.costs import PRESET_LABELS
 from ui.charts import backtest as charts
 from ui.charts import ml_diagnostics as ml_charts
 from ui.charts import theme
+from ui.charts import transition as transition_charts
 from ui.components.chrome import section_header
 from ui.components.metric_tiles import EM_DASH, Kpi, fmt_inr_compact, render_kpi_row
 from ui.components.monthly_returns import render_monthly_returns
@@ -227,9 +228,13 @@ def _render_chart_expander(detail: RunDetail) -> None:
         price_chart.render(frame.sort_values("Date"), {}, {}, [], f"bt_{symbol}", markers=trade_markers(subset))
 
 
-def _render_ml_expander(detail: RunDetail) -> None:
+def _render_diagnostics_expander(detail: RunDetail) -> None:
+    """Whatever the strategy reported about itself, in the shape that strategy produced."""
     diagnostics = detail.diagnostics
     if diagnostics is None:
+        return
+    if hasattr(diagnostics, "matrix"):
+        _render_transition_expander(detail, diagnostics)
         return
     with st.expander("ML diagnostics", icon=":material/network_intelligence:"):
         summary = getattr(diagnostics, "summary", {}) or {}
@@ -255,6 +260,83 @@ def _render_ml_expander(detail: RunDetail) -> None:
         if coverage is not None and len(coverage):
             section_header("Prediction coverage", "Share of the universe carrying a live prediction.")
             st.plotly_chart(ml_charts.coverage_area(coverage), use_container_width=True)
+
+
+def _render_transition_expander(detail: RunDetail, diagnostics) -> None:
+    with st.expander("Transition matrix", icon=":material/grid_on:"):
+        summary = dict(getattr(diagnostics, "summary", {}) or {})
+        render_kpi_row(
+            [
+                Kpi("Buckets", str(summary.get("buckets", EM_DASH))),
+                Kpi("Bucket width", _bucket_width(summary)),
+                Kpi("Transitions", f"{int(summary.get('transitions', 0)):,}"),
+                Kpi("Bars called", f"{int(summary.get('bars_called', 0)):,}"),
+                Kpi("Next-bar hit rate", _fraction_pct(summary.get("next_bar_hit_rate"))),
+                Kpi("Predicted next bar", _fraction_pct(summary.get("next_bar_mean_return"), signed=True)),
+            ]
+        )
+        render_kpi_row(
+            [
+                Kpi("Average bar, all names", _fraction_pct(summary.get("baseline_mean_return"), signed=True)),
+                Kpi("Lost to the overnight gap", _fraction_pct(summary.get("overnight_gap_mean"), signed=True)),
+                Kpi("Kept, open to open", _fraction_pct(summary.get("realisable_mean_return"), signed=True)),
+                Kpi("Edge over the average", _fraction_pct(summary.get("realisable_edge"), signed=True)),
+            ]
+        )
+        st.caption(
+            "These grade the forecast on every bar it called, whether or not a slot was free to "
+            "trade it. The matrix predicts a close-to-close move, but the engine fills at the next "
+            "open, so anything the market repriced overnight is gone before the trade exists. "
+            "Only the edge on the last tile has to clear the round trip, which is around 0.3% on "
+            "the Zerodha delivery preset with slippage."
+        )
+        matrix = getattr(diagnostics, "matrix", pd.DataFrame())
+        if not matrix.empty:
+            section_header("P(next bucket | current bucket)", "Centred on the uniform probability.")
+            st.plotly_chart(transition_charts.probability_heatmap(matrix), use_container_width=True)
+        states = getattr(diagnostics, "states", pd.DataFrame())
+        if not states.empty:
+            section_header("What follows each bucket", "Lift over the base rate, and the average next bar.")
+            left, right = st.columns(2)
+            with left:
+                st.plotly_chart(transition_charts.state_edge_bar(states), use_container_width=True)
+            with right:
+                st.plotly_chart(transition_charts.expected_return_bar(states), use_container_width=True)
+            st.dataframe(
+                states,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "bucket": st.column_config.TextColumn("Bucket"),
+                    "observations": st.column_config.NumberColumn("Observations", format="%d"),
+                    "p_up": st.column_config.NumberColumn("P(up)", format="percent"),
+                    "p_down": st.column_config.NumberColumn("P(down)", format="percent"),
+                    "lift_vs_base": st.column_config.NumberColumn("Lift", format="percent"),
+                    "mean_next_return": st.column_config.NumberColumn("Mean next", format="percent"),
+                },
+            )
+        coverage = getattr(diagnostics, "coverage", None)
+        if coverage is not None and len(coverage):
+            section_header("Forecast coverage", "Share of the basket with enough observations to trade.")
+            st.plotly_chart(ml_charts.coverage_area(coverage), use_container_width=True)
+
+
+def _bucket_width(summary: dict) -> str:
+    width = summary.get("bucket_width")
+    if width is None:
+        return EM_DASH
+    return f"{float(width):g}%" if summary.get("scale") == "percent" else f"{float(width):g} sigma"
+
+
+def _fraction_pct(value, *, signed: bool = False) -> str:
+    """Format a fraction (0.53) as a percentage, unlike `_pct` which takes percent units already."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return EM_DASH
+    if number != number:
+        return EM_DASH
+    return f"{number:+.2%}" if signed else f"{number:.1%}"
 
 
 def _render_reference_expanders(detail: RunDetail) -> None:
@@ -301,5 +383,5 @@ def render() -> None:
     render_monthly_returns(detail.equity.pct_change().dropna())
     _render_trade_log(detail)
     _render_chart_expander(detail)
-    _render_ml_expander(detail)
+    _render_diagnostics_expander(detail)
     _render_reference_expanders(detail)

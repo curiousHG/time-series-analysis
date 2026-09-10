@@ -12,7 +12,7 @@ import streamlit as st
 from ui.constants import BACKTEST_SELECTION_KEY
 from ui.persistence.selections import load_selection, save_selection
 
-VIEWS = ("Runs", "Detail", "Compare", "Optimise")
+VIEWS = ("Runs", "Detail", "Compare", "Optimise", "Strategies")
 VIEW_KEY = "bt_view"
 VIEW_PENDING = "bt_view_pending"
 RUN_KEY = "bt_selected_run"
