@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from core.constants import TRADING_DAYS
-from services.constants import BACKTEST_RISK_FREE
+from services.constants import BACKTEST_RF_DAILY
 
 if TYPE_CHECKING:
     from services.backtest.engine import BacktestResult
@@ -31,7 +31,6 @@ OBJECTIVE_LABELS = {
     "total_return_dd": "Return minus drawdown",
 }
 DEFAULT_MIN_TRADES = 20
-RF_DAILY = BACKTEST_RISK_FREE / TRADING_DAYS
 
 
 def daily_returns(equity: pd.Series) -> pd.Series:
@@ -42,7 +41,7 @@ def daily_returns(equity: pd.Series) -> pd.Series:
 
 def sharpe(result: BacktestResult) -> float:
     returns = daily_returns(result.equity)
-    excess = returns - RF_DAILY
+    excess = returns - BACKTEST_RF_DAILY
     sd = float(excess.std())
     if not returns.size or sd <= 0:
         return 0.0
@@ -51,7 +50,7 @@ def sharpe(result: BacktestResult) -> float:
 
 def sortino(result: BacktestResult) -> float:
     returns = daily_returns(result.equity)
-    excess = returns - RF_DAILY
+    excess = returns - BACKTEST_RF_DAILY
     downside = excess[excess < 0]
     sd = float(downside.std())
     if not returns.size or sd <= 0:

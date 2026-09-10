@@ -14,8 +14,9 @@ SourceStatus = Literal["available", "pending", "unavailable"]
 FreshnessStatus = Literal["fresh", "stale", "missing"]
 FetchOutcome = Literal["updated", "skipped", "failed"]
 
-# Annual risk-free rate used by the strategy backtest (Indian markets).
+# Annual risk-free rate used by the strategy backtest (Indian markets), and its daily form.
 BACKTEST_RISK_FREE = 0.065
+BACKTEST_RF_DAILY = BACKTEST_RISK_FREE / TRADING_DAYS
 
 # NAV-derived MF risk/return metrics (services.mf_metrics).
 RISK_FREE_ANNUAL = 0.06
