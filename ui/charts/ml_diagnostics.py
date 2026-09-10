@@ -3,12 +3,17 @@ metrics, prediction distribution and coverage."""
 
 from __future__ import annotations
 
-import pandas as pd
+from typing import TYPE_CHECKING
+
 import plotly.graph_objects as go
 
 from ui.charts import theme
+
+if TYPE_CHECKING:
+    import pandas as pd
 from ui.charts.theme import with_alpha
 
+NO_SKILL_BASELINE = {"auc": 0.5, "hit_rate": 0.5}
 _MARGIN = {"l": 48, "r": 16, "t": 16, "b": 36}
 
 
@@ -39,17 +44,25 @@ def feature_importance_bar(importance: pd.DataFrame, *, top_n: int = 20, height:
 
 
 def window_metrics_bar(windows: pd.DataFrame, metric: str, *, height: int = 280) -> go.Figure:
-    """One bar per walk-forward window (x = test_start) for `metric`, signed colours and a zero line."""
-    values = windows[metric]
+    """One bar per walk-forward window. Rank metrics are drawn against the level that means no
+    skill (0.5 for AUC and hit rate), so a bar only shows above the line when the window beat a
+    coin toss."""
+    baseline = NO_SKILL_BASELINE.get(metric, 0.0)
+    frame = windows.dropna(subset=[metric])
+    values = frame[metric].astype(float)
+    x = frame["test_start"] if "test_start" in frame.columns else frame.index
     fig = go.Figure(
         go.Bar(
-            x=pd.to_datetime(windows["test_start"]),
-            y=values,
-            marker={"color": [theme.POSITIVE if v >= 0 else theme.NEGATIVE for v in values]},
-            hovertemplate="Window from %{x|%d %b %Y}<br>" + metric + " %{y:.3f}<extra></extra>",
+            x=x,
+            y=values - baseline,
+            base=baseline,
+            marker={"color": [theme.POSITIVE if v >= baseline else theme.NEGATIVE for v in values]},
+            hovertemplate="%{x|%b %Y}<br>" + metric + " %{y:.3f}<extra></extra>",
+            customdata=values,
         )
     )
-    fig.add_hline(y=0, line={"color": theme.NEUTRAL, "width": 1})
+    fig.update_traces(hovertemplate="%{x|%b %Y}<br>" + metric + " %{customdata:.3f}<extra></extra>")
+    fig.add_hline(y=baseline, line={"color": theme.NEUTRAL, "width": 1, "dash": "dot"})
     fig.update_layout(
         height=height,
         margin=_MARGIN,

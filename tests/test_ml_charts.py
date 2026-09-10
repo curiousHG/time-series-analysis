@@ -5,8 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import pytest
 
 from ui.charts import ml_diagnostics as mlc
+from ui.charts import theme
 
 
 def _importance(n: int = 30) -> pd.DataFrame:
@@ -51,3 +53,19 @@ def test_coverage_area():
     assert len(fig.data) == 1
     assert fig.data[0].fill == "tozeroy"
     assert fig.layout.yaxis.range == (0, 1)
+
+
+def test_rank_metrics_are_drawn_against_the_no_skill_line():
+    """AUC of 0.5 is a coin toss, so the bars must sit on a 0.5 base rather than growing from
+    zero, which would make a skill-free model look uniformly good."""
+    windows = pd.DataFrame(
+        {"test_start": pd.to_datetime(["2024-01-01", "2024-04-01"]), "auc": [0.45, 0.60], "ic": [-0.1, 0.2]}
+    )
+    auc_fig = mlc.window_metrics_bar(windows, "auc")
+    bar = auc_fig.data[0]
+    assert bar.base == 0.5
+    assert list(bar.y) == pytest.approx([-0.05, 0.10])
+    assert list(bar.marker.color) == [theme.NEGATIVE, theme.POSITIVE]
+
+    ic_fig = mlc.window_metrics_bar(windows, "ic")
+    assert ic_fig.data[0].base == 0.0
