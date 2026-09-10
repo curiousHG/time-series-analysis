@@ -45,7 +45,8 @@ uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi
 4. **MF Screener** — AMFI universe filters, risk/return metrics, bulk fetch for tracked funds
 5. **Stock Analysis** — TradingView candlestick charts, 37 TA-Lib indicators, Fundamentals (momentum + screener.in percentiles + quarterly trend), strategy backtesting
 6. **Stock Screener** — screener.in fundamentals + CAPM alpha/beta categorisation, AgGrid table
-7. **Settings** — AMFI sync, tradebook CSV upload, NAV/holdings refresh, metrics cache, DB stats
+7. **Backtest Lab** — multi-stock basket backtesting: run grid, per-run visualizer, comparison, Optuna optimiser
+8. **Settings** — data inputs and freshness, maintenance jobs, source/schema reference
 
 ### Layer Structure
 
@@ -62,6 +63,8 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
            stock_analysis/page.py      # Stock page entry point
            stock_analysis/             # Stock chart + fundamentals + strategy backtest
            stock_screener/             # screener.in fundamentals + alpha/beta screener
+           backtest_lab/page.py        # Backtest Lab entry point (Runs / Detail / Compare / Optimise)
+           backtest_lab/               # run grid, run form, detail visualizer, compare, optimise
            settings/page.py            # Data/source/settings page entry point
            settings/                   # AMFI, tradebook, refresh, metrics cache, DB stats
          ui/components/                # Reusable sidebar widgets
@@ -70,7 +73,15 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
          ui/persistence/selections.py  # File-based state (data/user/selections.json)
               ↓
          services/                     # Business logic layer (no Streamlit imports)
-           backtest_service.py         # run_backtest(), compute_metrics()
+           backtest_service.py         # single-stock vectorbt backtest (Stock Analysis preview)
+           backtest/                   # Backtest Lab: basket engine, costs, universe, runs, optimiser
+             engine.py                 # daily (symbols x bars) loop, next-open fills, exit ladder
+             costs.py                  # Zerodha delivery/intraday presets, per-order charges
+             universe.py               # resolve_universe(), load_backtest_inputs()
+             metrics.py                # summarize_result(), per-symbol / per-exit-reason splits
+             runs.py                   # run lifecycle + optimisation persistence
+             objectives.py             # equity-curve objectives for the optimiser
+             optimizer.py              # Optuna search over declared parameters
            portfolio_service.py        # get_mapped_data(), build_portfolio_value_series()
            registry_service.py         # tracked-fund registry + source statuses
            sync_service.py             # safe data refresh orchestration
@@ -88,8 +99,12 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
            overlays.py                 # 15 overlay indicators (SMA, EMA, BB, SAR, etc.)
            panels.py                   # 22 panel indicators (RSI, MACD, ATR, etc.)
          strategies/                   # Trading strategy framework
-           base.py                     # Strategy ABC (indicators, signals, stoploss)
+           base.py                     # single-stock Strategy (Close-only, Stock Analysis)
            rsi.py, macd.py, bollinger.py, sma_crossover.py
+           parameters.py               # Int/Decimal/Categorical/Bool parameter descriptors
+           basket.py                   # BasketStrategy contract + registry (signal / rank modes)
+           basket_examples.py          # RSI Basket, Momentum Rank
+           ml/                          # features, labels, predictors, walk-forward, ML strategies
          mutual_funds/                 # MF domain logic
            analytics.py, tradebook.py, holdings.py, table_schema.py
               ↓
@@ -130,6 +145,10 @@ All data is stored in PostgreSQL via SQLModel ORM. Models in `core/models/`:
 | `index_ohlcv` | Index/FX OHLCV (NSE bhavcopy names + `^` for foreign indices) | (date, symbol) |
 | `index_registry` | Index registry + backfill floor | symbol |
 | `mf_tradebook` | Kite/Zerodha trades (deduped by trade_id) | trade_id |
+| `backtest_run` | Backtest Lab runs: config, status, summary, equity curve | id |
+| `backtest_trade` | Trades of a run (cascade on delete) | id, run_id FK |
+| `backtest_optimization` | Optuna searches over a run's parameters | id, run_id FK |
+| `backtest_trial` | One row per trial with params, value and OOS value | id, optimization_id FK |
 
 Legacy tables `stock_ohlcv_status`, `scheme_code_map`, `bots`, `orders`, `trades` were dropped
 (unused/superseded — status now lives in `stock_registry.ohlcv_*` columns).
@@ -194,7 +213,9 @@ Project is installed in editable mode (`uv pip install -e .`). All packages have
 | `psycopg2-binary` | PostgreSQL driver |
 | `ta-lib` | 37 technical indicators (C-based) |
 | `quantstats` | Portfolio risk metrics (Sharpe, Sortino, CAGR, etc.) |
-| `vectorbt` | Strategy backtesting |
+| `vectorbt` | Single-stock strategy backtesting (Stock Analysis) |
+| `scikit-learn` / `lightgbm` | ML basket strategies (walk-forward models) |
+| `optuna` | Parameter search in the Backtest Lab |
 | `yfinance` | Stock data |
 | `jugaad-data` | NSE Indian stock data |
 | `httpx` | HTTP client (API calls) |
