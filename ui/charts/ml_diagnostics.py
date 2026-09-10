@@ -13,11 +13,14 @@ _MARGIN = {"l": 48, "r": 16, "t": 16, "b": 36}
 
 
 def feature_importance_bar(importance: pd.DataFrame, *, top_n: int = 20, height: int = 420) -> go.Figure:
-    """Mean importance across walk-forward windows (top `top_n` features) with the std as error bars."""
-    top = importance.sort_values("mean", ascending=False).head(top_n).iloc[::-1]
+    """Mean importance across walk-forward windows (top `top_n` features) with the std as error bars.
+
+    Reads the frame `strategies.ml.diagnostics` builds: index of feature names, an `importance`
+    column holding the across-window mean and a `std` column."""
+    top = importance.sort_values("importance", ascending=False).head(top_n).iloc[::-1]
     fig = go.Figure(
         go.Bar(
-            x=top["mean"],
+            x=top["importance"],
             y=top.index.astype(str),
             orientation="h",
             marker={"color": theme.ACCENT},

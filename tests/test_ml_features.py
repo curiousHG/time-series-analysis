@@ -91,3 +91,22 @@ def test_rolling_zscore_hand_check():
     assert z.iloc[:2].isna().all()
     assert z.iloc[2] == pytest.approx(1.0)
     assert z.iloc[4] == pytest.approx((10 - 17 / 3) / np.std([3, 4, 10], ddof=1))
+
+
+def test_features_survive_non_trading_gaps_on_a_shared_calendar():
+    """A frame reindexed onto a basket calendar has NaN rows where the symbol did not trade.
+    TA-Lib returns NaN for every bar after such a gap, so features are computed on traded bars
+    only and reindexed back."""
+    frame = synthetic_ohlcv(400)
+    calendar = frame.index.union(pd.DatetimeIndex(["2020-02-01", "2020-06-06"]))
+    gapped = frame.reindex(calendar)
+    assert gapped["Close"].isna().sum() == 2
+
+    names = feature_names("core")
+    built = build_features(gapped, names)
+
+    assert built.loc[gapped["Close"].isna()].isna().all().all()
+    traded_tail = built.loc[gapped["Close"].notna()].tail(100)
+    assert traded_tail.notna().all().all()
+    direct = build_features(frame, names)
+    pd.testing.assert_frame_equal(built.loc[frame.index], direct, check_freq=False)

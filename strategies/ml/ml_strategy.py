@@ -117,7 +117,7 @@ class MLStrategy(BasketStrategy):
         for sym, df in frames.items():
             df[PRED_COL] = result.predictions[sym]
             df[DO_PREDICT_COL] = result.do_predict[sym].astype(int)
-        self._diagnostics = build_diagnostics(result, frames, self.label_col)
+        self._diagnostics = build_diagnostics(result, frames, self.label_col, self.kind)
         return frames
 
     def diagnostics(self) -> MLDiagnostics | None:

@@ -87,14 +87,19 @@ def _predictions_frame(result: WalkForwardResult, frames: dict[str, pd.DataFrame
     return pd.concat(parts, ignore_index=True)
 
 
-def build_diagnostics(result: WalkForwardResult, frames: dict[str, pd.DataFrame], label_col: str) -> MLDiagnostics:
+def build_diagnostics(
+    result: WalkForwardResult, frames: dict[str, pd.DataFrame], label_col: str, kind: str | None = None
+) -> MLDiagnostics:
+    """`kind` comes from the strategy's label; without it the window metrics decide, which is
+    ambiguous when no window trained or a classifier window could not compute AUC."""
     windows = _windows_frame(result)
     coverage = pd.Series(
         {sym: float(flags.mean()) if len(flags) else 0.0 for sym, flags in result.do_predict.items()},
         name="coverage",
         dtype=float,
     )
-    kind = "classifier" if any("auc" in r.metrics for r in result.windows) else "regressor"
+    if kind is None:
+        kind = "classifier" if any("auc" in r.metrics for r in result.windows) else "regressor"
     summary: dict = {
         "kind": kind,
         "n_windows": len(result.windows),

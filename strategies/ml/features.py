@@ -78,14 +78,24 @@ def rolling_zscore(s: pd.Series, window: int) -> pd.Series:
 
 
 def build_features(df: pd.DataFrame, names: list[str] | tuple[str, ...]) -> pd.DataFrame:
+    """Feature columns for one symbol, indexed like `df`.
+
+    Indicators are computed on the symbol's traded bars only. A frame reindexed onto a shared
+    basket calendar carries NaN rows wherever this symbol did not trade, and TA-Lib returns NaN
+    for every bar after the first such gap, which would silently empty the feature matrix. The
+    result is reindexed back, so non-trading rows stay NaN and the walk-forward skips them.
+    """
     specs = [FEATURE_REGISTRY[name] for name in names]
     needed = list(dict.fromkeys(ind for spec in specs for ind in spec.indicators))
-    overlays, panels = compute_indicators(df, needed)
+    traded = df[df["Close"].notna()]
+    if traded.empty:
+        return pd.DataFrame(np.nan, index=df.index, columns=[spec.name for spec in specs])
+    overlays, panels = compute_indicators(traded, needed)
     ind = {**overlays, **panels}
-    out = pd.DataFrame(index=df.index)
+    out = pd.DataFrame(index=traded.index)
     for spec in specs:
-        out[spec.name] = spec.fn(df, ind).astype(float)
-    return out
+        out[spec.name] = spec.fn(traded, ind).astype(float)
+    return out.reindex(df.index)
 
 
 def _log_returns(df: pd.DataFrame, periods: int) -> pd.Series:

@@ -12,7 +12,7 @@ from ui.charts import ml_diagnostics as mlc
 def _importance(n: int = 30) -> pd.DataFrame:
     rng = np.random.default_rng(0)
     windows = pd.DataFrame(rng.random((n, 3)), index=[f"f{i}" for i in range(n)], columns=["w0", "w1", "w2"])
-    windows["mean"] = windows[["w0", "w1", "w2"]].mean(axis=1)
+    windows["importance"] = windows[["w0", "w1", "w2"]].mean(axis=1)
     windows["std"] = windows[["w0", "w1", "w2"]].std(axis=1)
     return windows
 
