@@ -91,3 +91,31 @@ def test_get_mapped_data_loads_nav_by_the_trades_codes(monkeypatch):
     assert nav_df["scheme_code"].to_list() == [127042]
     assert nav_df["schemeName"].to_list() == ["Motilal Oswal Midcap Fund - Growth (127042)"]
     assert nav_df["nav"].to_list() == [120.2]
+
+
+def test_fetch_single_nav_skips_mfapi_for_a_synthetic_code(monkeypatch):
+    """Synthetic-negative codes are minted locally for names AMFI does not list; MFAPI can never
+    serve them, so the only source is AdvisorKhoj by name."""
+    from data.repositories import nav
+
+    mfapi_asked: list[str] = []
+
+    def fake_mfapi(code, name):
+        mfapi_asked.append(code)
+        raise ValueError(f"No NAV data from MFAPI for scheme code {code}")
+
+    asked: list[str] = []
+
+    def fake_advisorkhoj(name):
+        asked.append(name)
+        return {"scheme": name, "launch_date": "01-01-2020", "nav_data": []}
+
+    monkeypatch.setattr(nav, "fetch_nav_from_mfapi", fake_mfapi)
+    monkeypatch.setattr(nav, "fetch_nav_from_advisorkhoj", fake_advisorkhoj)
+    monkeypatch.setattr(nav, "nav_json_to_df", lambda data, name: _frame(name, 10.0))
+
+    df = nav.fetch_single_nav("Altiva Hybrid Long-Short Fund - Regular Plan - Growth", scheme_code=-8)
+
+    assert mfapi_asked == []
+    assert asked == ["Altiva Hybrid Long-Short Fund - Regular Plan - Growth"]
+    assert df["scheme_code"].to_list() == [-8]

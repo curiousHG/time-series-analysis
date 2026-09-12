@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from data.exceptions import SourceNotFound
@@ -139,7 +140,22 @@ def test_portfolio_post_raises_not_found_on_html_answer():
         patch.object(mf.httpx, "post", return_value=_Resp(text="<html>homepage</html>")),
         pytest.raises(SourceNotFound),
     ):
-        mf.fetch_portfolio_by_slug("no-such-fund-direct-plan-growth-option")
+        mf.fetch_portfolio("No Such Fund - Direct Plan - Growth Option")
+
+
+def test_portfolio_post_form_encodes_the_scheme_name():
+    """AdvisorKhoj keys the portfolio endpoint by scheme name; an '&' sent raw splits the field."""
+    captured: dict = {}
+
+    def fake_post(url, **kwargs):
+        captured.update(url=url, **kwargs)
+        return _Resp(json_value=_payload("103819", "DSP Large & Mid Cap Fund"))
+
+    with patch.object(mf.httpx, "post", side_effect=fake_post):
+        mf.fetch_portfolio("DSP Large & Mid Cap Fund - Regular Plan - Growth")
+
+    body = httpx.Request("POST", captured["url"], data=captured["data"]).content
+    assert body == b"scheme_amfi=DSP+Large+%26+Mid+Cap+Fund+-+Regular+Plan+-+Growth"
 
 
 # ---- resolver verification ---------------------------------------------------------------
@@ -186,24 +202,24 @@ def test_resolver_rejects_a_different_fund_and_keeps_trying(monkeypatch):
 
     calls: list[str] = []
 
-    def fake_post(slug):
-        calls.append(slug)
-        if slug == "alpha-fund-direct-plan-growth":
+    def fake_post(key):
+        calls.append(key)
+        if key == "Alpha Fund - Direct Plan - Growth":
             return _payload("999", "Beta Fund")  # AdvisorKhoj fuzzy-matched onto another fund
-        if slug == "alpha-fund-direct-growth":
+        if key == "Alpha Fund - Direct - Growth":
             return _payload("1", "Alpha Fund")
-        raise SourceNotFound("AdvisorKhoj portfolio", slug)
+        raise SourceNotFound("AdvisorKhoj portfolio", key)
 
     stored: list[tuple[int, str]] = []
     monkeypatch.setattr(repo, "get_session", lambda: _Session())
-    monkeypatch.setattr(repo, "fetch_portfolio_by_slug", fake_post)
-    monkeypatch.setattr(repo, "_store_advisorkhoj_slug", lambda code, slug: stored.append((code, slug)))
+    monkeypatch.setattr(repo, "fetch_portfolio", fake_post)
+    monkeypatch.setattr(repo, "_store_advisorkhoj_slug", lambda code, key: stored.append((code, key)))
 
-    slug, resp = repo.resolve_and_fetch_portfolio(1)
+    key, resp = repo.resolve_and_fetch_portfolio(1)
 
-    assert slug == "alpha-fund-direct-growth"
-    assert calls[:2] == ["alpha-fund-direct-plan-growth", "alpha-fund-direct-growth"]
-    assert stored == [(1, "alpha-fund-direct-growth")]
+    assert key == "Alpha Fund - Direct - Growth"
+    assert calls[:2] == ["Alpha Fund - Direct Plan - Growth", "Alpha Fund - Direct - Growth"]
+    assert stored == [(1, "Alpha Fund - Direct - Growth")]
     assert resp["schemePortfolioAnalysisResponse"]["schemePortfolioList"][0]["scheme_code"] == "1"
 
 
@@ -224,9 +240,101 @@ def test_resolver_raises_when_nothing_verifies(monkeypatch):
             return _Scheme() if model is repo.AmfiScheme and key == 2 else None
 
     monkeypatch.setattr(repo, "get_session", lambda: _Session())
-    monkeypatch.setattr(repo, "fetch_portfolio_by_slug", lambda slug: _payload("777", "Delta Fund"))
+    monkeypatch.setattr(repo, "fetch_portfolio", lambda key: _payload("777", "Delta Fund"))
     with pytest.raises(SourceNotFound):
         repo.resolve_and_fetch_portfolio(2)
+
+
+def _session_for(scheme_code: int, scheme, stored_key: str | None = None, source_url: str | None = None):
+    from data.repositories import holdings as repo
+
+    class _Reg:
+        advisorkhoj_slug = stored_key
+
+    class _Meta:
+        pass
+
+    _Meta.source_url = source_url
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, model, key):
+            if key != scheme_code:
+                return None
+            if model is repo.AmfiScheme:
+                return scheme
+            if model is repo.MfRegistry:
+                return _Reg()
+            if model is repo.MfMetadata:
+                return _Meta() if source_url else None
+            return None
+
+    return _Session
+
+
+def test_resolver_posts_scheme_names_not_slugs(monkeypatch):
+    """AdvisorKhoj's portfolio endpoint is keyed by the scheme name — its own page posts the
+    name verbatim. Slugifying 'U.S.' or '&' produces a key it cannot map back."""
+    from data.repositories import holdings as repo
+
+    class _Scheme:
+        scheme_name = "Franklin U. S. Opportunities Equity Active Fund of Funds - Direct Plan - Growth"
+        plan, option = "Direct Plan", "Growth"
+
+    known = "Franklin U.S. Opportunities Equity Active Fund of Funds - Direct - Growth"
+    source_url = "https://www.advisorkhoj.com/mutual-funds-research/" + known.replace(" ", "%20")
+    calls: list[str] = []
+
+    def fake_post(key):
+        calls.append(key)
+        if key == known:
+            return _payload("118551", "Franklin U.S. Opportunities Equity Active Fund of Funds")
+        raise SourceNotFound("AdvisorKhoj portfolio", key)
+
+    stored: list[tuple[int, str]] = []
+    monkeypatch.setattr(repo, "get_session", lambda: _session_for(118551, _Scheme(), source_url=source_url)())
+    monkeypatch.setattr(repo, "fetch_portfolio", fake_post)
+    monkeypatch.setattr(repo, "_store_advisorkhoj_slug", lambda code, key: stored.append((code, key)))
+
+    key, _ = repo.resolve_and_fetch_portfolio(118551)
+
+    assert key == known
+    assert calls == [known]
+    assert stored == [(118551, known)]
+
+
+def test_resolver_tries_the_stored_key_first(monkeypatch):
+    """Keys verified before AdvisorKhoj's name-keying was understood are slugs; they still
+    resolve and must not be re-derived."""
+    from data.repositories import holdings as repo
+
+    class _Scheme:
+        scheme_name, plan, option = "Franklin India ELSS Tax Saver Fund - Direct Plan - Growth", "Direct Plan", "Growth"
+
+    stored_key = "franklin-india-elss-tax-saver-fund-direct-growth"
+    calls: list[str] = []
+
+    def fake_post(key):
+        calls.append(key)
+        if key == stored_key:
+            return _payload("118541", "Franklin India ELSS Tax Saver Fund")
+        raise SourceNotFound("AdvisorKhoj portfolio", key)
+
+    stored: list[tuple[int, str]] = []
+    monkeypatch.setattr(repo, "get_session", lambda: _session_for(118541, _Scheme(), stored_key=stored_key)())
+    monkeypatch.setattr(repo, "fetch_portfolio", fake_post)
+    monkeypatch.setattr(repo, "_store_advisorkhoj_slug", lambda code, key: stored.append((code, key)))
+
+    key, _ = repo.resolve_and_fetch_portfolio(118541)
+
+    assert key == stored_key
+    assert calls == [stored_key]
+    assert stored == []
 
 
 # ---- metadata source tiers ---------------------------------------------------------------
@@ -298,3 +406,13 @@ def test_metadata_raises_when_every_tier_misses(monkeypatch):
     monkeypatch.setattr(repo, "find_direct_sibling", lambda code: None)
     with pytest.raises(SourceNotFound):
         repo.fetch_and_save("Orphan Fund - Regular Plan - Growth")
+
+
+def test_launch_date_miss_names_the_fund_not_the_html():
+    """AdvisorKhoj serves an empty shell page for some names it knows but has no data on;
+    the error must carry the scheme name, not the first 80 bytes of markup."""
+    shell = "<html><table class='sch_over_table'><tr><td><b>Launch Date:</b> </td></tr></table></html>"
+    with pytest.raises(SourceNotFound) as exc:
+        mf.extract_launch_date(shell, "Axis US Specific Equity Passive FOF - Regular Plan - Growth")
+    assert exc.value.key == "Axis US Specific Equity Passive FOF - Regular Plan - Growth"
+    assert "<html" not in str(exc.value)

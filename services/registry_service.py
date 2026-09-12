@@ -193,6 +193,12 @@ def _fetch_metadata(scheme_name: str) -> SourceStatus:
 # ---- Public API ----
 
 
+def mark_nav_unavailable(scheme_name: str) -> None:
+    """Record that no source knows this fund's NAV. The routine refresh leaves 'unavailable'
+    funds alone; the Settings retry picker is the way back."""
+    _set_status(scheme_name, nav_status="unavailable")
+
+
 def retry_unavailable(scheme_name: str) -> dict[str, SourceStatus]:
     """Retry only the sources currently marked 'unavailable' for a fund."""
     code = _resolve_scheme_code(scheme_name)

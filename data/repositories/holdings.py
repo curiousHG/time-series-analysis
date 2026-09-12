@@ -19,7 +19,7 @@ from core.database import get_session
 from core.models import AmfiScheme, MfAssetAllocation, MfHolding, MfMetadata, MfRegistry, MfSectorAllocation
 from data.constants import HOLDINGS_FIELD_MAP
 from data.exceptions import SourceNotFound
-from data.fetchers.mutual_fund import fetch_portfolio_by_slug
+from data.fetchers.mutual_fund import fetch_portfolio
 from mutual_funds.advisorkhoj import base_name, name_candidates, same_fund
 from mutual_funds.display import make_slug
 from mutual_funds.holdings import (
@@ -371,13 +371,14 @@ def _store_advisorkhoj_slug(scheme_code: int, slug: str) -> None:
 
 
 def resolve_and_fetch_portfolio(scheme_code: int) -> tuple[str, dict]:
-    """Find the AdvisorKhoj slug for a scheme and return (slug, portfolio payload).
+    """Find the AdvisorKhoj key for a scheme and return (key, portfolio payload).
 
-    Tries, in order: the slug stored from an earlier success, the spelling an earlier
-    metadata scrape used, then the generated candidates from `name_candidates`. A hit counts
-    only if the returned rows belong to the same fund; the winning slug is persisted on
-    `mf_registry` so later refreshes are one request. Raises `SourceNotFound` when nothing
-    verifies.
+    Tries, in order: the key stored from an earlier success, the spelling an earlier metadata
+    scrape used, then the generated candidates from `name_candidates` — posted as scheme
+    *names*, which is what AdvisorKhoj keys the endpoint by. A hit counts only if the
+    returned rows belong to the same fund; the winning key is persisted on
+    `mf_registry.advisorkhoj_slug` (a name now; older rows hold the slugs that happened to
+    work) so later refreshes are one request. Raises `SourceNotFound` when nothing verifies.
     """
     with get_session() as session:
         scheme = session.get(AmfiScheme, scheme_code)
@@ -390,28 +391,28 @@ def resolve_and_fetch_portfolio(scheme_code: int) -> tuple[str, dict]:
         name, plan, option = scheme.scheme_name, scheme.plan, scheme.option
 
     our_base = base_name(name, plan, option)
-    slugs = [stored] if stored else []
-    slugs += [make_slug(n) for n in name_candidates(our_base, plan, option, known=[old_name] if old_name else None)]
+    keys = [stored] if stored else []
+    keys += name_candidates(our_base, plan, option, known=[old_name] if old_name else None)
 
     tried: set[str] = set()
-    for slug in slugs:
-        if slug in tried:
+    for key in keys:
+        if key in tried:
             continue
-        tried.add(slug)
+        tried.add(key)
         try:
-            resp = fetch_portfolio_by_slug(slug)
+            resp = fetch_portfolio(key)
         except SourceNotFound:
             continue
         rows = (resp.get("schemePortfolioAnalysisResponse") or {}).get("schemePortfolioList") or []
         if not rows:
             continue
         if _returned_same_fund(rows[0], scheme_code, our_base):
-            if slug != stored:
-                _store_advisorkhoj_slug(scheme_code, slug)
-            return slug, resp
+            if key != stored:
+                _store_advisorkhoj_slug(scheme_code, key)
+            return key, resp
         logger.debug(
-            "AdvisorKhoj slug %r answered with scheme %s, not %s — rejected",
-            slug,
+            "AdvisorKhoj key %r answered with scheme %s, not %s — rejected",
+            key,
             rows[0].get("scheme_code"),
             scheme_code,
         )
@@ -419,17 +420,17 @@ def resolve_and_fetch_portfolio(scheme_code: int) -> tuple[str, dict]:
 
 
 def resolve_advisorkhoj_slug(scheme_code: int) -> str | None:
-    """The verified AdvisorKhoj slug for a scheme, or None when nothing on AdvisorKhoj matches.
+    """The verified AdvisorKhoj key for a scheme, or None when nothing on AdvisorKhoj matches.
     Served from `mf_registry.advisorkhoj_slug` after the first success."""
     with get_session() as session:
         reg = session.get(MfRegistry, scheme_code)
         if reg is not None and reg.advisorkhoj_slug:
             return reg.advisorkhoj_slug
     try:
-        slug, _ = resolve_and_fetch_portfolio(scheme_code)
+        key, _ = resolve_and_fetch_portfolio(scheme_code)
     except SourceNotFound:
         return None
-    return slug
+    return key
 
 
 def fetch_holdings_for_scheme(scheme_code: int) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
@@ -443,16 +444,6 @@ def fetch_holdings_for_scheme(scheme_code: int) -> tuple[pl.DataFrame, pl.DataFr
         normalize_holdings(resp, own_slug),
         normalize_sector_allocation(resp, own_slug),
         normalize_asset_allocation(resp, own_slug),
-    )
-
-
-def fetch_holdings_frames(slug: str) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Fetch and normalize one fund's holdings payload by raw slug (no resolution)."""
-    resp = fetch_portfolio_by_slug(slug)
-    return (
-        normalize_holdings(resp, slug),
-        normalize_sector_allocation(resp, slug),
-        normalize_asset_allocation(resp, slug),
     )
 
 

@@ -8,6 +8,7 @@ finishes. Orchestration lives in services.sync_service / data_freshness / regist
 from __future__ import annotations
 
 import pandas as pd
+import polars as pl
 import streamlit as st
 
 from data.repositories.amfi import latest_amfi_nav_date
@@ -51,6 +52,7 @@ def _fund_freshness() -> dict:
     slugs = [make_slug(n) for n in names]
     return {
         "names": names,
+        "nav_names": active.filter(pl.col("navStatus") != "unavailable")["schemeName"].to_list(),
         "name_to_code": name_to_code,
         "slugs": slugs,
         "nav": compute_nav_freshness(names, slugs),
@@ -110,8 +112,9 @@ def render_status() -> None:
     dormant = int(tracked["dormant"].sum())
 
     def _run(scope: str):
+        scoped = fr["nav_names"] if scope == "nav" else names
         return lambda: refresh_all_fund_data(
-            names, name_to_code=fr["name_to_code"], scope=scope, progress_cb=progress_cb(_REFRESH.key)
+            scoped, name_to_code=fr["name_to_code"], scope=scope, progress_cb=progress_cb(_REFRESH.key)
         )
 
     with actions:

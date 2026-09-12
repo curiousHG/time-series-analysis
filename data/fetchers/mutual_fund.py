@@ -104,9 +104,17 @@ def resolve_mfapi_code(scheme_name: str) -> str | None:
     return None
 
 
-def fetch_portfolio_by_slug(slug: str):
-    logger.debug("Fetching portfolio from AdvisorKhoj: slug=%s", slug)
-    body = f"scheme_amfi={slug}"
+def fetch_portfolio(scheme_amfi: str):
+    """POST AdvisorKhoj's portfolio endpoint for one `scheme_amfi` key.
+
+    The endpoint is keyed by the scheme *name* as AdvisorKhoj spells it ("DSP Large & Mid Cap
+    Fund - Regular Plan - Growth") — its own fund page posts the name verbatim. A hyphenated
+    slug only happens to work for names made of plain words; anything with '.', '&', ':' or
+    brackets gets an empty answer. The key is form-encoded so '&' stays inside the field.
+    An unknown key is answered with HTTP 200 and either an empty body or the HTML homepage,
+    surfaced as `SourceNotFound`.
+    """
+    logger.debug("Fetching portfolio from AdvisorKhoj: scheme_amfi=%s", scheme_amfi)
 
     URL = "https://www.advisorkhoj.com/mutual-funds-research/getPortfolioAnalysis"
 
@@ -120,7 +128,7 @@ def fetch_portfolio_by_slug(slug: str):
     resp = httpx.post(
         URL,
         headers=HEADERS,
-        data=body,
+        data={"scheme_amfi": scheme_amfi},
         timeout=20,
     )
 
@@ -128,10 +136,9 @@ def fetch_portfolio_by_slug(slug: str):
     try:
         data = resp.json()
     except ValueError as e:
-        # An unknown slug is answered with HTTP 200 and the HTML homepage.
-        raise SourceNotFound("AdvisorKhoj portfolio", slug) from e
+        raise SourceNotFound("AdvisorKhoj portfolio", scheme_amfi) from e
     if not data:
-        raise ValueError(f"Empty portfolio response from AdvisorKhoj for slug '{slug}'")
+        raise ValueError(f"Empty portfolio response from AdvisorKhoj for {scheme_amfi!r}")
     if not isinstance(data, dict) or "schemePortfolioAnalysisResponse" not in data:
         raise UpstreamFormatError(
             "AdvisorKhoj portfolio", f"expected a 'schemePortfolioAnalysisResponse' envelope, got {_shape_of(data)}"
@@ -144,7 +151,7 @@ def fetch_nav_from_advisorkhoj(
 ) -> dict:
     """AdvisorKhoj NAV pipeline: HTML → launch date → NAV JSON."""
     html = fetch_fund_overview_html(scheme_name)
-    launch_date = extract_launch_date(html)
+    launch_date = extract_launch_date(html, scheme_name)
 
     params = build_nav_params(scheme_name, launch_date)
 
@@ -311,8 +318,9 @@ def fetch_fund_overview_html(scheme_name: str) -> str:
     return resp.text
 
 
-def extract_launch_date(html: str) -> str:
-    """Returns launch date as DD-MM-YYYY."""
+def extract_launch_date(html: str, scheme_name: str) -> str:
+    """Returns launch date as DD-MM-YYYY. AdvisorKhoj serves a shell page with every field
+    blank for some names it lists but holds no data on; that is a miss, not a format change."""
     soup = BeautifulSoup(html, "html.parser")
 
     for td in soup.select("table.sch_over_table td"):
@@ -323,7 +331,7 @@ def extract_launch_date(html: str) -> str:
             if match:
                 return match.group(1)
 
-    raise ValueError(f"Launch Date not found on AdvisorKhoj for '{html[:80]}...' — this fund may not be supported")
+    raise SourceNotFound("AdvisorKhoj launch date", scheme_name)
 
 
 def build_nav_params(scheme_name: str, launch_date: str) -> dict:

@@ -142,7 +142,10 @@ def fetch_single_nav(scheme_name: str, scheme_code: int | None = None) -> pl.Dat
     resolving by name can land on a sibling plan. Rows come back tagged with the code used."""
     known = scheme_code if scheme_code is not None else lookup_scheme_code_by_exact_name(scheme_name)
     tag = int(known) if known is not None else None
-    mfapi_code = str(known) if known is not None else resolve_mfapi_code(scheme_name)
+    if known is not None and int(known) <= 0:
+        mfapi_code = None
+    else:
+        mfapi_code = str(known) if known is not None else resolve_mfapi_code(scheme_name)
     if mfapi_code:
         try:
             df = fetch_nav_from_mfapi(mfapi_code, scheme_name)

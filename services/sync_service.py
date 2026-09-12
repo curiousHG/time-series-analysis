@@ -14,11 +14,13 @@ from dataclasses import dataclass, field
 
 import polars as pl
 
+from data.exceptions import SourceNotFound
 from data.repositories.holdings import fetch_holdings_for_scheme, replace_holdings_atomic, slug_to_code_map
 from data.repositories.nav import fetch_single_nav, last_nav_date_by_code, save_nav_df
 from data.repositories.scheme_codes import resolve_codes
 from mutual_funds.display import make_slug, short_scheme_name
 from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS, FetchOutcome
+from services.registry_service import mark_nav_unavailable
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +125,10 @@ def update_nav_incremental(
                     result.updated_count += 1
                     outcome = "updated"
                     detail = f"{df.height} new rows ({dates.min()} → {dates.max()})"
+            except SourceNotFound as e:
+                if name not in last_known_by_name:
+                    mark_nav_unavailable(name)
+                outcome, detail = _record_failure(result, "NAV", name, e)
             except Exception as e:
                 outcome, detail = _record_failure(result, "NAV", name, e)
 
