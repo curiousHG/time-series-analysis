@@ -10,6 +10,8 @@ Scans the app packages once with ast; runs in well under a second.
 from __future__ import annotations
 
 import ast
+import re
+import tokenize
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -281,3 +283,19 @@ def test_loggers_use_module_name():
             "data/repositories/scheme_metrics.py",
         },
     )
+
+
+_DIRECTIVE_COMMENT = re.compile(r"#\s*(noqa|type:\s*ignore|pyright:|fmt:|pragma)")
+
+
+def test_no_inline_comments_in_app_code():
+    """Comments in app code are tool directives only; rationale lives in docs/decisions.md."""
+    offenders = []
+    for rel in FILES:
+        with (ROOT / rel).open("rb") as f:
+            offenders.extend(
+                f"{rel}:{tok.start[0]}"
+                for tok in tokenize.tokenize(f.readline)
+                if tok.type == tokenize.COMMENT and not _DIRECTIVE_COMMENT.match(tok.string)
+            )
+    assert not offenders, f"inline comments (move the why to docs/decisions.md): {offenders}"

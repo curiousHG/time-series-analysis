@@ -97,6 +97,14 @@ naming-alignment pass; new code follows the table from day one.
 - **No per-item `info` logging inside batch loops** — per-item goes to `debug`, one aggregate `info`
   per batch (a full refresh once emitted ~500 INFO lines and wrapped the rotating log).
 
+## 6a. Comments and docstrings
+
+- ⚙ **No inline `#` comments in app code** — only tool directives (`# noqa`, `# type: ignore`,
+  `# pyright:`, `# fmt:`, `# pragma`). Names, named constants and small helpers carry the meaning;
+  the *why* behind a non-obvious choice goes in `docs/decisions.md`.
+- **Docstrings state what and the contract** (inputs, outputs, raises, side effects) in 1–3 lines.
+  History ("used to…", dated incidents) belongs in the commit message or `docs/decisions.md`.
+
 ## 7. Testing
 
 Three legs, all in use — pick per situation:
