@@ -16,7 +16,8 @@ from data.repositories.amfi import latest_amfi_nav_date
 from data.repositories.holdings import holdings_count_by_scheme
 from data.repositories.nav import nav_record_stats
 from mutual_funds.display import make_slug
-from services.data_freshness import (
+from services.mf.backfill import retry_unavailable
+from services.mf.freshness import (
     FreshnessReport,
     build_holdings_status_rows,
     build_nav_status_rows,
@@ -24,13 +25,12 @@ from services.data_freshness import (
     compute_holdings_freshness,
     compute_nav_freshness,
 )
-from services.registry_service import (
+from services.mf.registry import (
     list_active,
     list_tracked,
     list_unavailable_funds,
-    retry_unavailable,
 )
-from services.sync_service import refresh_all_fund_data
+from services.mf.sync import refresh_all_fund_data
 from ui.components.background_refresh import BackgroundRefresh, progress_cb
 from ui.components.chrome import section_header
 from ui.components.freshness_banner import clear_freshness_cache

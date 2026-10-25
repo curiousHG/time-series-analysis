@@ -149,7 +149,7 @@ class MfMetadata(SQLModel, table=True):
 
 
 class MfSchemeMetrics(SQLModel, table=True):
-    """Cached output of services.mf_metrics.compute_metrics_for_scheme; stale when `computed_at_nav_date` lags
+    """Cached output of services.mf.metrics.compute_metrics_for_scheme; stale when `computed_at_nav_date` lags
     MfNav.max(date)."""
 
     __tablename__ = "mf_scheme_metrics"

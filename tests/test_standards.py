@@ -107,7 +107,7 @@ def test_no_private_imports_across_packages():
         violations,
         allowlist={
             "mutual_funds/holdings_stats.py ← data.repositories.holdings",  # _resolve_slug
-            "services/data_freshness.py ← data.repositories.holdings",  # _slug_to_code_map_cached
+            "services/mf/freshness.py ← data.repositories.holdings",  # _slug_to_code_map_cached
         },
     )
 
@@ -162,7 +162,7 @@ def test_upserts_only_in_repositories():
     _ratchet(
         "postgres upsert built outside data/repositories/",
         violations,
-        allowlist={"services/registry_service.py", "services/stock_metrics.py"},
+        allowlist={"services/mf/registry.py", "services/stock/metrics.py"},
     )
 
 

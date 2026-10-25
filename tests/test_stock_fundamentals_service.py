@@ -1,9 +1,9 @@
-"""Unit tests for services.stock_fundamentals_service + symbol-form helpers."""
+"""Unit tests for services.stock.fundamentals + symbol-form helpers."""
 
 import polars as pl
 import pytest
 
-from services.stock_fundamentals_service import fundamentals_percentiles
+from services.stock.fundamentals import fundamentals_percentiles
 from stocks.constants import to_bare_symbol, to_yf_symbol
 
 

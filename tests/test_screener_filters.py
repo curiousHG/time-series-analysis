@@ -1,6 +1,6 @@
 import polars as pl
 
-from services.screener_service import apply_filters
+from services.mf.screener import apply_filters
 
 
 def test_apply_filters_treats_search_text_as_literal_text():

@@ -10,7 +10,7 @@ import streamlit as st
 from data.repositories.stock import list_bhavcopy_index_names
 from indicators import INDICATOR_REGISTRY, compute_indicators
 from services.benchmarks import index_display_name
-from services.insights_service import INTERNATIONAL_INDEX_SYMBOLS
+from services.overview.market import INTERNATIONAL_INDEX_SYMBOLS
 from ui.components import index_detail
 from ui.components.metric_tiles import EM_DASH, fmt_pct
 from ui.state.filter_persistence import hydrate_filters, make_persist_callback

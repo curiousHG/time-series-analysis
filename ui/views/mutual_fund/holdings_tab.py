@@ -10,9 +10,9 @@ import streamlit as st
 from data.repositories.holdings import load_assets, load_holdings, load_sectors
 from mutual_funds.display import make_slug
 from mutual_funds.holdings_stats import quick_stats
-from services.portfolio_analytics import fund_values_from_nav, lookthrough_exposure
-from services.portfolio_service import get_mapped_data
-from services.registry_service import load_registry
+from services.mf.registry import load_registry
+from services.portfolio.analytics import fund_values_from_nav, lookthrough_exposure
+from services.portfolio.value import get_mapped_data
 from ui.components.metric_tiles import Kpi, render_kpi_row
 from ui.components.mutual_fund_holdings import render_holdings_table
 from ui.state.loaders import load_txn_data

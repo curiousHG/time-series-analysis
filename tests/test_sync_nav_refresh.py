@@ -12,7 +12,7 @@ import polars as pl
 import pytest
 
 from data.exceptions import SourceNotFound
-from services import sync_service as sync
+from services.mf import sync
 
 
 def _frame(name: str) -> pl.DataFrame:

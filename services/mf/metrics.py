@@ -1,4 +1,4 @@
-"""Per-scheme risk/return metrics from NAV history. Pure functions; UI caches the results."""
+"""Per-scheme risk/return metrics from NAV history: DB loading, computation and persistence."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import datetime
 import logging
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import TYPE_CHECKING
 
 import pandas as pd
-import polars as pl
 import quantstats as qs
 from sqlmodel import col, select
 
@@ -18,10 +18,19 @@ from core.timing import timed, timeit
 from data.repositories.scheme_codes import resolve_codes
 from data.repositories.scheme_metrics import clear_metrics, find_stale_schemes, load_metrics, upsert_metrics
 from data.repositories.stock import ensure_stock_data, refresh_stock_to_today
-from mutual_funds.display import make_slug  # noqa: F401 — back-compat re-export for callers
 from services.benchmarks import benchmark_for_fund, daily_returns_from_ohlcv
 from services.constants import RF_DAILY, TRADING_DAYS
+from services.mf.metrics_math import (
+    absolute_return_or_nan,
+    compute_alpha_beta,
+    rolling_cagr_stats,
+    safe_stat,
+    windowed_cagr,
+)
 from services.price_adjust import adjust_splits
+
+if TYPE_CHECKING:
+    import polars as pl
 
 logger = logging.getLogger(__name__)
 
@@ -46,101 +55,6 @@ def nav_series(scheme_name: str) -> pd.Series:
         return pd.Series(dtype=float)
     s = pd.Series({pd.Timestamp(d): float(v) for d, v in rows})
     return s.sort_index()
-
-
-_nav_series = nav_series
-
-
-def windowed_cagr(nav: pd.Series, days: int) -> float | None:
-    """Annualised CAGR over the trailing `days` NAV rows; None if insufficient history."""
-    if len(nav) < days + 1:
-        return None
-    end = nav.iloc[-1]
-    start = nav.iloc[-(days + 1)]
-    if start <= 0 or end <= 0:
-        return None
-    n = len(nav.iloc[-(days + 1) :]) - 1
-    if n <= 0:
-        return None
-    return float((end / start) ** (TRADING_DAYS / n) - 1)
-
-
-_windowed_cagr = windowed_cagr
-
-
-def absolute_return(nav: pd.Series, days_back: int) -> float | None:
-    """Cumulative return from `days_back` NAV rows ago to today; None if insufficient history."""
-    v = _absolute_return(nav, days_back)
-    return None if math.isnan(v) else v
-
-
-def rolling_alpha(fund_returns: pd.Series, bench_returns: pd.Series, window: int = 126) -> pd.Series:
-    """Rolling annualised Jensen's alpha of daily fund returns vs benchmark returns.
-
-    beta_t = rolling cov(fund, bench) / rolling var(bench); alpha_t = (mean_f - beta_t *
-    mean_b) * 252. Empty Series when the overlap is shorter than `window`.
-    """
-    aligned = pd.concat([fund_returns.rename("f"), bench_returns.rename("b")], axis=1, join="inner").dropna()
-    if len(aligned) < window + 1:
-        return pd.Series(dtype="float64")
-    f, b = aligned["f"], aligned["b"]
-    beta = f.rolling(window).cov(b) / b.rolling(window).var()
-    alpha = (f.rolling(window).mean() - beta * b.rolling(window).mean()) * TRADING_DAYS
-    return alpha.dropna()
-
-
-def rolling_beat_rate(nav: pd.Series, bench_prices: pd.Series, window_days: int, min_windows: int = 30) -> float | None:
-    """Share of rolling `window_days` windows where the fund's return beat the benchmark's.
-
-    :param bench_prices: benchmark price/level series (any scale — the comparison is
-        scale-invariant); reindexed to the NAV dates with forward-fill.
-    """
-    bench = bench_prices.reindex(nav.index).ffill()
-    fund_rr = nav.pct_change(window_days, fill_method=None)
-    bench_rr = bench.pct_change(window_days, fill_method=None)
-    both = pd.concat([fund_rr.rename("f"), bench_rr.rename("b")], axis=1).dropna()
-    if len(both) < min_windows:
-        return None
-    return float((both["f"] > both["b"]).mean())
-
-
-def _rolling_cagr_stats(nav: pd.Series, window_days: int) -> dict[str, float]:
-    """Min/median/mean/max of N-day rolling annualised CAGR over the fund's history."""
-    nan = {"min": math.nan, "median": math.nan, "mean": math.nan, "max": math.nan}
-    if len(nav) < window_days + 1:
-        return nan
-    start = nav.shift(window_days)
-    rolled = (nav / start) ** (TRADING_DAYS / window_days) - 1.0
-    rolled = rolled.dropna()
-    rolled = rolled[rolled.notna() & (start.reindex(rolled.index) > 0)]
-    if rolled.empty:
-        return nan
-    return {
-        "min": float(rolled.min()),
-        "median": float(rolled.median()),
-        "mean": float(rolled.mean()),
-        "max": float(rolled.max()),
-    }
-
-
-def _safe(fn, *args, **kwargs) -> float:
-    """Call quantstats helper with NaN fallback. Errors don't break the bulk recompute loop."""
-    try:
-        v = fn(*args, **kwargs)
-        return float(v) if v is not None and not (isinstance(v, float) and math.isnan(v)) else math.nan
-    except Exception:
-        return math.nan
-
-
-def _absolute_return(nav: pd.Series, days_back: int) -> float:
-    """Cumulative return from `days_back` ago to today. NaN if insufficient history."""
-    if len(nav) < days_back + 1:
-        return math.nan
-    start = float(nav.iloc[-(days_back + 1)])
-    end = float(nav.iloc[-1])
-    if start <= 0 or end <= 0:
-        return math.nan
-    return end / start - 1.0
 
 
 def _holdings_composition(scheme_name: str) -> dict[str, float]:
@@ -231,44 +145,44 @@ def compute_metrics_for_scheme(
 
     last_year = returns.iloc[-TRADING_DAYS:]
 
-    sharpe = _safe(qs.stats.sharpe, last_year, rf=RF_DAILY)
-    sortino = _safe(qs.stats.sortino, last_year, rf=RF_DAILY)
-    calmar = _safe(qs.stats.calmar, last_year)
-    gain_to_pain = _safe(qs.stats.gain_to_pain_ratio, last_year)
-    vol = _safe(qs.stats.volatility, last_year)
+    sharpe = safe_stat(qs.stats.sharpe, last_year, rf=RF_DAILY)
+    sortino = safe_stat(qs.stats.sortino, last_year, rf=RF_DAILY)
+    calmar = safe_stat(qs.stats.calmar, last_year)
+    gain_to_pain = safe_stat(qs.stats.gain_to_pain_ratio, last_year)
+    vol = safe_stat(qs.stats.volatility, last_year)
     negative_returns = last_year[last_year < 0]
     downside_vol = float(negative_returns.std() * math.sqrt(TRADING_DAYS)) if len(negative_returns) > 1 else math.nan
 
-    max_dd = _safe(qs.stats.max_drawdown, last_year)
+    max_dd = safe_stat(qs.stats.max_drawdown, last_year)
     cumulative_return_1y = float((1.0 + last_year).prod() - 1.0)
     avg_daily_return_1y = float(last_year.mean())
 
     pos = last_year[last_year > 0]
     neg = last_year[last_year < 0]
     win_rate = float(len(pos) / len(last_year)) if len(last_year) else math.nan
-    best_day = _safe(qs.stats.best, last_year)
-    worst_day = _safe(qs.stats.worst, last_year)
-    var_95 = _safe(qs.stats.var, last_year)
-    cvar_95 = _safe(qs.stats.cvar, last_year)
-    skew = _safe(qs.stats.skew, last_year)
-    kurt = _safe(qs.stats.kurtosis, last_year)
+    best_day = safe_stat(qs.stats.best, last_year)
+    worst_day = safe_stat(qs.stats.worst, last_year)
+    var_95 = safe_stat(qs.stats.var, last_year)
+    cvar_95 = safe_stat(qs.stats.cvar, last_year)
+    skew = safe_stat(qs.stats.skew, last_year)
+    kurt = safe_stat(qs.stats.kurtosis, last_year)
 
-    kelly = _safe(qs.stats.kelly_criterion, last_year)
+    kelly = safe_stat(qs.stats.kelly_criterion, last_year)
     avg_win = float(pos.mean()) if len(pos) else math.nan
     avg_loss = float(neg.mean()) if len(neg) else math.nan
     payoff_ratio = float(abs(avg_win / avg_loss)) if avg_loss and not math.isnan(avg_win) else math.nan
 
     all_time_high = float(nav.max())
     pct_from_ath = float(nav.iloc[-1] / all_time_high - 1) if all_time_high > 0 else math.nan
-    max_dd_all = _safe(qs.stats.max_drawdown, returns)
+    max_dd_all = safe_stat(qs.stats.max_drawdown, returns)
 
-    rolling_1y = _rolling_cagr_stats(nav, TRADING_DAYS)
-    rolling_3y = _rolling_cagr_stats(nav, TRADING_DAYS * 3)
-    rolling_5y = _rolling_cagr_stats(nav, TRADING_DAYS * 5)
+    rolling_1y = rolling_cagr_stats(nav, TRADING_DAYS)
+    rolling_3y = rolling_cagr_stats(nav, TRADING_DAYS * 3)
+    rolling_5y = rolling_cagr_stats(nav, TRADING_DAYS * 5)
 
-    abs_3m = _absolute_return(nav, TRADING_DAYS // 4)
-    abs_6m = _absolute_return(nav, TRADING_DAYS // 2)
-    abs_1y = _absolute_return(nav, TRADING_DAYS)
+    abs_3m = absolute_return_or_nan(nav, TRADING_DAYS // 4)
+    abs_6m = absolute_return_or_nan(nav, TRADING_DAYS // 2)
+    abs_1y = absolute_return_or_nan(nav, TRADING_DAYS)
 
     composition = _holdings_composition(scheme_name)
 
@@ -283,10 +197,10 @@ def compute_metrics_for_scheme(
 
     return {
         "scheme_name": scheme_name,
-        "cagr_1y": _windowed_cagr(nav, TRADING_DAYS),
-        "cagr_3y": _windowed_cagr(nav, TRADING_DAYS * 3),
-        "cagr_5y": _windowed_cagr(nav, TRADING_DAYS * 5),
-        "cagr_10y": _windowed_cagr(nav, TRADING_DAYS * 10),
+        "cagr_1y": windowed_cagr(nav, TRADING_DAYS),
+        "cagr_3y": windowed_cagr(nav, TRADING_DAYS * 3),
+        "cagr_5y": windowed_cagr(nav, TRADING_DAYS * 5),
+        "cagr_10y": windowed_cagr(nav, TRADING_DAYS * 10),
         "vol_1y": vol,
         "downside_vol_1y": downside_vol,
         "sharpe_1y": sharpe,
@@ -339,67 +253,6 @@ def compute_metrics_for_scheme(
         "last_nav_date": nav.index[-1].date(),
         "history_days": len(nav),
     }
-
-
-def compute_alpha_beta(
-    fund_returns: pd.Series,
-    benchmark_returns: pd.Series,
-    *,
-    min_overlap: int = 60,
-) -> dict | None:
-    """Jensen alpha/beta of fund vs benchmark daily returns (decimals).
-
-    None when < `min_overlap` aligned days or benchmark variance is zero.
-    """
-    if fund_returns is None or benchmark_returns is None or fund_returns.empty or benchmark_returns.empty:
-        return None
-    common = pd.concat([fund_returns.rename("f"), benchmark_returns.rename("b")], axis=1, join="inner").dropna()
-    if len(common) < min_overlap or common["b"].var() == 0:
-        return None
-    cov = common["f"].cov(common["b"])
-    var = common["b"].var()
-    beta = float(cov / var)
-    alpha = float((common["f"].mean() - beta * common["b"].mean()) * TRADING_DAYS)
-    r2 = float(common["f"].corr(common["b"]) ** 2)
-    return {"alpha": alpha, "beta": beta, "r2": r2, "n_overlap": len(common)}
-
-
-def compute_metrics_from_returns(returns: pd.Series) -> dict:
-    """1Y CAGR/Vol/Sharpe/MaxDD from a daily-returns Series; all NaN when shorter than TRADING_DAYS."""
-    out = {"cagr_1y": math.nan, "vol_1y": math.nan, "sharpe_1y": math.nan, "max_dd_1y": math.nan}
-    if returns is None or returns.empty:
-        return out
-    last_year = returns.iloc[-TRADING_DAYS:]
-    if len(last_year) < TRADING_DAYS:
-        return out
-    out["vol_1y"] = float(qs.stats.volatility(last_year))
-    out["sharpe_1y"] = float(qs.stats.sharpe(last_year, rf=RF_DAILY))
-    out["max_dd_1y"] = float(qs.stats.max_drawdown(last_year))
-    cum = (1.0 + last_year).prod()
-    if cum > 0:
-        n = len(last_year)
-        out["cagr_1y"] = float(cum ** (TRADING_DAYS / n) - 1)
-    return out
-
-
-def portfolio_axis_metrics(returns: pd.Series) -> dict:
-    """1Y metrics for an arbitrary daily-returns series, matching the fund-cache formulas.
-
-    Covers every screener risk axis (vol/downside-vol/CVaR/max-DD) plus cagr_1y and
-    sharpe_1y, so a portfolio point can sit on the same axes as the cached fund metrics.
-    All NaN when the series is shorter than TRADING_DAYS.
-    """
-    out = dict.fromkeys(("cagr_1y", "vol_1y", "downside_vol_1y", "cvar_95_1y", "max_dd_1y", "sharpe_1y"), math.nan)
-    if returns is None or returns.empty:
-        return out
-    last_year = returns.iloc[-TRADING_DAYS:]
-    if len(last_year) < TRADING_DAYS:
-        return out
-    out.update(compute_metrics_from_returns(returns))
-    neg = last_year[last_year < 0]
-    out["downside_vol_1y"] = float(neg.std() * math.sqrt(TRADING_DAYS)) if len(neg) > 1 else math.nan
-    out["cvar_95_1y"] = _safe(qs.stats.cvar, last_year)
-    return out
 
 
 def compute_tracking_error(scheme_name: str, benchmark_returns: pd.Series, window: int = TRADING_DAYS) -> float | None:

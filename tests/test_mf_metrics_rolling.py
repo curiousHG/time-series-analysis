@@ -1,10 +1,10 @@
-"""Unit tests for rolling_alpha and rolling_beat_rate (services.mf_metrics)."""
+"""Unit tests for rolling_alpha and rolling_beat_rate (services.mf.metrics_math)."""
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from services.mf_metrics import rolling_alpha, rolling_beat_rate
+from services.mf.metrics_math import rolling_alpha, rolling_beat_rate
 
 
 def _dates(n: int) -> pd.DatetimeIndex:
@@ -59,7 +59,7 @@ def test_rolling_beat_rate_always_beats():
 
 
 def test_portfolio_axis_metrics_covers_all_risk_axes():
-    from services.mf_metrics import portfolio_axis_metrics
+    from services.mf.metrics_math import portfolio_axis_metrics
 
     rng = np.random.default_rng(7)
     returns = pd.Series(rng.normal(0.0005, 0.01, 400), index=_dates(400))
@@ -73,7 +73,7 @@ def test_portfolio_axis_metrics_covers_all_risk_axes():
 
 
 def test_portfolio_axis_metrics_short_series_nan():
-    from services.mf_metrics import portfolio_axis_metrics
+    from services.mf.metrics_math import portfolio_axis_metrics
 
     short = pd.Series([0.001] * 100, index=_dates(100))
     assert all(np.isnan(v) for v in portfolio_axis_metrics(short).values())

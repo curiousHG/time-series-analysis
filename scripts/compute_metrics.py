@@ -31,7 +31,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from core.logging_config import setup_logging  # noqa: E402
 from data.repositories.nav_repair import repair_nav_glitches, repair_nav_scale_breaks  # noqa: E402
-from services.mf_metrics import recompute_metrics, recompute_stale_metrics  # noqa: E402
+from services.mf.metrics import recompute_metrics, recompute_stale_metrics  # noqa: E402
 
 
 def main() -> int:

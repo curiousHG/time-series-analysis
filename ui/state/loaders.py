@@ -13,14 +13,14 @@ from data.repositories.holdings import (
     refresh_holdings_data as _refresh_holdings,
 )
 from data.repositories.metadata import load_metadata
-from data.repositories.nav import ensure_nav_data
-from data.repositories.nav import refresh_nav_data as _refresh_nav
 from data.repositories.stock import ensure_stock_data, search_stock_symbols
 from data.repositories.tradebook import load_tradebook_from_db
 from mutual_funds.display import unique_short_names
 from mutual_funds.tradebook import normalize_transactions
 from services.benchmarks import daily_returns_from_ohlcv
-from services.screener_service import build_screener_df
+from services.mf.nav_sources import ensure_nav_data
+from services.mf.nav_sources import refresh_nav_data as _refresh_nav
+from services.mf.screener import build_screener_df
 from stocks.constants import to_bare_symbol
 
 TTL_FAST = 300
@@ -129,7 +129,7 @@ def load_screener_df_cached() -> pl.DataFrame:
 @timeit("loaders.load_metrics_cached")
 def load_metrics_cached() -> pl.DataFrame:
     """Read pre-computed metrics from mf_scheme_metrics (recomputed on every NAV save)."""
-    from services.mf_metrics import load_cached_metrics  # noqa: PLC0415 — defers quantstats off the app-boot path
+    from services.mf.metrics import load_cached_metrics  # noqa: PLC0415 — defers quantstats off the app-boot path
 
     return load_cached_metrics()
 
@@ -143,7 +143,7 @@ def cached_search_stock(query: str) -> pd.DataFrame:
 @timeit("loaders.load_stock_screener_df")
 def load_stock_screener_df_cached() -> pl.DataFrame:
     """Cached wrapper around build_stock_screener_df (registry ⨝ stock_metrics + alpha tag)."""
-    from services.stock_screener_service import build_stock_screener_df  # noqa: PLC0415 — defer heavy import off boot
+    from services.stock.screener import build_stock_screener_df  # noqa: PLC0415 — defer heavy import off boot
 
     return build_stock_screener_df()
 
@@ -151,28 +151,28 @@ def load_stock_screener_df_cached() -> pl.DataFrame:
 @st.cache_data(ttl=TTL_INTRADAY, show_spinner="Scanning for alerts…")
 def load_overview_alerts_cached():
     """Cached alert scan for the Overview page (underperformance, concentration, staleness…)."""
-    from services.insights_service import build_alerts  # noqa: PLC0415 — defer heavy import off boot
+    from services.overview.alerts import build_alerts  # noqa: PLC0415 — defer heavy import off boot
 
     return build_alerts()
 
 
 @st.cache_data(ttl=TTL_INTRADAY, show_spinner="Loading market data…")
 def load_market_pulse_cached() -> pl.DataFrame:
-    from services.insights_service import market_pulse  # noqa: PLC0415 — defer heavy import off boot
+    from services.overview.market import market_pulse  # noqa: PLC0415 — defer heavy import off boot
 
     return market_pulse()
 
 
 @st.cache_data(ttl=TTL_INTRADAY, show_spinner="Loading sector performance…")
 def load_index_performance_cached() -> pl.DataFrame:
-    from services.insights_service import index_performance  # noqa: PLC0415 — defer heavy import off boot
+    from services.overview.market import index_performance  # noqa: PLC0415 — defer heavy import off boot
 
     return index_performance()
 
 
 @st.cache_data(ttl=TTL_INTRADAY, show_spinner="Loading international indices…")
 def load_international_pulse_cached() -> pl.DataFrame:
-    from services.insights_service import INTERNATIONAL_PULSE_SYMBOLS, market_pulse  # noqa: PLC0415
+    from services.overview.market import INTERNATIONAL_PULSE_SYMBOLS, market_pulse  # noqa: PLC0415
 
     return market_pulse(INTERNATIONAL_PULSE_SYMBOLS)
 
@@ -196,7 +196,7 @@ def load_index_valuation_cached(symbol: str) -> dict | None:
 @st.cache_data(ttl=TTL_DAILY, show_spinner=False)
 def load_index_constituents_cached(index_name: str) -> list[str]:
     """Constituent stock symbols of an NSE index (via screener.in), best-effort + long-cached."""
-    from services.market_data_service import index_constituents  # noqa: PLC0415 — defer off boot
+    from services.stock.market_data import index_constituents  # noqa: PLC0415 — defer off boot
 
     return index_constituents(index_name)
 
@@ -205,7 +205,7 @@ def load_index_constituents_cached(index_name: str) -> list[str]:
 def load_analysis_catalog_cached() -> list[dict]:
     """Unified picker universe (stocks + ETFs + indices), each tagged with its kind. Long-cached; the
     ETF-classification sync (Settings) clears it."""
-    from services.market_data_service import analysis_catalog  # noqa: PLC0415 — defer off boot
+    from services.stock.market_data import analysis_catalog  # noqa: PLC0415 — defer off boot
 
     return analysis_catalog()
 
@@ -213,7 +213,7 @@ def load_analysis_catalog_cached() -> list[dict]:
 @st.cache_data(ttl=TTL_HOURLY, show_spinner=False)
 def load_etf_metadata_cached() -> dict:
     """Live NSE ETF metadata keyed by symbol (underlying, NAV, 52-week range, 30d/1Y perf)."""
-    from services.market_data_service import etf_metadata  # noqa: PLC0415 — defer off boot
+    from services.stock.market_data import etf_metadata  # noqa: PLC0415 — defer off boot
 
     return etf_metadata()
 
@@ -221,7 +221,7 @@ def load_etf_metadata_cached() -> dict:
 @st.cache_data(ttl=600, show_spinner=False)
 def load_global_search_cached(query: str) -> list[dict]:
     """Yahoo-wide ticker search results for the add-international flow (short-cached per query)."""
-    from services.market_data_service import global_ticker_search  # noqa: PLC0415 — defer off boot
+    from services.stock.market_data import global_ticker_search  # noqa: PLC0415 — defer off boot
 
     return global_ticker_search(query)
 
@@ -230,14 +230,14 @@ def load_global_search_cached(query: str) -> list[dict]:
 def load_global_fundamentals_cached(symbol: str) -> dict | None:
     """yfinance fundamentals snapshot for an international ticker (live source, day-cached —
     mirrors the ETF-metadata pattern; not persisted to the screener tables, which are NSE/INR-based)."""
-    from services.market_data_service import global_fundamentals  # noqa: PLC0415 — defer off boot
+    from services.stock.market_data import global_fundamentals  # noqa: PLC0415 — defer off boot
 
     return global_fundamentals(symbol)
 
 
 @st.cache_data(ttl=TTL_INTRADAY, show_spinner=False)
 def load_fund_movers_cached() -> pl.DataFrame:
-    from services.insights_service import fund_movers  # noqa: PLC0415 — defer heavy import off boot
+    from services.overview.market import fund_movers  # noqa: PLC0415 — defer heavy import off boot
 
     return fund_movers()
 

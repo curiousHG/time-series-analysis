@@ -16,8 +16,8 @@ Continuation notes for the YAGNI cleanup refactor. Everything below is on `main`
 
 | Commit | Summary |
 |--------|---------|
-| `f29d587` | **Remove dead code** — deleted `bot/`, `exchange/`, `core/models/trading.py`, `core/enums.py`, `core/exceptions.py`, `core/config.py`; dropped `pydantic-settings`; removed `_fetch_single_nav` alias; renamed `MfScheme`→`AmfiScheme` (deleted alias). `strategies/` + `services/backtest_service.py` kept (live). |
-| `5251375` | **Consolidate + correctness** — new `data/repositories/scheme_codes.py` (single source for name→code resolution + synthetic minting); `datetime.utcnow()`→`datetime.now(UTC)`; atomic refresh via `holdings.replace_holdings_atomic`; shared `screener_service.apply_name_filter`; single-pass Settings overview; new `tests/test_scheme_codes.py`. |
+| `f29d587` | **Remove dead code** — deleted `bot/`, `exchange/`, `core/models/trading.py`, `core/enums.py`, `core/exceptions.py`, `core/config.py`; dropped `pydantic-settings`; removed `_fetch_single_nav` alias; renamed `MfScheme`→`AmfiScheme` (deleted alias). `strategies/` + `services/backtest_service.py` (now `services/stock/strategy_backtest.py`) kept (live). |
+| `5251375` | **Consolidate + correctness** — new `data/repositories/scheme_codes.py` (single source for name→code resolution + synthetic minting); `datetime.utcnow()`→`datetime.now(UTC)`; atomic refresh via `holdings.replace_holdings_atomic`; shared `screener_service.apply_name_filter` (now `services.mf.screener.apply_name_filter`); single-pass Settings overview; new `tests/test_scheme_codes.py`. |
 | `1e28e16` | **Ruff autofix + format sweep** — 10 safe fixes + `ruff format`. No behaviour change. |
 
 ### Key new/changed anchors
@@ -27,9 +27,9 @@ Continuation notes for the YAGNI cleanup refactor. Everything below is on `main`
   re-implementing resolution/minting.
 - `data/repositories/holdings.py:replace_holdings_atomic(slug, h, s, a)` — wipe+refill one
   fund's holdings/sectors/assets in a single transaction. Both refresh paths
-  (`holdings.refresh_holdings_data`, `services/sync_service.refresh_holdings_for_schemes`)
+  (`holdings.refresh_holdings_data`, `services/sync_service.refresh_holdings_for_schemes`, now `services/mf/sync.py`)
   go through it.
-- `data/repositories/nav.py` — `refresh_nav_data` deletes + upserts fetched schemes in one
+- `data/repositories/nav.py` — `refresh_nav_data` (now `services/mf/nav_sources.py`) deletes + upserts fetched schemes in one
   transaction; `_upsert_nav_rows(session, df, name_to_code)` is the session-aware writer.
 
 ## Remaining work
@@ -60,8 +60,8 @@ honour the "no data deleted" constraint. Revisit as a separate opt-in revision i
 **`PLC0415` (function-local imports) — ✅ DONE (38 → 0).** Safe imports (stdlib,
 sqlalchemy, `core.*`, and repo→repo where no cycle) were hoisted to module top; the
 genuinely-deliberate ones are documented with `# noqa: PLC0415` + a reason: heavy/lazy
-deps (`vectorbt`, `plotly`/`numpy` at chart-render, `quantstats` via `mf_metrics`,
-`jugaad_data`) and the true repo→service cycles (`nav→mf_metrics`, `database→models`).
+deps (`vectorbt`, `plotly`/`numpy` at chart-render, `quantstats` via `mf_metrics` (now `services/mf/metrics.py`),
+`jugaad_data`) and the true repo→service cycles (`nav→mf_metrics`, now `services/mf/metrics.py`; `database→models`).
 Verified: all 99 modules import with no cycles; `ui.app` loads; 30 tests pass.
 
 Remaining (all non-breaking, left intentionally):
@@ -80,8 +80,8 @@ Remaining (all non-breaking, left intentionally):
 ### 3. Test gaps — ✅ DONE
 
 Unit tests now cover the previously-untested math (all green; `uv run pytest` → 30 passed):
-- `services/portfolio_service.py:build_portfolio_value_series` → `tests/test_portfolio_service.py`
-- `services/backtest_service.py:compute_metrics` → `tests/test_backtest_metrics.py`
+- `services/portfolio_service.py` (now `services/portfolio/value.py`) `build_portfolio_value_series` → `tests/test_portfolio_service.py`
+- `services/backtest_service.py` (now `services/stock/strategy_backtest.py`) `compute_metrics` → `tests/test_backtest_metrics.py`
 - `mutual_funds/tradebook.py` → `tests/test_tradebook.py`
 
 ### 4. End-to-end Streamlit verification (not yet done)

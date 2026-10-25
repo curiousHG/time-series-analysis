@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from services.portfolio_analytics import compute_xirr, fund_values_from_nav
-from services.portfolio_service import build_portfolio_returns_series, get_signed_invested
+from services.portfolio.analytics import compute_xirr, fund_values_from_nav
+from services.portfolio.value import build_portfolio_returns_series, get_signed_invested
 from ui.charts import theme
 from ui.components.metric_tiles import Kpi, fmt_inr_compact, render_kpi_row
 

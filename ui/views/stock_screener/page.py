@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from services.benchmarks import BENCHMARK_CHOICES
-from services.stock_screener_service import apply_stock_filters
+from services.stock.screener import apply_stock_filters
 from stocks.constants import NIFTY_50, to_bare_symbol
 from stocks.metric_catalog import CATEGORY_COLORS, DEFAULT_VISIBLE_COLS, STOCK_METRIC_RENAME
 from ui.components.aggrid_theme import streamlit_dark_aggrid_theme
@@ -31,7 +31,7 @@ def _none_if_zero(x: float) -> float | None:
 
 
 def _populate_task(symbols: list[str]) -> int:
-    from services.stock_sync_service import sync_stocks  # noqa: PLC0415 — defer heavy import off boot
+    from services.stock.sync import sync_stocks  # noqa: PLC0415 — defer heavy import off boot
 
     return sync_stocks(symbols)
 
@@ -53,7 +53,7 @@ def _add_stocks(picks: list[tuple[str, str, str]]) -> None:
     NSE stocks get OHLCV + screener.in fundamentals + CAPM; global stocks get OHLCV only.
     """
     from data.repositories.stock import ensure_stock_data, register_stock  # noqa: PLC0415 — defer off boot
-    from services.stock_sync_service import sync_stocks  # noqa: PLC0415
+    from services.stock.sync import sync_stocks  # noqa: PLC0415
 
     wide_start = pd.to_datetime("2000-01-01")
     today = pd.Timestamp.today().normalize()

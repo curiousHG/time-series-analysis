@@ -15,7 +15,7 @@ from mutual_funds.metric_catalog import (
     RISK_AXIS_OPTIONS,
     RISK_FREE_RATE_FOR_EXCESS_RETURN,
 )
-from services.screener_service import nifty_1y_cagr
+from services.mf.screener import nifty_1y_cagr
 from ui.state.loaders import load_metrics_cached, load_screener_df_cached
 
 if TYPE_CHECKING:
@@ -157,9 +157,9 @@ def _holdings_overlay(
     Returns (overlay frame with __risk__/__return__ in %, portfolio highlight dict); (None, None) without a tradebook.
     """
     from mutual_funds.display import unique_short_names  # noqa: PLC0415 — deferred with the chart deps
-    from services.mf_metrics import portfolio_axis_metrics  # noqa: PLC0415
-    from services.portfolio_analytics import fund_values_from_nav  # noqa: PLC0415
-    from services.portfolio_service import build_portfolio_returns_series, get_mapped_data  # noqa: PLC0415
+    from services.mf.metrics_math import portfolio_axis_metrics  # noqa: PLC0415
+    from services.portfolio.analytics import fund_values_from_nav  # noqa: PLC0415
+    from services.portfolio.value import build_portfolio_returns_series, get_mapped_data  # noqa: PLC0415
     from ui.state.loaders import load_txn_data  # noqa: PLC0415
 
     txn = load_txn_data()
@@ -201,7 +201,7 @@ def _portfolio_return_value(metrics: dict, return_choice: str, pf_returns) -> fl
         nifty_cagr = nifty_1y_cagr()
         return cagr - nifty_cagr if cagr is not None and nifty_cagr is not None else None
     if return_choice == "alpha_1y":
-        from services.mf_metrics import compute_alpha_beta  # noqa: PLC0415
+        from services.mf.metrics_math import compute_alpha_beta  # noqa: PLC0415
         from ui.state.loaders import load_nifty_returns  # noqa: PLC0415
 
         if pf_returns.empty:

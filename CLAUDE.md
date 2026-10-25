@@ -50,7 +50,7 @@ uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi
 
 ### Pages
 
-1. **Overview** (default) — market pulse, portfolio snapshot (XIRR/TWR), automated alerts (services/insights_service.py), fund movers
+1. **Overview** (default) — market pulse, portfolio snapshot (XIRR/TWR), automated alerts (services/overview/alerts.py), fund movers
 2. **Portfolio** — PM cockpit tabs: Overview (positions + contribution), Positions (look-through exposure, overlap, holdings), Risk (quantstats, drawdown, risk/return, correlation), Flows
 3. **Mutual Fund Analysis** — single-fund deep dive tabs: Performance (incl. rolling consistency), vs Benchmark (excess return, rolling alpha, alerts), Risk, Holdings (incl. portfolio overlap), Calendar, About
 4. **MF Screener** — AMFI universe filters, risk/return metrics, bulk fetch for tracked funds
@@ -84,7 +84,6 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
          ui/persistence/selections.py  # File-based state (data/user/selections.json)
               ↓
          services/                     # Business logic layer (no Streamlit imports)
-           backtest_service.py         # single-stock vectorbt backtest (Stock Analysis preview)
            backtest/                   # Backtest Lab: basket engine, costs, universe, runs, optimiser
              engine.py                 # daily (symbols x bars) loop, next-open fills, exit ladder
              costs.py                  # Zerodha delivery/intraday presets, per-order charges
@@ -93,11 +92,29 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
              runs.py                   # run lifecycle + optimisation persistence
              objectives.py             # equity-curve objectives for the optimiser
              optimizer.py              # Optuna search over declared parameters
-           portfolio_service.py        # get_mapped_data(), build_portfolio_value_series()
-           registry_service.py         # tracked-fund registry + source statuses
-           sync_service.py             # safe data refresh orchestration
-           screener_service.py         # MF screener DataFrame assembly + filters
-           mf_metrics.py               # NAV-derived risk/return metrics
+           stock/                      # stock data flow
+             sync.py                   # OHLCV/fundamentals refresh orchestration
+             metrics.py                # price-derived 1Y return/vol/CAPM alpha-beta
+             fundamentals.py           # momentum stats, screener.in percentiles, quarterly trend
+             screener.py               # stock screener DataFrame assembly + filters
+             market_data.py            # index constituents, analysis catalog, ETF/global lookups
+             strategy_backtest.py      # single-stock vectorbt backtest (Stock Analysis preview)
+           overview/                   # Overview page
+             alerts.py                 # Alert model, alert rules, build_alerts()
+             market.py                 # market pulse, index performance, fund movers
+           portfolio/                  # tradebook-driven portfolio
+             value.py                  # get_mapped_data(), build_portfolio_value_series()
+             analytics.py              # XIRR, look-through exposure, contribution
+             holdings.py               # held schemes
+           mf/                         # mutual-fund data flow
+             nav_sources.py            # ensure_nav_data(), refresh_nav_data(): MFAPI vs AdvisorKhoj, metric recompute
+             sync.py                   # safe data refresh orchestration
+             registry.py               # tracked-fund registry + source statuses
+             backfill.py               # fetch missing sources for tracked funds
+             freshness.py              # per-fund NAV / holdings staleness checks
+             screener.py               # MF screener DataFrame assembly + filters
+             metrics.py                # NAV-derived metrics: load, compute, persist
+             metrics_math.py           # pure risk/return maths over series
               ↓
          core/
            database.py                 # SQLModel engine + Session factory
@@ -206,7 +223,7 @@ Connection: `DATABASE_URL` env var (default: `postgresql://harshit@localhost:543
 
 This is the project's hard rule for any new data-source integration. Examples already following it:
 - `data/repositories/stock.py:ensure_stock_data` — looks up `(min, max)` date range per symbol in `stock_ohlcv`; fetches only forward and backward gaps. Skips fetches under `MIN_FETCH_DAYS=5` to avoid weekend/holiday noise.
-- `data/repositories/nav.py:ensure_nav_data` — fetches only schemes not already present in `mf_nav`.
+- `services/mf/nav_sources.py:ensure_nav_data` — fetches only schemes not already present in `mf_nav`.
 - `data/repositories/holdings.py:ensure_holdings_data` — fetches only slugs not already in `mf_holdings`.
 
 **When adding a new data source**:

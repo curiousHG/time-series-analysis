@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from services.benchmarks import resolve_benchmark_symbol
-from services.mf_metrics import compute_tracking_error
+from services.mf.metrics import compute_tracking_error
 from ui.charts import theme
 from ui.components.metric_tiles import Kpi, render_kpi_row
 from ui.constants import RF_DAILY

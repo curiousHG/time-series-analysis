@@ -1,5 +1,5 @@
 """MF Screener page entry. Orchestrates the four UI sections (sidebar filters, AgGrid
-table, risk-vs-return chart, inline add-to-tracked) over services.screener_service."""
+table, risk-vs-return chart, inline add-to-tracked) over services.mf.screener."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import polars as pl
 import streamlit as st
 
 from data.repositories.amfi import get_scheme_count
-from services.registry_service import list_tracked
-from services.screener_service import apply_filters
+from services.mf.registry import list_tracked
+from services.mf.screener import apply_filters
 from ui.components.chrome import page_header
 from ui.state.loaders import load_screener_df_cached
 from ui.views.mf_screener.backfill import DISPLAY_ORDER_KEY, render_inline_backfill

@@ -6,7 +6,7 @@ import polars as pl
 import streamlit as st
 
 from mutual_funds.display import short_scheme_name
-from services.portfolio_analytics import fund_values_from_nav, lookthrough_exposure
+from services.portfolio.analytics import fund_values_from_nav, lookthrough_exposure
 from ui.views.mutual_fund import holdings, overlap
 
 TOP_N_EXPOSURE = 25

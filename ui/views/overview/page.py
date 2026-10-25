@@ -4,7 +4,7 @@ from datetime import date
 
 import streamlit as st
 
-from services.portfolio_service import build_portfolio_value_series, get_mapped_data
+from services.portfolio.value import build_portfolio_value_series, get_mapped_data
 from ui.components.background_refresh import BackgroundRefresh, progress_cb
 from ui.components.chrome import page_header
 from ui.state import navigation
@@ -26,8 +26,8 @@ def _overview_refresh_task() -> dict:
     ^-indices (market pulse + international) to today. Runs on a background task."""
     from core.background import set_task_progress  # noqa: PLC0415 — defer off boot
     from data.repositories.stock import refresh_index_to_today  # noqa: PLC0415
-    from services.insights_service import INTERNATIONAL_PULSE_SYMBOLS, MARKET_PULSE_SYMBOLS  # noqa: PLC0415
-    from services.stock_sync_service import refresh_all_stock_data  # noqa: PLC0415
+    from services.overview.market import INTERNATIONAL_PULSE_SYMBOLS, MARKET_PULSE_SYMBOLS  # noqa: PLC0415
+    from services.stock.sync import refresh_all_stock_data  # noqa: PLC0415
 
     result = refresh_all_stock_data(progress_cb=progress_cb(_REFRESH_KEY))
     board = sorted(set(MARKET_PULSE_SYMBOLS) | set(INTERNATIONAL_PULSE_SYMBOLS))

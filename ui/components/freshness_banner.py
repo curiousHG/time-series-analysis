@@ -4,7 +4,7 @@ import logging
 
 import streamlit as st
 
-from services.data_freshness import (
+from services.mf.freshness import (
     FreshnessReport,
     compute_holdings_freshness,
     compute_nav_freshness,

@@ -13,13 +13,9 @@ import streamlit as st
 
 from mutual_funds.display import short_scheme_name
 from services.benchmarks import BENCHMARK_CHOICES, DEFAULT_BENCHMARK_LABEL
-from services.mf_metrics import (
-    compute_alpha_beta,
-    compute_metrics_from_returns,
-    load_cached_metrics,
-    nav_series,
-)
-from services.portfolio_service import build_portfolio_returns_series
+from services.mf.metrics import load_cached_metrics, nav_series
+from services.mf.metrics_math import compute_alpha_beta, compute_metrics_from_returns
+from services.portfolio.value import build_portfolio_returns_series
 from ui.charts import theme
 from ui.constants import BUBBLE_SIZE, MODE_ALPHA_BETA, MODE_CAGR_VOL, PORTFOLIO_COLOUR
 from ui.state.loaders import load_benchmark_returns

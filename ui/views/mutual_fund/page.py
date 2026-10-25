@@ -12,8 +12,9 @@ from data.repositories.amfi import get_scheme_details_by_name
 from data.repositories.nav import load_nav_df
 from mutual_funds.display import make_slug, short_scheme_name
 from mutual_funds.tradebook import signed_flows
-from services.mf_metrics import absolute_return
-from services.registry_service import backfill_missing, list_tracked
+from services.mf.backfill import backfill_missing
+from services.mf.metrics_math import absolute_return
+from services.mf.registry import list_tracked
 from ui.components.chrome import page_header
 from ui.components.freshness_banner import clear_freshness_cache, is_fund_stale
 from ui.components.metric_tiles import Kpi, render_kpi_row
@@ -34,8 +35,8 @@ from ui.views.mutual_fund.context import FundContext
 def _held_position(scheme_name: str) -> dict | None:
     """Value / portfolio weight / XIRR of the user's stake in this fund, or None."""
     try:
-        from services.portfolio_analytics import compute_xirr, fund_values_from_nav  # noqa: PLC0415 — off boot path
-        from services.portfolio_service import get_mapped_data  # noqa: PLC0415
+        from services.portfolio.analytics import compute_xirr, fund_values_from_nav  # noqa: PLC0415 — off boot path
+        from services.portfolio.value import get_mapped_data  # noqa: PLC0415
 
         txn = load_txn_data()
         result = get_mapped_data(txn) if txn is not None else None
@@ -61,8 +62,8 @@ def _refresh_fund(name: str) -> None:
     toast (shown after the rerun). A failing source is recorded, not fatal."""
     from data.repositories.holdings import refresh_holdings_data  # noqa: PLC0415 — defer heavy import off boot
     from data.repositories.metadata import refresh_metadata  # noqa: PLC0415
-    from data.repositories.nav import refresh_nav_data  # noqa: PLC0415
-    from services.mf_metrics import recompute_metrics  # noqa: PLC0415
+    from services.mf.metrics import recompute_metrics  # noqa: PLC0415
+    from services.mf.nav_sources import refresh_nav_data  # noqa: PLC0415
     from ui.state.loaders import load_holdings_data  # noqa: PLC0415
 
     slug = make_slug(name)

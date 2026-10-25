@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from services.backtest_service import compute_metrics
 from services.constants import TRADING_DAYS
+from services.stock.strategy_backtest import compute_metrics
 
 if TYPE_CHECKING:
     from services.backtest.engine import BacktestResult

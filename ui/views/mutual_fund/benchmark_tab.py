@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from services.benchmarks import SUBCATEGORY_BENCHMARK, resolve_benchmark_symbol
-from services.mf_metrics import rolling_alpha
+from services.mf.metrics_math import rolling_alpha
 from ui.charts import theme
 from ui.components.metric_tiles import Kpi, render_kpi_row
 from ui.state.loaders import load_overview_alerts_cached

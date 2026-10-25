@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 import data.fetchers.stock as fetchers
-from services.stock_metrics import benchmark_symbol_for_exchange
+from services.stock.metrics import benchmark_symbol_for_exchange
 
 
 class _StubTicker:
@@ -20,8 +20,18 @@ class _StubTicker:
 def aapl_stub(monkeypatch):
     qis = pd.DataFrame(
         {
-            pd.Timestamp("2026-03-31"): {"Total Revenue": 100e9, "Net Income": 25e9, "Operating Income": 30e9, "Diluted EPS": 1.5},
-            pd.Timestamp("2025-12-31"): {"Total Revenue": 120e9, "Net Income": 30e9, "Operating Income": 40e9, "Diluted EPS": 2.0},
+            pd.Timestamp("2026-03-31"): {
+                "Total Revenue": 100e9,
+                "Net Income": 25e9,
+                "Operating Income": 30e9,
+                "Diluted EPS": 1.5,
+            },
+            pd.Timestamp("2025-12-31"): {
+                "Total Revenue": 120e9,
+                "Net Income": 30e9,
+                "Operating Income": 40e9,
+                "Diluted EPS": 2.0,
+            },
         }
     )
     info = {

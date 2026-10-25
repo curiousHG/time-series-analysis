@@ -22,8 +22,8 @@ from data.repositories.stock_ohlcv import (
     load_stock_ohlcv_many,
     nse_trading_days,
 )
-from services.market_data_service import index_constituents
 from services.price_adjust import adjust_ohlc_splits
+from services.stock.market_data import index_constituents
 from stocks.constants import NIFTY_50, to_bare_symbol
 
 if TYPE_CHECKING:

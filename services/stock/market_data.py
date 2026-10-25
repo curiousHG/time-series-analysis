@@ -28,7 +28,7 @@ def analysis_catalog() -> list[dict]:
     """The Stock-Analysis picker universe: equities, ETFs and indices as {id, kind: 'stock'|'etf'|'index', name,
     exchange}."""
     from data.repositories.stock import list_bhavcopy_index_names, load_registry_catalog  # noqa: PLC0415
-    from services.insights_service import INTERNATIONAL_INDEX_SYMBOLS  # noqa: PLC0415
+    from services.overview.market import INTERNATIONAL_INDEX_SYMBOLS  # noqa: PLC0415
 
     entries: list[dict] = [
         {

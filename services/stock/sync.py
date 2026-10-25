@@ -8,7 +8,7 @@ from datetime import timedelta as _timedelta
 from typing import TYPE_CHECKING
 
 from data.repositories.stock_fundamentals import ensure_stock_fundamentals
-from services.stock_metrics import recompute_price_metrics
+from services.stock.metrics import recompute_price_metrics
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -156,7 +156,7 @@ def stock_data_health() -> dict:
     from sqlmodel import text  # noqa: PLC0415
 
     from core.database import get_session  # noqa: PLC0415
-    from services.data_freshness import business_days_between  # noqa: PLC0415
+    from services.mf.freshness import business_days_between  # noqa: PLC0415
 
     def _q(session, sql: str):
         return session.exec(text(sql)).one()[0]
@@ -216,7 +216,7 @@ def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] 
     """Re-fetch full history for `find_corrupt_ohlcv_symbols` hits (UPSERT, no delete), then recompute their
     metrics. Returns {'repaired': [...], 'failed': [...]}."""
     from data.repositories.stock import clear_stock_ohlcv_status, refetch_stock_full  # noqa: PLC0415
-    from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
+    from services.stock.metrics import recompute_price_metrics  # noqa: PLC0415
 
     symbols = find_corrupt_ohlcv_symbols(jump=jump)
     repaired: list[str] = []
@@ -245,7 +245,7 @@ def refetch_all_stocks(*, progress_cb: Callable[..., None] | None = None) -> int
         list_stock_symbols,
         refetch_stock_full,
     )
-    from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
+    from services.stock.metrics import recompute_price_metrics  # noqa: PLC0415
 
     symbols = list_stock_symbols()
     done: list[str] = []
@@ -273,7 +273,7 @@ def sync_missing_fundamentals(*, progress_cb: Callable[..., None] | None = None)
 
     from core.database import get_session  # noqa: PLC0415
     from data.repositories.stock_fundamentals import ensure_stock_fundamentals  # noqa: PLC0415
-    from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
+    from services.stock.metrics import recompute_price_metrics  # noqa: PLC0415
 
     with get_session() as session:
         symbols = [
@@ -304,7 +304,7 @@ def sync_missing_fundamentals(*, progress_cb: Callable[..., None] | None = None)
 def recompute_all_stock_metrics() -> int:
     """Recompute CAPM price metrics for the whole tracked stock universe (uses cached OHLCV)."""
     from data.repositories.stock_fundamentals import load_stock_metrics  # noqa: PLC0415
-    from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
+    from services.stock.metrics import recompute_price_metrics  # noqa: PLC0415
 
     m = load_stock_metrics()
     symbols = m["symbol"].to_list() if not m.is_empty() and "symbol" in m.columns else []

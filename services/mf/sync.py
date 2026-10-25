@@ -18,11 +18,12 @@ import polars as pl
 from data.exceptions import SourceNotFound, SourceThrottled
 from data.repositories.advisorkhoj_keys import fetch_holdings_for_scheme
 from data.repositories.holdings import replace_holdings_atomic, slug_to_code_map
-from data.repositories.nav import fetch_single_nav, last_nav_date_by_code, save_nav_df
+from data.repositories.nav import last_nav_date_by_code, save_nav_df
 from data.repositories.scheme_codes import resolve_codes
 from mutual_funds.display import make_slug, short_scheme_name
 from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS, FetchOutcome
-from services.registry_service import mark_nav_unavailable
+from services.mf.nav_sources import fetch_single_nav
+from services.mf.registry import mark_nav_unavailable
 
 logger = logging.getLogger(__name__)
 

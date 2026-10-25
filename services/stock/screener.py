@@ -1,5 +1,5 @@
 """Stock screener assembly + filters. Joins stock_registry with the cached stock_metrics
-and tags each row with its alpha category. Parallels services.screener_service (MF)."""
+and tags each row with its alpha category. Parallels services.mf.screener (MF)."""
 
 from __future__ import annotations
 

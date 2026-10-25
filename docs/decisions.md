@@ -18,9 +18,9 @@ Why behind non-obvious choices. Inline comments stay minimal; the rationale live
 - **Plan-stitch (ABSL Equity Hybrid95)** — a synthetic-code stub had IDCW-scale history stitched
   onto the Growth tail (~6.7×, not a power of 10). Fixed by re-fetching the real scheme's clean
   Growth series from MFAPI and replacing the stub's NAV.
-- **Atomic NAV replace** (`nav.refresh_nav_data`) — delete + re-insert runs in one transaction and
+- **Atomic NAV replace** (`nav_sources.refresh_nav_data`) — delete + re-insert runs in one transaction and
   only for schemes that fetched successfully, so a failed save never leaves NAV wiped.
-- **Throttle must not fall back** (`nav.fetch_single_nav`) — `SourceThrottled` from MFAPI propagates;
+- **Throttle must not fall back** (`nav_sources.fetch_single_nav`) — `SourceThrottled` from MFAPI propagates;
   falling back to AdvisorKhoj on a 429 turned a transient throttle into a misleading "no record" and
   could mark a new fund unavailable. Pass `scheme_code` when known (see Scheme identity).
 - **Metrics upsert traps** (`scheme_metrics.upsert_metrics`) — two input rows can resolve to one
@@ -97,7 +97,7 @@ Why behind non-obvious choices. Inline comments stay minimal; the rationale live
   data via an internal service-account JWT (1h TTL) embedded per page; replaying it is a ToS
   violation, and `mstarpy` automates it only via a headless browser. Stay on license-clean sources
   (MFAPI, AMFI, AdvisorKhoj, niftyindices).
-- **Worker counts are measured** — `registry_service.backfill_missing` uses `max_workers=8`,
+- **Worker counts are measured** — `mf.backfill.backfill_missing` uses `max_workers=8`,
   `submit_delay=0.05`: MFAPI peaks at 16 but the pool is shared with metadata fetches, and AdvisorKhoj
   overview queues at 8+. `HOLDINGS_FETCH_WORKERS` is 16: AdvisorKhoj sustained ~78 rps, p95 ~190 ms.
 
@@ -114,7 +114,7 @@ Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep
   `base_name` strips the suffix again so AdvisorKhoj candidates are unaffected. The parser
   raises `UpstreamFormatError` if names are still not unique.
 - **NAV fetch, save and the portfolio load are keyed by `scheme_code`** (`fetch_single_nav(name,
-  scheme_code)`, rows tagged with the code, `load_nav_by_codes`, `mf_metrics.nav_series`). Name-keyed
+  scheme_code)`, rows tagged with the code, `load_nav_by_codes`, `mf.metrics.nav_series`). Name-keyed
   loaders remain for the screener and single-fund views, which is safe only because names are unique.
 - Plan (Direct/Regular) cannot be inferred offline when AMFI leaves it blank; Kuvera's bulk list
   carries no ISIN, so the code suffix is the honest fallback. In the screener AMFI's own
@@ -182,13 +182,13 @@ Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep
 - **Stored as published, adjusted in metrics** (`services.price_adjust`) — AMFI NAVs are not adjusted for
   ETF unit splits (1:10 prints as a -90% day), and yfinance's adjusted history still carries
   pre-~2010 splits/bonuses and events Yahoo never recorded (MOTILALOFS / GPIL 2024-01-01). Left alone
-  they become -90% "returns" and -99% drawdowns, so `mf_metrics.compute_metrics_for_scheme` and
-  `stock_metrics._daily_returns` run series through `adjust_splits` first. `SPLIT_TOL` (0.08) on
+  they become -90% "returns" and -99% drawdowns, so `mf.metrics.compute_metrics_for_scheme` and
+  `stock.metrics._daily_returns` run series through `adjust_splits` first. `SPLIT_TOL` (0.08) on
   |ratio/factor − 1| keeps a real ~-55% crash (Yes Bank 2020, ratio 0.44) outside the 2× and 2.5×
   bands; a demerger landing on a clean factor (Vedanta 2026, ~1/3) is adjusted, closer to what a
   holder experienced. `PERSIST_DAYS`/`PERSIST_TOL` require the new scale to hold, comparing medians
   either side, so a reverting level is a blip, not a split.
-- **Corrupt-series repair** (`stock_sync_service.find_corrupt_ohlcv_symbols`) — flags an implausible
+- **Corrupt-series repair** (`stock.sync.find_corrupt_ohlcv_symbols`) — flags an implausible
   *adjacent-day* close jump (> `jump`× or < 1/`jump`), the signature of a stale adjusted series spliced
   onto raw rows (a ~600× splice gave PAGEIND `return_1y` ~26,775%). Adjacent-day detection leaves
   legitimate long-run growth alone. `repair_corrupt_ohlcv` resets the watermark
@@ -218,7 +218,7 @@ Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep
 - **Factor indices fall back to the parent universe** (`_PARENT_UNIVERSE`) — Quality/Value/Momentum/Low-Vol
   indices are not fetchable, so they map to the closest parent. Order matters: longest tokens first, so
   "500" does not match inside "50".
-- **Resolution chain** (`mf_metrics.recompute_metrics`) — metadata benchmark (if mappable) →
+- **Resolution chain** (`mf.metrics.recompute_metrics`) — metadata benchmark (if mappable) →
   sub-category → Nifty 50 for non-debt funds; each distinct index loads once. The benchmark is
   force-refreshed (`_load_benchmark_returns`) because `ensure_stock_data` skips sub-5-day gaps, which
   would leave CAPM on stale data.
@@ -233,12 +233,12 @@ Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep
   meaningless returns never reach the screener. Schemes that stop passing validation have their
   cached row evicted. `DORMANT_AFTER_DAYS` is the tracked-scheme version: no source has holdings or AUM
   for a matured FMP, so every fetch path skips it.
-- **Plausibility net** (`mf_metrics._MAX_PLAUSIBLE_DAILY_RETURN`) — on top of `repair_nav_glitches`, a
+- **Plausibility net** (`mf.metrics._MAX_PLAUSIBLE_DAILY_RETURN`) — on top of `repair_nav_glitches`, a
   >100% daily return is upstream corruption. Only those days are dropped, the history is kept (None
   if fewer than `TRADING_DAYS` returns remain).
 - **Fund age** — "age" is `inception_date` = the first NAV date (validated 1:1 against the oldest
   `mf_nav` row). Funds without computed metrics are excluded when an age floor is set.
-- **XIRR** (`portfolio_analytics.compute_xirr`) — flows dated after the valuation date happen when NAV
+- **XIRR** (`portfolio.analytics.compute_xirr`) — flows dated after the valuation date happen when NAV
   is stale; their units are already in `terminal_value` at the last NAV, so they are treated as invested
   at the valuation date (years clipped to 0) rather than excluded or compounded negatively. The brentq
   bracket is -99.99% to +1000%; no sign change returns None.

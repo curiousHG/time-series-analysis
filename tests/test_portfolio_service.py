@@ -1,4 +1,4 @@
-"""Unit tests for services.portfolio_service.build_portfolio_value_series (no DB)."""
+"""Unit tests for services.portfolio.value.build_portfolio_value_series (no DB)."""
 
 from datetime import date
 
@@ -29,7 +29,7 @@ def _nav(rows):
 
 
 def test_single_scheme_value_is_units_times_nav():
-    from services.portfolio_service import build_portfolio_value_series
+    from services.portfolio.value import build_portfolio_value_series
 
     mapped = _mapped([("Alpha", date(2024, 1, 1), 10.0)])
     nav = _nav(
@@ -46,7 +46,7 @@ def test_single_scheme_value_is_units_times_nav():
 
 
 def test_two_schemes_with_unit_and_nav_forward_fill():
-    from services.portfolio_service import build_portfolio_value_series
+    from services.portfolio.value import build_portfolio_value_series
 
     mapped = _mapped(
         [
@@ -73,7 +73,7 @@ def test_two_schemes_with_unit_and_nav_forward_fill():
 
 
 def test_empty_mapped_returns_none():
-    from services.portfolio_service import build_portfolio_value_series
+    from services.portfolio.value import build_portfolio_value_series
 
     mapped = _mapped([])
     nav = _nav([(date(2024, 1, 1), 10.0, "Alpha")])
@@ -82,7 +82,7 @@ def test_empty_mapped_returns_none():
 
 
 def test_zero_value_rows_filtered_to_none():
-    from services.portfolio_service import build_portfolio_value_series
+    from services.portfolio.value import build_portfolio_value_series
 
     # Net units of 0 on the only date → value 0 → filtered out → None.
     mapped = _mapped(

@@ -1,4 +1,4 @@
-"""Flow test for the unified Stock-Analysis picker catalog (services.market_data_service.analysis_catalog).
+"""Flow test for the unified Stock-Analysis picker catalog (services.stock.market_data.analysis_catalog).
 
 Verifies the classification that drives the picker: registry rows become 'stock' or 'etf' by quote_type,
 and both NSE bhavcopy names and international `^` symbols become 'index' — so a selected ticker routes to
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import polars as pl
 
-import services.market_data_service as mds
+import services.stock.market_data as mds
 
 
 def test_analysis_catalog_classifies_stock_etf_index(monkeypatch):
@@ -24,7 +24,7 @@ def test_analysis_catalog_classifies_stock_etf_index(monkeypatch):
         ),
     )
     monkeypatch.setattr("data.repositories.stock.list_bhavcopy_index_names", lambda: ["Nifty 50", "Nifty Bank"])
-    monkeypatch.setattr("services.insights_service.INTERNATIONAL_INDEX_SYMBOLS", [("^GSPC", "S&P 500", "US")])
+    monkeypatch.setattr("services.overview.market.INTERNATIONAL_INDEX_SYMBOLS", [("^GSPC", "S&P 500", "US")])
 
     cat = mds.analysis_catalog()
     kind = {c["id"]: c["kind"] for c in cat}
@@ -47,8 +47,8 @@ def test_analysis_catalog_carries_display_names(monkeypatch):
             {"symbol": ["GOLDBEES"], "name": ["Gold ETF"], "quote_type": ["ETF"], "exchange": ["NSE"]}
         ),
     )
-    monkeypatch.setattr("data.repositories.stock.list_bhavcopy_index_names", lambda: [])
-    monkeypatch.setattr("services.insights_service.INTERNATIONAL_INDEX_SYMBOLS", [("^GSPC", "S&P 500", "US")])
+    monkeypatch.setattr("data.repositories.stock.list_bhavcopy_index_names", list)
+    monkeypatch.setattr("services.overview.market.INTERNATIONAL_INDEX_SYMBOLS", [("^GSPC", "S&P 500", "US")])
 
     by_id = {c["id"]: c for c in mds.analysis_catalog()}
 

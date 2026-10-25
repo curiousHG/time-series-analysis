@@ -1,4 +1,4 @@
-"""Unit tests for services.insights_service alert rules (pure functions, synthetic frames)."""
+"""Unit tests for services.overview alert rules (pure functions, synthetic frames)."""
 
 from datetime import date
 
@@ -6,7 +6,7 @@ import pandas as pd
 import polars as pl
 
 from services.benchmarks import SUBCATEGORY_BENCHMARK
-from services.insights_service import (
+from services.overview.alerts import (
     AMC_CONC_WARN_PCT,
     FUND_CONC_WARN_PCT,
     PORTFOLIO_DD_CRIT,
@@ -20,9 +20,9 @@ from services.insights_service import (
     portfolio_drawdown_alert,
     sort_alerts,
     staleness_alerts,
-    trailing_return,
     underperformance_alerts,
 )
+from services.overview.market import trailing_return
 
 
 def _metrics(rows: list[dict]) -> pl.DataFrame:
@@ -104,7 +104,7 @@ def test_concentration_alerts_instrument_amc_fund():
 
 
 def test_staleness_alerts_wrap_reports():
-    from services.data_freshness import FreshnessReport
+    from services.mf.freshness import FreshnessReport
 
     stale = FreshnessReport(
         current_date=date(2026, 7, 2), rows=[], stale_count=3, total=10, max_days_old=40, max_business_days_old=26
@@ -119,7 +119,7 @@ def test_staleness_alerts_wrap_reports():
 
 
 def test_sort_alerts_severity_order():
-    from services.insights_service import Alert
+    from services.overview.alerts import Alert
 
     alerts = sort_alerts(
         [

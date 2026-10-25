@@ -1,4 +1,4 @@
-"""Unit tests for services.backtest_service.compute_metrics.
+"""Unit tests for services.stock.strategy_backtest.compute_metrics.
 
 Trade-derived math runs on real data; the quantstats-backed fields are pinned by
 monkeypatching `qs.stats.*` so the wiring (key mapping + ×100 scaling) is tested
@@ -30,7 +30,7 @@ def _trades(returns, pnl, *, durations_days=None, timestamps=True):
 
 
 def test_trade_math_winners_and_losers():
-    from services.backtest_service import compute_metrics
+    from services.stock.strategy_backtest import compute_metrics
 
     trades = _trades([0.10, -0.05, 0.20, -0.10], [100.0, -50.0, 200.0, -80.0])
     m = compute_metrics(_returns(), trades)
@@ -48,7 +48,7 @@ def test_trade_math_winners_and_losers():
 
 
 def test_no_losers_gives_zero_payoff_and_inf_profit_factor():
-    from services.backtest_service import compute_metrics
+    from services.stock.strategy_backtest import compute_metrics
 
     trades = _trades([0.10, 0.20], [100.0, 200.0])
     m = compute_metrics(_returns(), trades)
@@ -59,7 +59,7 @@ def test_no_losers_gives_zero_payoff_and_inf_profit_factor():
 
 
 def test_sqn_zero_for_single_trade():
-    from services.backtest_service import compute_metrics
+    from services.stock.strategy_backtest import compute_metrics
 
     trades = _trades([0.10], [100.0])
     m = compute_metrics(_returns(), trades)
@@ -68,7 +68,7 @@ def test_sqn_zero_for_single_trade():
 
 
 def test_sqn_zero_for_zero_variance_returns():
-    from services.backtest_service import compute_metrics
+    from services.stock.strategy_backtest import compute_metrics
 
     # Clean integer-valued returns → variance is exactly 0 (no float epsilon),
     # so the `std() > 0` guard short-circuits sqn to 0.
@@ -79,7 +79,7 @@ def test_sqn_zero_for_zero_variance_returns():
 
 
 def test_avg_duration_na_without_timestamp_columns():
-    from services.backtest_service import compute_metrics
+    from services.stock.strategy_backtest import compute_metrics
 
     trades = _trades([0.10, -0.05], [100.0, -50.0], timestamps=False)
     m = compute_metrics(_returns(), trades)
@@ -88,8 +88,8 @@ def test_avg_duration_na_without_timestamp_columns():
 
 
 def test_quantstats_fields_scaling_and_mapping(monkeypatch):
-    from services import backtest_service
-    from services.backtest_service import compute_metrics
+    from services.stock import strategy_backtest
+    from services.stock.strategy_backtest import compute_metrics
 
     stubs = {
         "cagr": 0.1,
@@ -104,7 +104,7 @@ def test_quantstats_fields_scaling_and_mapping(monkeypatch):
         "kelly_criterion": 0.25,
     }
     for name, value in stubs.items():
-        monkeypatch.setattr(backtest_service.qs.stats, name, lambda *a, _v=value, **k: _v)
+        monkeypatch.setattr(strategy_backtest.qs.stats, name, lambda *a, _v=value, **k: _v)
 
     trades = _trades([0.10, -0.05], [100.0, -50.0])
     m = compute_metrics(_returns(), trades)

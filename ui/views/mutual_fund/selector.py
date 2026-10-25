@@ -28,8 +28,8 @@ def _quick_jump() -> None:
 def _portfolio_fund_names() -> list[str]:
     """Scheme names the user holds (from the tradebook) — the default quick-access group."""
     try:
-        from services.portfolio_analytics import fund_values_from_nav  # noqa: PLC0415 — defer heavy import off boot
-        from services.portfolio_service import get_mapped_data  # noqa: PLC0415
+        from services.portfolio.analytics import fund_values_from_nav  # noqa: PLC0415 — defer heavy import off boot
+        from services.portfolio.value import get_mapped_data  # noqa: PLC0415
         from ui.state.loaders import load_txn_data  # noqa: PLC0415
 
         txn = load_txn_data()

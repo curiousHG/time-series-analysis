@@ -5,7 +5,7 @@ import polars as pl
 
 def test_holdings_refresh_keeps_existing_rows_when_a_fetch_fails(monkeypatch, caplog):
     from mutual_funds.display import make_slug
-    from services import sync_service
+    from services.mf import sync as sync_service
 
     replaced: list[str] = []
     codes = {make_slug("Good Fund"): 1, make_slug("Bad Fund"): 2}
@@ -27,7 +27,7 @@ def test_holdings_refresh_keeps_existing_rows_when_a_fetch_fails(monkeypatch, ca
         sync_service, "replace_holdings_atomic", lambda slug, h, s, a, scheme_code=None: replaced.append(slug)
     )
 
-    with caplog.at_level("WARNING", logger="services.sync_service"):
+    with caplog.at_level("WARNING", logger="services.mf.sync"):
         result = sync_service.refresh_holdings_for_schemes(["Good Fund", "Bad Fund"])
 
     assert result.success_count == 1
@@ -40,7 +40,7 @@ def test_holdings_refresh_keeps_existing_rows_when_a_fetch_fails(monkeypatch, ca
 
 
 def test_nav_refresh_deletes_only_successfully_fetched_schemes(monkeypatch):
-    from data.repositories import nav
+    from services.mf import nav_sources as nav
 
     deleted_params: list[dict] = []
     saved_frames: list[pl.DataFrame] = []
@@ -70,7 +70,7 @@ def test_nav_refresh_deletes_only_successfully_fetched_schemes(monkeypatch):
     monkeypatch.setattr(nav, "resolve_codes_with_synthetic", lambda names: {name: codes[name] for name in names})
     monkeypatch.setattr(nav, "fetch_nav_parallel", lambda names: [good_frame])
     # Patch the row-upsert so only the DELETE statement reaches FakeSession.exec.
-    monkeypatch.setattr(nav, "_upsert_nav_rows", lambda session, df, mapping: saved_frames.append(df))
+    monkeypatch.setattr(nav, "upsert_nav_rows", lambda session, df, mapping: saved_frames.append(df))
     monkeypatch.setattr(nav, "_recompute_metrics_for", lambda names: None)
     monkeypatch.setattr(nav, "load_nav_df", lambda names: pl.DataFrame())
     monkeypatch.setattr(nav, "get_session", lambda: FakeSession())

@@ -39,7 +39,7 @@ def _kickoff_background_refresh() -> bool:
         return True
 
     def _work() -> dict:
-        from services.stock_sync_service import refresh_all_stock_data, seed_nifty500  # noqa: PLC0415
+        from services.stock.sync import refresh_all_stock_data, seed_nifty500  # noqa: PLC0415
 
         seed_nifty500()
         result = refresh_all_stock_data()

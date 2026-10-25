@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import streamlit as st
 
 from mutual_funds.display import unique_short_names
-from services.portfolio_analytics import contribution_analysis
+from services.portfolio.analytics import contribution_analysis
 from ui.views.portfolio import allocation, growth
 
 if TYPE_CHECKING:

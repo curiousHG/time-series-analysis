@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from services.benchmarks import resolve_benchmark_symbol
-from services.mf_metrics import absolute_return, rolling_beat_rate, windowed_cagr
+from services.mf.metrics_math import absolute_return, rolling_beat_rate, windowed_cagr
 from ui.charts import theme
 from ui.components.metric_tiles import Kpi, fmt_pct, render_kpi_row
 from ui.views.mutual_fund.context import load_index_returns, rebased_index

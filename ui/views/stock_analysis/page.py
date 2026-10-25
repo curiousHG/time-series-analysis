@@ -40,7 +40,7 @@ def _refresh_stock_on_open(ticker: str, frame: pl.DataFrame) -> None:
 
     from data.repositories.stock import refresh_stock_to_today  # noqa: PLC0415 — defer off boot
     from data.repositories.stock_fundamentals import load_stock_metrics  # noqa: PLC0415
-    from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
+    from services.stock.metrics import recompute_price_metrics  # noqa: PLC0415
 
     bare = to_bare_symbol(ticker)
     opened = st.session_state.setdefault("_sa_opened", set())

@@ -1,14 +1,12 @@
-"""Registry service — single source of truth for tracked funds.
+"""Registry — single source of truth for tracked funds.
 
 `mf_registry` is keyed on `scheme_code`; public APIs take/return scheme_name and resolve
 through `amfi_schemes`. Funds without an AMFI code get synthetic negative codes so the FK holds.
 """
 
-import contextlib
+from __future__ import annotations
+
 import logging
-import time
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, date, datetime, timedelta
 
 import polars as pl
@@ -25,19 +23,9 @@ from core.models import (
     MfRegistry,
     MfSectorAllocation,
 )
-from data.repositories.advisorkhoj_keys import fetch_holdings_for_scheme
-from data.repositories.holdings import (
-    load_holdings,
-    save_assets,
-    save_holdings,
-    save_sectors,
-)
-from data.repositories.metadata import fetch_and_save as fetch_metadata_and_save
-from data.repositories.metadata import load_metadata
-from data.repositories.nav import fetch_single_nav, save_nav_df
 from data.repositories.scheme_codes import resolve_or_mint_code
 from mutual_funds.display import make_slug, unique_short_names
-from services.constants import DORMANT_AFTER_DAYS, BackfillSource, SourceStatus
+from services.constants import DORMANT_AFTER_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -97,17 +85,17 @@ def list_active() -> pl.DataFrame:
     return df if df.is_empty() else df.filter(~pl.col("dormant"))
 
 
-def _resolve_scheme_code(scheme_name: str) -> int | None:
+def resolve_scheme_code(scheme_name: str) -> int | None:
     """Look up scheme_code in amfi_schemes by exact name match."""
     with get_session() as session:
         row = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)).first()
     return int(row) if row is not None else None
 
 
-def _set_status(scheme_name: str, **statuses: str) -> None:
+def set_status(scheme_name: str, **statuses: str) -> None:
     if not statuses:
         return
-    code = _resolve_scheme_code(scheme_name)
+    code = resolve_scheme_code(scheme_name)
     if code is None:
         return
     with get_session() as session:
@@ -121,7 +109,7 @@ def _set_status(scheme_name: str, **statuses: str) -> None:
         session.commit()
 
 
-def _upsert_registry(scheme_name: str, scheme_code: int | None = None) -> int:
+def upsert_registry(scheme_name: str, scheme_code: int | None = None) -> int:
     """Insert (or update) an mf_registry row keyed on scheme_code. Returns the resolved code."""
     code = scheme_code if scheme_code is not None else resolve_or_mint_code(scheme_name)
     with get_session() as session:
@@ -141,176 +129,15 @@ def _upsert_registry(scheme_name: str, scheme_code: int | None = None) -> int:
     return code
 
 
-def _fetch_nav(scheme_name: str) -> SourceStatus:
-    try:
-        df = fetch_single_nav(scheme_name)
-        if df.height == 0:
-            return "unavailable"
-        save_nav_df(df)
-        return "available"
-    except Exception as e:
-        logger.warning("NAV fetch failed for %s: %s", scheme_name, e)
-        return "unavailable"
-
-
-def _fetch_holdings(scheme_name: str) -> SourceStatus:
-    code = _resolve_scheme_code(scheme_name)
-    if code is None:
-        return "unavailable"
-    try:
-        h, s, a = fetch_holdings_for_scheme(code)
-        if h.height == 0 and s.height == 0 and a.height == 0:
-            return "unavailable"
-        save_holdings(h, scheme_code=code)
-        save_sectors(s, scheme_code=code)
-        save_assets(a, scheme_code=code)
-        return "available"
-    except Exception as e:
-        logger.warning("Holdings fetch failed for %s: %s", scheme_name, e)
-        return "unavailable"
-
-
-def _fetch_metadata(scheme_name: str) -> SourceStatus:
-    try:
-        meta = fetch_metadata_and_save(scheme_name)
-        if not meta or not any(meta.get(k) for k in ("aum_crores", "expense_ratio", "benchmark", "launch_date")):
-            return "unavailable"
-        return "available"
-    except Exception as e:
-        logger.warning("Metadata fetch failed for %s: %s", scheme_name, e)
-        return "unavailable"
-
-
 def mark_nav_unavailable(scheme_name: str) -> None:
     """Record that no source knows this fund's NAV. The routine refresh leaves 'unavailable'
     funds alone; the Settings retry picker is the way back."""
-    _set_status(scheme_name, nav_status="unavailable")
-
-
-def retry_unavailable(scheme_name: str) -> dict[str, SourceStatus]:
-    """Retry only the sources currently marked 'unavailable' for a fund."""
-    code = _resolve_scheme_code(scheme_name)
-    if code is None:
-        return {}
-    with get_session() as session:
-        row = session.get(MfRegistry, code)
-        if row is None:
-            return {}
-        targets = {
-            "nav_status": row.nav_status,
-            "holdings_status": row.holdings_status,
-            "metadata_status": row.metadata_status,
-        }
-
-    results: dict[str, SourceStatus] = {}
-    if targets["nav_status"] == "unavailable":
-        results["nav_status"] = _fetch_nav(scheme_name)
-    if targets["holdings_status"] == "unavailable":
-        results["holdings_status"] = _fetch_holdings(scheme_name)
-    if targets["metadata_status"] == "unavailable":
-        results["metadata_status"] = _fetch_metadata(scheme_name)
-
-    if results:
-        _set_status(scheme_name, **results)
-    return results
-
-
-def backfill_missing(
-    *,
-    scheme_names: list[str] | None = None,
-    sources: tuple[BackfillSource, ...] = ("nav", "metadata"),
-    max_per_run: int = 50,
-    submit_delay: float = 0.05,
-    max_workers: int = 8,
-    progress_cb: Callable[[int, int, str, str], None] | None = None,
-) -> dict[str, list[str]]:
-    """Fetch missing nav/metadata/holdings for tracked funds, rate limited; returns {fetched, failed, skipped}."""
-    if scheme_names is not None:
-        for name in scheme_names:
-            _upsert_registry(name)
-
-    tracked = list_tracked()
-    if tracked.is_empty():
-        return {"fetched": [], "failed": [], "skipped": []}
-
-    rows_by_name = {row["schemeName"]: row for row in tracked.iter_rows(named=True)}
-
-    if scheme_names is not None:
-        ordered_rows = [rows_by_name[n] for n in scheme_names if n in rows_by_name]
-        retry_unavailable_too = True
-    else:
-        ordered_rows = list(tracked.iter_rows(named=True))
-        retry_unavailable_too = False
-
-    def _needs(status: str) -> bool:
-        if status == "available":
-            return False
-        if status == "pending":
-            return True
-        return retry_unavailable_too
-
-    todo: list[tuple[str, str]] = []
-    for row in ordered_rows:
-        name = row["schemeName"]
-        if row["dormant"]:
-            continue
-        if "nav" in sources and _needs(row["navStatus"]):
-            todo.append((name, "nav"))
-        if "metadata" in sources and _needs(row["metadataStatus"]):
-            todo.append((name, "metadata"))
-        if "holdings" in sources and _needs(row["holdingsStatus"]):
-            todo.append((name, "holdings"))
-        if len(todo) >= max_per_run:
-            break
-    todo = todo[:max_per_run]
-
-    if not todo:
-        return {"fetched": [], "failed": [], "skipped": []}
-
-    def _do_one(scheme_name: str, source: str) -> tuple[str, str, str]:
-        try:
-            if source == "nav":
-                status = _fetch_nav(scheme_name)
-                _set_status(scheme_name, nav_status=status)
-            elif source == "metadata":
-                status = _fetch_metadata(scheme_name)
-                _set_status(scheme_name, metadata_status=status)
-            elif source == "holdings":
-                status = _fetch_holdings(scheme_name)
-                _set_status(scheme_name, holdings_status=status)
-            else:
-                status = "unavailable"
-        except Exception as e:
-            logger.warning("backfill failed for %s/%s: %s", scheme_name, source, e)
-            status = "unavailable"
-        return scheme_name, source, status
-
-    fetched: list[str] = []
-    failed: list[str] = []
-    futures: list = []
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        for name, source in todo:
-            futures.append(pool.submit(_do_one, name, source))
-            time.sleep(submit_delay)
-
-        for done, fut in enumerate(as_completed(futures), start=1):
-            name, source, status = fut.result()
-            if progress_cb is not None:
-                with contextlib.suppress(Exception):
-                    progress_cb(done, len(todo), name, source)
-            tag = f"{source}: {name}"
-            if status == "available":
-                fetched.append(tag)
-            else:
-                failed.append(tag)
-
-    logger.info("Backfill done — fetched %d, failed %d", len(fetched), len(failed))
-    return {"fetched": fetched, "failed": failed, "skipped": []}
+    set_status(scheme_name, nav_status="unavailable")
 
 
 def remove_fund(scheme_name: str) -> None:
     """Drop a fund from the registry and cascade-delete its NAV/holdings/metadata rows."""
-    code = _resolve_scheme_code(scheme_name)
+    code = resolve_scheme_code(scheme_name)
     if code is None:
         logger.warning("remove_fund: no scheme_code for %s — nothing to delete", scheme_name)
         return
@@ -344,7 +171,7 @@ def save_to_registry(scheme_names: list[str]) -> None:
     if not scheme_names:
         return
     for name in scheme_names:
-        _upsert_registry(name)
+        upsert_registry(name)
 
 
 def list_unavailable_funds() -> pl.DataFrame:
@@ -381,16 +208,3 @@ def reconcile_statuses() -> int:
                 updated += 1
         session.commit()
     return updated
-
-
-__all__ = [
-    "backfill_missing",
-    "list_tracked",
-    "load_holdings",
-    "load_metadata",
-    "load_registry",
-    "reconcile_statuses",
-    "remove_fund",
-    "retry_unavailable",
-    "save_to_registry",
-]

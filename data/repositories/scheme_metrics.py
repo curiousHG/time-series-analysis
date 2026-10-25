@@ -1,6 +1,6 @@
 """Repository for mf_scheme_metrics — cached per-scheme risk/return metrics.
 
-Pure DB CRUD + staleness detection; the actual computation lives in services.mf_metrics.
+Pure DB CRUD + staleness detection; the actual computation lives in services.mf.metrics.
 Keyed on scheme_code internally; public APIs pass scheme_name (resolved via AmfiScheme join).
 """
 

@@ -10,7 +10,7 @@ import contextlib
 import polars as pl
 import streamlit as st
 
-from services.stock_fundamentals_service import fundamentals_percentiles, momentum_stats, quarterly_trend
+from services.stock.fundamentals import fundamentals_percentiles, momentum_stats, quarterly_trend
 from stocks.constants import is_nse_exchange, to_bare_symbol
 from ui.charts import theme
 from ui.components.metric_tiles import EM_DASH, Kpi, fmt_pct, render_kpi_row

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from services.mf_metrics import recompute_metrics
+from services.mf.metrics import recompute_metrics
 from ui.state.loaders import load_metrics_cached
 
 

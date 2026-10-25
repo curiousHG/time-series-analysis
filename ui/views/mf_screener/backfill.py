@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import streamlit as st
 
 from core.background import set_task_progress
-from services.registry_service import backfill_missing
+from services.mf.backfill import backfill_missing
 from ui.components.background_refresh import BackgroundRefresh
 from ui.constants import BACKFILL_HELP_TEXT
 from ui.state.loaders import load_metrics_cached, load_screener_df_cached

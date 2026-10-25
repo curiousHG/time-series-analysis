@@ -1,4 +1,4 @@
-"""Unit tests for services.portfolio_analytics — XIRR and look-through exposure."""
+"""Unit tests for services.portfolio.analytics — XIRR and look-through exposure."""
 
 from datetime import date
 
@@ -6,7 +6,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from services.portfolio_analytics import (
+from services.portfolio.analytics import (
     compute_xirr,
     contribution_analysis,
     fund_values_from_nav,

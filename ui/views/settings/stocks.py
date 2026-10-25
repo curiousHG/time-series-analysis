@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from services.stock_sync_service import (
+from services.stock.sync import (
     backfill_indices_history,
     list_unavailable_stocks,
     recompute_all_stock_metrics,

@@ -11,7 +11,7 @@ def _frame(name: str, nav: float) -> pl.DataFrame:
 
 
 def test_fetch_single_nav_uses_the_given_code_and_tags_rows_with_it(monkeypatch):
-    from data.repositories import nav
+    from services.mf import nav_sources as nav
 
     asked: list[str] = []
 
@@ -61,7 +61,7 @@ def test_save_nav_df_writes_under_the_row_code_not_the_name(monkeypatch):
 
 
 def test_get_mapped_data_loads_nav_by_the_trades_codes(monkeypatch):
-    from services import portfolio_service
+    from services.portfolio import value as portfolio_value
 
     requested: list[list[int]] = []
 
@@ -75,7 +75,7 @@ def test_get_mapped_data_loads_nav_by_the_trades_codes(monkeypatch):
             }
         )
 
-    monkeypatch.setattr(portfolio_service, "load_nav_by_codes", fake_load)
+    monkeypatch.setattr(portfolio_value, "load_nav_by_codes", fake_load)
     txn = pl.DataFrame(
         {
             "scheme_code": [127042, 127042],
@@ -85,7 +85,7 @@ def test_get_mapped_data_loads_nav_by_the_trades_codes(monkeypatch):
         }
     )
 
-    _, nav_df = portfolio_service.get_mapped_data(txn)
+    _, nav_df = portfolio_value.get_mapped_data(txn)
 
     assert requested == [[127042]]
     assert nav_df["scheme_code"].to_list() == [127042]
@@ -96,7 +96,7 @@ def test_get_mapped_data_loads_nav_by_the_trades_codes(monkeypatch):
 def test_fetch_single_nav_skips_mfapi_for_a_synthetic_code(monkeypatch):
     """Synthetic-negative codes are minted locally for names AMFI does not list; MFAPI can never
     serve them, so the only source is AdvisorKhoj by name."""
-    from data.repositories import nav
+    from services.mf import nav_sources as nav
 
     mfapi_asked: list[str] = []
 

@@ -136,7 +136,7 @@ SOURCE_ROUTING: tuple[dict[str, str], ...] = (
     },
     {
         "what": "MF risk/return metrics (derived)",
-        "source": "services.mf_metrics.recompute_metrics",
+        "source": "services.mf.metrics.recompute_metrics",
         "fallback": "—",
         "returns": "31 cached metrics/scheme (CAGR, Sharpe, VaR, rolling, alpha/beta vs category benchmark)",
         "lands_in": "mf_scheme_metrics",
@@ -144,7 +144,7 @@ SOURCE_ROUTING: tuple[dict[str, str], ...] = (
     },
     {
         "what": "Stock price metrics (derived)",
-        "source": "services.stock_metrics.recompute_price_metrics",
+        "source": "services.stock.metrics.recompute_price_metrics",
         "fallback": "—",
         "returns": "1Y return/vol + CAPM alpha/beta/R² vs the exchange-routed benchmark",
         "lands_in": "stock_metrics",

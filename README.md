@@ -7,7 +7,7 @@ Streamlit-based platform for analysing Indian mutual funds and stocks. Pulls sch
 Seven pages, accessible from the top navigation:
 
 ### 0. Overview (default page)
-The landing desk: market pulse (Nifty 50 / Sensex / Nifty Bank / Next 50 with 1D/1W/1M/YTD moves and 52-week positioning), portfolio snapshot (value, net invested, P&L, XIRR, time-weighted CAGR, distance from peak, 90-day sparkline), an automated alerts panel (benchmark underperformance, alpha decay, portfolio drawdown, look-through concentration, data staleness — thresholds in `services/insights_service.py`), and the week's biggest movers among your funds.
+The landing desk: market pulse (Nifty 50 / Sensex / Nifty Bank / Next 50 with 1D/1W/1M/YTD moves and 52-week positioning), portfolio snapshot (value, net invested, P&L, XIRR, time-weighted CAGR, distance from peak, 90-day sparkline), an automated alerts panel (benchmark underperformance, alpha decay, portfolio drawdown, look-through concentration, data staleness — thresholds in `services/overview/alerts.py`), and the week's biggest movers among your funds.
 
 ### 1. Mutual Fund Analysis
 Single-fund deep dive. Pick any tracked fund from a sidebar with filters (AMC, category, plan, option, search-by-name, data-availability toggles).
@@ -65,15 +65,15 @@ ui/charts/                        plotly chart builders + dark theme
 ui/state/loaders.py               @st.cache_data wrappers
                 ↓
 services/                         business logic — no streamlit imports
-  registry_service.py             single source of truth for tracked funds (mf_registry)
+  mf/registry.py, mf/backfill.py  single source of truth for tracked funds (mf_registry)
                                   · list_tracked / backfill_missing /
                                     retry_unavailable / remove_fund / save_to_registry
-  mf_metrics.py                   per-fund quantstats: cagr_1y/3y/5y/10y, vol, sharpe, sortino,
+  mf/metrics.py, metrics_math.py  per-fund quantstats: cagr_1y/3y/5y/10y, vol, sharpe, sortino,
                                   max_dd, pct_from_ath, tracking_error
-  portfolio_service.py            tradebook → portfolio value series
-  sync_service.py                 safe NAV / holdings refresh orchestration
-  screener_service.py             MF screener DataFrame assembly and filters
-  data_freshness.py               per-fund NAV / holdings staleness checks
+  portfolio/value.py              tradebook → portfolio value series
+  mf/sync.py                      safe NAV / holdings refresh orchestration
+  mf/screener.py                  MF screener DataFrame assembly and filters
+  mf/freshness.py                 per-fund NAV / holdings staleness checks
   db_stats.py                     PostgreSQL stats for Settings page
                 ↓
 core/
@@ -92,7 +92,9 @@ mutual_funds/
   analytics.py                    rolling returns, sector exposure
                 ↓
 data/fetchers/                    external HTTP only, no DB
-  mutual_fund.py                  MFAPI, AdvisorKhoj (overview + portfolio), AMFI master
+  mfapi.py                        MFAPI
+  advisorkhoj.py                  AdvisorKhoj (overview + portfolio)
+  amfi.py                         AMFI master
   stock.py                        yfinance + jugaad-data with fallback
 data/repositories/                DB-first; ensures fetch only the gap
   amfi.py                         AMFI sync, ISIN lookup, fuzzy search (pg_trgm)
@@ -129,7 +131,7 @@ The `pg_trgm` Postgres extension is enabled on first app start for fuzzy AMFI se
 
 **DB-first, fetch only the gap.** Every external data source is fetched only for the range or keys that are NOT already in the database. The `data/repositories/*ensure_*` functions follow this pattern: query DB → compute missing → fetch only the subset → save → return from DB.
 
-When adding a fund anywhere in the app (Screener bulk fetch, MF Analysis fund picker, etc.), `services.registry_service.add_funds` upserts the registry row with `pending` statuses, runs NAV + holdings + metadata fetches in parallel, and writes back `available` / `unavailable` per source. Funds confirmed unavailable are not auto-retried — use the per-fund "Retry unavailable" button in Settings.
+When adding a fund anywhere in the app (Screener bulk fetch, MF Analysis fund picker, etc.), `services.mf.registry.save_to_registry` upserts the registry row with `pending` statuses; `services.mf.backfill.backfill_missing` then runs NAV + holdings + metadata fetches in parallel and writes back `available` / `unavailable` per source. Funds confirmed unavailable are not auto-retried — use the per-fund "Retry unavailable" button in Settings.
 
 ## Data sources
 

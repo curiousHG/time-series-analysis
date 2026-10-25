@@ -5,8 +5,8 @@ import plotly.graph_objects as go
 import quantstats as qs
 import streamlit as st
 
-from services.backtest_service import run_backtest
 from services.constants import BACKTEST_RISK_FREE
+from services.stock.strategy_backtest import run_backtest
 from strategies import STRATEGY_REGISTRY
 from ui.components.monthly_returns import render_monthly_returns
 

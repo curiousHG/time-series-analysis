@@ -8,7 +8,7 @@ import streamlit as st
 
 from mutual_funds.display import unique_short_names
 from mutual_funds.tradebook import signed_flows
-from services.portfolio_analytics import compute_xirr
+from services.portfolio.analytics import compute_xirr
 from ui.charts import theme
 from ui.components.metric_tiles import Kpi, fmt_inr_compact, render_kpi_row
 

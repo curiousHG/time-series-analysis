@@ -5,7 +5,7 @@ from __future__ import annotations
 import polars as pl
 import streamlit as st
 
-from services.registry_service import load_registry
+from services.mf.registry import load_registry
 from ui.components.background_refresh import BackgroundRefresh
 from ui.components.chrome import page_header
 from ui.components.freshness_banner import clear_freshness_cache, is_fund_stale
@@ -21,8 +21,8 @@ def _portfolio_refresh_task(names: list[str], slugs: list[str]) -> dict:
     background task; a failing source is recorded, not fatal."""
     from core.background import set_task_progress  # noqa: PLC0415 — defer off boot
     from data.repositories.holdings import refresh_holdings_data  # noqa: PLC0415
-    from data.repositories.nav import refresh_nav_data  # noqa: PLC0415
-    from services.mf_metrics import recompute_metrics  # noqa: PLC0415
+    from services.mf.metrics import recompute_metrics  # noqa: PLC0415
+    from services.mf.nav_sources import refresh_nav_data  # noqa: PLC0415
 
     steps = (
         ("NAV", lambda: refresh_nav_data(names)),

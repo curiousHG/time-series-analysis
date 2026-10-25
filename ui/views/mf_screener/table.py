@@ -19,8 +19,8 @@ from mutual_funds.metric_catalog import (
     METRIC_RENAME,
     METRIC_TEXT_COLS,
 )
-from services.registry_service import backfill_missing
-from services.screener_service import status_cell
+from services.mf.backfill import backfill_missing
+from services.mf.screener import status_cell
 from ui.components.screener_grid import clicked_cell_value, render_screener_grid
 from ui.state.navigation import open_fund_in_analysis
 

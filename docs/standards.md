@@ -33,7 +33,7 @@ ui/views  →  ui/state/loaders.py  →  services/  →  data/repositories  → 
 | `fetch_*` | HTTP only, no DB | `data/fetchers/` only |
 | `load_*` | DB read → DataFrame/rows | repositories, loaders |
 | `get_*` | DB read → scalar/dict | repositories |
-| `ensure_*` | DB-first gap-fetch (check DB → fetch missing → save → return from DB) | repositories |
+| `ensure_*` | DB-first gap-fetch (check DB → fetch missing → save → return from DB) | `data/repositories/` for one source; `services/` when it chooses between sources (e.g. `services.mf.nav_sources.ensure_nav_data`) |
 | `save_*` / `upsert_*` | DB write | repositories |
 | `sync_*` | pull a full external universe into a table | repositories/services |
 | `refresh_*` | forward-fill to now | services |

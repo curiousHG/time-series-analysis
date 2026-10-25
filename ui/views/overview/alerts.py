@@ -11,7 +11,7 @@ from ui.state import navigation
 from ui.state.loaders import load_overview_alerts_cached
 
 if TYPE_CHECKING:
-    from services.insights_service import Alert
+    from services.overview.alerts import Alert
 
 _DOT = {"critical": ":red[●]", "warn": ":orange[●]", "info": ":blue[●]"}
 _LABEL = {"critical": "critical", "warn": "warning", "info": "notice"}

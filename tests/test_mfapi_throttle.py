@@ -15,8 +15,8 @@ import pytest
 
 from data.exceptions import SourceNotFound, SourceThrottled
 from data.fetchers import mfapi as mf
-from data.repositories import nav
-from services import sync_service as sync
+from services.mf import nav_sources as nav
+from services.mf import sync
 
 _URL = "https://api.mfapi.in/mf/119591"
 _BODY = {"data": [{"date": "24-10-2026", "nav": "10.5"}]}
