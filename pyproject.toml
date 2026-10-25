@@ -128,3 +128,6 @@ reportReturnType = "none"
 
 [tool.streamlit]
 asset_dir = "..."
+
+[tool.pytest.ini_options]
+markers = ["db: needs the local Postgres (DATABASE_URL); skipped when unreachable"]
