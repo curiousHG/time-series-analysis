@@ -1,8 +1,7 @@
 """Process-wide, Streamlit-free notice bus.
 
-Producers deep in the data/fetcher layer (which must not import Streamlit) push short user-
-facing notices here; the UI layer drains them once per run and renders them (as st.toast).
-Bounded + thread-safe so background/thread fetches are safe and a headless run can't leak.
+The data layer pushes short user-facing notices; the UI drains them once per run and renders toasts. Bounded
+and thread-safe.
 """
 
 from __future__ import annotations
@@ -18,8 +17,8 @@ _LOCK = threading.Lock()
 @dataclass(frozen=True)
 class Notice:
     message: str
-    level: str = "warning"  # info | success | warning | error
-    key: str | None = None  # de-dup marker; a new notice with the same key replaces the old
+    level: str = "warning"
+    key: str | None = None
 
 
 _NOTICES: deque[Notice] = deque(maxlen=_MAXLEN)

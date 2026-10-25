@@ -1,7 +1,6 @@
 """Timing helpers (context manager + decorator) logging durations to logs/perf.log.
 
-Calls under `slow_threshold_ms` (default 100) log at DEBUG to avoid noise; slower ones log
-at INFO so they're easy to grep.
+Calls under `slow_threshold_ms` (default 100) log at DEBUG, slower ones at INFO.
 """
 
 from __future__ import annotations
@@ -24,8 +23,7 @@ T = TypeVar("T")
 def timed(label: str, *, slow_threshold_ms: float = DEFAULT_SLOW_MS):
     """Time a block; logs INFO if >= slow_threshold_ms else DEBUG. Always logs on error.
 
-    A no-op passthrough unless `PERF_LOG=1` — every Streamlit rerun re-enters these blocks, and
-    the timing was only ever read while chasing a slow page.
+    A no-op passthrough unless `PERF_LOG=1`.
     """
     if not PERF_LOG_ENABLED:
         yield

@@ -1,8 +1,6 @@
-"""Tiny in-process background-task registry — run work off the Streamlit thread and poll status.
+"""In-process background-task registry: run work off the Streamlit thread and poll status.
 
-Enables stale-while-revalidate: kick off a refresh, keep showing cached data, and swap to fresh
-once the task finishes. Tasks are keyed; starting a key that's already running is a no-op, so a
-button mash or a rerun won't spawn duplicates. State is per-process (module-level), thread-safe.
+Tasks are keyed; starting a key that is already running is a no-op. State is per-process and thread-safe.
 """
 
 from __future__ import annotations
@@ -18,14 +16,12 @@ if TYPE_CHECKING:
 
 _LOCK = threading.Lock()
 
-# Per-task rolling log depth. Deep enough to follow a long fund refresh, bounded so a 5K-scheme
-# run can't grow without limit in a process that may stay up for days.
 LOG_CAPACITY = 400
 
 
 @dataclass
 class TaskState:
-    status: str = "idle"  # idle | running | done | failed
+    status: str = "idle"
     started_at: float | None = None
     finished_at: float | None = None
     result: Any = None
@@ -35,8 +31,6 @@ class TaskState:
 
 
 _TASKS: dict[str, TaskState] = {}
-# The most recent finished run per key, kept after consume_if_finished resets the task so a view
-# can keep showing what that run did (counts, failures) until the next one finishes.
 _LAST: dict[str, TaskState] = {}
 
 
@@ -66,11 +60,7 @@ def start_task(key: str, fn: Callable[[], Any], *, meta: dict | None = None) -> 
 
 
 def task_state(key: str) -> TaskState:
-    """Current state for `key` (idle if never started).
-
-    Returns a shallow copy (with its own `meta` dict) so a caller reading `.meta` can't race a
-    worker thread mutating it via `set_task_progress`.
-    """
+    """Current state for `key` (idle if never started), as a shallow copy."""
     with _LOCK:
         state = _TASKS.get(key)
         if state is None:

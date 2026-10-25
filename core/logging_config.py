@@ -20,17 +20,12 @@ from core.constants import (
     PERF_LOG_ENABLED,
 )
 
-# Streamlit re-imports modules on hot reload, which makes SQLModel re-register classes
-# in SQLAlchemy's declarative base. The redefinition is identical — the warning is noise.
 warnings.filterwarnings(
     "ignore",
     message=r"This declarative base already contains a class with the same class name.*",
     category=SAWarning,
 )
 
-# yfinance: progress prints are killed at call sites (progress=False). FutureWarning churn
-# ("auto_adjust default changed", etc.) routes to /dev/null since we already pass auto_adjust
-# explicitly — log capture below catches the rest.
 warnings.filterwarnings("ignore", category=FutureWarning, module=r"yfinance.*")
 
 
@@ -44,18 +39,13 @@ def _mark(handler: logging.Handler) -> logging.Handler:
 
 
 def setup_logging(level: int | None = None, *, perf: bool | None = None):
-    """Configure rotating file handlers. Idempotent across Streamlit hot reloads.
+    """Configure rotating file handlers; idempotent across Streamlit hot reloads.
 
-    Guards on actual logger state (a marker attr on handlers), not a module-level flag:
-    Streamlit re-imports modules and resets globals, so a flag would let handlers pile up
-    on every save (N-fold log duplication).
-
-    `level` defaults to the LOG_LEVEL env var (INFO, or DEBUG when DEBUG_LOG=1); `perf` defaults
-    to the PERF_LOG env var (off). Explicit arguments win, so a script can force either. Nothing
-    reaches the terminal unless LOG_CONSOLE=1.
+    `level` defaults to LOG_LEVEL and `perf` to PERF_LOG; explicit arguments win. Nothing reaches the terminal
+    unless LOG_CONSOLE=1.
     """
     level = logging.getLevelName(LOG_LEVEL) if level is None else level
-    if not isinstance(level, int):  # unknown LOG_LEVEL string
+    if not isinstance(level, int):
         level = logging.INFO
     perf = PERF_LOG_ENABLED if perf is None else perf
 
@@ -74,15 +64,11 @@ def setup_logging(level: int | None = None, *, perf: bool | None = None):
         console.setFormatter(formatter)
         root.addHandler(_mark(console))
 
-    # app.log — catches everything
     app_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["app"], maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT)
     app_handler.setLevel(level)
     app_handler.setFormatter(formatter)
     root.addHandler(_mark(app_handler))
 
-    # data.log — the whole data layer. Attached to the "data" parent logger so every child
-    # (data.fetchers.*, data.repositories.*) reaches it via propagation; records continue
-    # up to the root (console + app.log) as before.
     data_handler = RotatingFileHandler(
         LOGS_DIR / LOG_FILES["data"], maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT
     )
@@ -92,24 +78,17 @@ def setup_logging(level: int | None = None, *, perf: bool | None = None):
     if not _has_marked_handler(data_logger):
         data_logger.addHandler(_mark(data_handler))
 
-    # Third-party fetchers — route their loggers into data.log too, but keep them off the
-    # console so they don't drown out app messages. propagate=False stops them from also
-    # bubbling up to the root handler (console + app.log).
-    for namespace in ("yfinance", "peewee"):  # peewee is jugaad-data's underlying ORM
+    for namespace in ("yfinance", "peewee"):
         ns_logger = logging.getLogger(namespace)
         ns_logger.setLevel(logging.INFO)
         ns_logger.propagate = False
         if not _has_marked_handler(ns_logger):
             ns_logger.addHandler(_mark(data_handler))
 
-    # httpx logs every request at INFO — pure duplication of the fetchers' own messages
-    # (it was ~25% of app.log). Warnings and errors still get through.
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    # perf.log — startup/page timing from core.timing.timed(). Opt-in (PERF_LOG=1): the timers
-    # fire on every Streamlit rerun, so left on they dominate the log volume.
     perf_logger = logging.getLogger("perf")
-    perf_logger.propagate = False  # don't double-log into app.log
+    perf_logger.propagate = False
     if not perf:
         perf_logger.disabled = True
         return

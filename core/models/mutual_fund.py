@@ -19,10 +19,7 @@ class MfNav(SQLModel, table=True):
 
 
 class MfHolding(SQLModel, table=True):
-    """Per-fund holdings (instrument + weight + ISIN), keyed on scheme_code FK.
-
-    No stored slug — derive at fetch time via mutual_funds.display.make_slug.
-    """
+    """Per-fund holdings (instrument + weight + ISIN), keyed on scheme_code FK."""
 
     __tablename__ = "mf_holdings"
     __table_args__ = TABLE_ARGS
@@ -74,12 +71,12 @@ class MfRegistry(SQLModel, table=True):
     __table_args__ = TABLE_ARGS
 
     scheme_code: int = Field(primary_key=True, foreign_key="amfi_schemes.scheme_code")
-    nav_status: str = Field(default="pending")  # pending | available | unavailable
+    nav_status: str = Field(default="pending")
     holdings_status: str = Field(default="pending")
     metadata_status: str = Field(default="pending")
     added_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
     last_attempted_at: datetime.datetime | None = None
-    advisorkhoj_slug: str | None = None  # the spelling AdvisorKhoj resolved, once verified
+    advisorkhoj_slug: str | None = None
 
 
 class MfAmc(SQLModel, table=True):
@@ -103,26 +100,23 @@ class MfCategory(SQLModel, table=True):
 
 
 class AmfiScheme(SQLModel, table=True):
-    """Canonical scheme dim table — every MF table FKs here on `scheme_code`.
+    """Canonical scheme dim table; every MF table FKs here on `scheme_code`. Codeless funds get synthetic
+    negative scheme_codes."""
 
-    Codeless funds (segregated portfolios, side-pockets) get synthetic negative scheme_codes;
-    AMFI never issues negative codes so namespaces don't collide.
-    """
-
-    __tablename__ = "amfi_schemes"  # rename to mf_scheme happens via migration ALTER
+    __tablename__ = "amfi_schemes"
     __table_args__ = TABLE_ARGS
 
     scheme_code: int = Field(primary_key=True)
     isin_growth: str | None = Field(default=None, index=True)
     isin_reinvestment: str | None = None
     scheme_name: str
-    plan: str | None = Field(default=None, index=True)  # AMFI "Plan" column, e.g. "Direct Plan"
-    option: str | None = Field(default=None, index=True)  # AMFI "Option" column, e.g. "Growth Option"
+    plan: str | None = Field(default=None, index=True)
+    option: str | None = Field(default=None, index=True)
     nav: float | None = None
     nav_date: datetime.date | None = None
     fund_house_id: int | None = Field(default=None, foreign_key="mf_amc.id", index=True)
     category_id: int | None = Field(default=None, foreign_key="mf_category.id", index=True)
-    sub_category: str | None = Field(default=None, index=True)  # SEBI sub (e.g. "Large Cap Fund")
+    sub_category: str | None = Field(default=None, index=True)
     db_added_at: datetime.datetime | None = Field(default=None, index=True)
 
 
@@ -133,127 +127,104 @@ class MfMetadata(SQLModel, table=True):
     __table_args__ = TABLE_ARGS
 
     scheme_code: int = Field(primary_key=True, foreign_key="amfi_schemes.scheme_code")
-    aum_crores: float | None = None  # Total Assets in ₹ Cr
-    aum_as_of: datetime.date | None = None  # AUM disclosure date
-    expense_ratio: float | None = None  # TER %
+    aum_crores: float | None = None
+    aum_as_of: datetime.date | None = None
+    expense_ratio: float | None = None
     expense_ratio_as_of: datetime.date | None = None
     fund_manager: str | None = None
     benchmark: str | None = None
     launch_date: datetime.date | None = None
-    exit_load: str | None = None  # full exit load schedule (long text)
+    exit_load: str | None = None
     asset_class: str | None = None
-    status: str | None = None  # Open Ended / Close Ended
+    status: str | None = None
     min_investment: float | None = None
     min_topup: float | None = None
-    turnover_ratio: float | None = None  # %
-    investment_objective: str | None = None  # scheme objective prose
-    risk_level: str | None = None  # SEBI riskometer, e.g. "Very High"
+    turnover_ratio: float | None = None
+    investment_objective: str | None = None
+    risk_level: str | None = None
     source_url: str | None = None
     fetched_at: datetime.datetime | None = None
-    # FKs into mf_amc / mf_category — replaced legacy fund_house / category text columns.
     fund_house_id: int | None = Field(default=None, foreign_key="mf_amc.id", index=True)
     category_id: int | None = Field(default=None, foreign_key="mf_category.id", index=True)
 
 
 class MfSchemeMetrics(SQLModel, table=True):
-    """Cached output of services.mf_metrics.compute_metrics_for_scheme.
-
-    Persisting avoids the per-render quantstats burst (screener/risk views become single SELECTs).
-    Row is stale when `computed_at_nav_date` lags MfNav.max(date); scripts/compute_metrics.py recomputes.
-    """
+    """Cached output of services.mf_metrics.compute_metrics_for_scheme; stale when `computed_at_nav_date` lags
+    MfNav.max(date)."""
 
     __tablename__ = "mf_scheme_metrics"
     __table_args__ = TABLE_ARGS
 
     scheme_code: int = Field(primary_key=True, foreign_key="amfi_schemes.scheme_code")
 
-    # 1Y / 3Y / 5Y / 10Y CAGR (decimals, not %)
     cagr_1y: float | None = None
     cagr_3y: float | None = None
     cagr_5y: float | None = None
     cagr_10y: float | None = None
 
-    # 1Y risk-adjusted ratios
     vol_1y: float | None = None
-    downside_vol_1y: float | None = None  # annualised stddev of negative returns only
+    downside_vol_1y: float | None = None
     sharpe_1y: float | None = None
     sortino_1y: float | None = None
-    calmar_1y: float | None = None  # CAGR / |Max DD|
-    gain_to_pain_1y: float | None = None  # sum(gains) / sum(|losses|)
+    calmar_1y: float | None = None
+    gain_to_pain_1y: float | None = None
 
-    # 1Y drawdown / cumulative
     max_dd_1y: float | None = None
-    cumulative_return_1y: float | None = None  # (1+r).prod() - 1
-    avg_daily_return_1y: float | None = None  # r.mean()
+    cumulative_return_1y: float | None = None
+    avg_daily_return_1y: float | None = None
 
-    # 1Y distribution stats
-    win_rate_1y: float | None = None  # fraction of positive days
+    win_rate_1y: float | None = None
     best_day_1y: float | None = None
     worst_day_1y: float | None = None
-    var_95_1y: float | None = None  # 5% Value at Risk (negative number)
-    cvar_95_1y: float | None = None  # Conditional VaR (expected loss in worst 5%)
+    var_95_1y: float | None = None
+    cvar_95_1y: float | None = None
     skew_1y: float | None = None
     kurt_1y: float | None = None
 
-    # 1Y position-sizing diagnostics
     kelly_1y: float | None = None
     avg_win_1y: float | None = None
     avg_loss_1y: float | None = None
-    payoff_ratio_1y: float | None = None  # |avg_win| / |avg_loss|
+    payoff_ratio_1y: float | None = None
 
-    # All-time
     max_dd_all: float | None = None
     pct_from_ath: float | None = None
 
-    # Absolute (cumulative) returns over short windows — useful when annualisation distorts.
     abs_return_3m: float | None = None
     abs_return_6m: float | None = None
     abs_return_1y: float | None = None
 
-    # Holdings composition (sum of weights by asset class). Persisted here so the screener
-    # doesn't have to read mf_holdings on every page render.
     pct_equity: float | None = None
     pct_debt: float | None = None
     pct_cash: float | None = None
 
-    # Concentration: sum of top-N weights.
     pct_top3: float | None = None
     pct_top5: float | None = None
     pct_top10: float | None = None
 
-    # CAPM stats vs Nifty 50 (1Y window, ≥60 overlapping days; NaN otherwise).
     alpha_1y: float | None = None
     beta_1y: float | None = None
     r2_1y: float | None = None
     tracking_error_1y: float | None = None
 
-    # First NAV observation — proxy for inception date when launch_date isn't in metadata.
     inception_date: datetime.date | None = None
 
-    # Rolling annualised-CAGR distribution: at every NAV date, compute the N-year return ending
-    # there and annualise. Then summarise that series with min/median/mean/max.
-    # 1Y windows
     rolling_1y_min: float | None = None
     rolling_1y_median: float | None = None
     rolling_1y_mean: float | None = None
     rolling_1y_max: float | None = None
-    # 3Y windows
     rolling_3y_min: float | None = None
     rolling_3y_median: float | None = None
     rolling_3y_mean: float | None = None
     rolling_3y_max: float | None = None
-    # 5Y windows
     rolling_5y_min: float | None = None
     rolling_5y_median: float | None = None
     rolling_5y_mean: float | None = None
     rolling_5y_max: float | None = None
 
-    # Latest NAV state at compute time
     last_nav: float | None = None
     last_nav_date: datetime.date | None = None
     history_days: int | None = None
 
-    # Provenance — used to detect staleness vs MfNav.max(date)
     computed_at: datetime.datetime | None = None
     computed_at_nav_date: datetime.date | None = None
 

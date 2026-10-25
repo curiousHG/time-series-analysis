@@ -8,6 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Run the app
 streamlit run main.py
 
+# Logging env vars (logs always go to logs/; nothing reaches the terminal by default)
+#   LOG_LEVEL=DEBUG   raise the file-log level (default INFO); DEBUG_LOG=1 is shorthand
+#   PERF_LOG=1        write logs/perf.log and time the blocks core.timing wraps (default off)
+#   LOG_CONSOLE=1     also echo WARNING+ to the terminal running Streamlit
+
 # Install dependencies (uses UV)
 uv sync
 uv pip install -e .
