@@ -1,11 +1,6 @@
-"""AMFI master data store — sync, ISIN lookup, name search.
+"""AMFI master data store: sync, ISIN lookup, name search.
 
-Process-level caches:
-- `_amc_cache`, `_category_cache`: dim-name → id, write-through via `upsert_amc` /
-  `upsert_category`; refreshed at the start of every `sync_amfi_master`.
-- Any code path inserting into `amfi_schemes` must call `clear_slug_cache`
-  (holdings.py) after commit, or the LRU slug→code map misses the new scheme until
-  process restart.
+Any code path inserting into `amfi_schemes` must call `clear_slug_cache` (holdings.py) after commit.
 """
 
 import logging
@@ -27,8 +22,6 @@ from mutual_funds.advisorkhoj import base_name
 logger = logging.getLogger(__name__)
 
 
-# In-process dim-table cache. AMCs/categories are tiny enums; write-through avoids
-# 14K+ dim INSERTs during a full AMFI sync.
 _amc_cache: dict[str, int] = {}
 _category_cache: dict[str, int] = {}
 
@@ -44,11 +37,7 @@ def _refresh_dim_caches(session) -> None:
 
 
 def _unwrap_id(row) -> int | None:
-    """Coerce a `.first()` result (scalar or 1-tuple Row) to a plain int.
-
-    SQLAlchemy ≥ 2.0 returns non-tuple `Row` objects from `.returning(col)`, so a plain
-    `isinstance(row, tuple)` check misses them.
-    """
+    """Coerce a `.first()` result (scalar or 1-tuple Row) to a plain int."""
     if row is None:
         return None
     if isinstance(row, int):
@@ -103,11 +92,7 @@ def _prepare_sync_row(
     category_id: int | None,
     synced_at: datetime,
 ) -> dict:
-    """Shape one AMFI sync row for insert/update.
-
-    `db_added_at` ("inserted into our local DB") is set only for new codes; conflict
-    updates preserve the existing value.
-    """
+    """Shape one AMFI sync row; `db_added_at` is set only for codes not already stored."""
     row = dict(scheme)
     code = int(row["scheme_code"])
     row.pop("fund_house", None)
@@ -134,9 +119,7 @@ _PRUNE_ORPHAN_DIMS_SQL = {
 
 
 def prune_orphan_dims(session) -> dict[str, int]:
-    """Delete dim rows no scheme or metadata row points at. AMFI reclassifications strand old
-    category/AMC names, which otherwise linger as dead options in the screener's filters.
-    Returns {table: rows deleted}."""
+    """Delete dim rows no scheme or metadata row points at. Returns {table: rows deleted}."""
     deleted = {table: session.exec(stmt).rowcount for table, stmt in _PRUNE_ORPHAN_DIMS_SQL.items()}
     if any(deleted.values()):
         logger.info("Pruned orphan dim rows: %s", deleted)
@@ -144,11 +127,7 @@ def prune_orphan_dims(session) -> dict[str, int]:
 
 
 def sync_amfi_master() -> int:
-    """Fetch AMFI NAVAll.txt and upsert all schemes into DB. Returns count.
-
-    `fund_house` / `category` text is resolved to dim-table ids (mf_amc, mf_category) and
-    stripped from the row — the text columns were dropped in Phase 1 normalisation.
-    """
+    """Fetch AMFI NAVAll.txt and upsert all schemes, resolving fund_house / category to dim ids. Returns the count."""
     schemes = fetch_amfi_master()
     synced_at = datetime.now(UTC).replace(tzinfo=None)
 
@@ -177,7 +156,6 @@ def sync_amfi_master() -> int:
         prune_orphan_dims(session)
         session.commit()
 
-    # New schemes invalidate the slug→code map cached in holdings.py.
     clear_slug_cache()
     logger.info("Synced %d AMFI schemes to database", len(schemes))
     return len(schemes)
@@ -255,9 +233,7 @@ def lookup_scheme_code_by_exact_name(name: str) -> str | None:
 
 
 def find_direct_sibling(scheme_code: int) -> dict | None:
-    """The Direct-plan variant of a Regular-plan scheme (same base fund, same option when one
-    exists), as {scheme_code, scheme_name, isin_growth, isin_reinvestment}. None when the
-    scheme is not a Regular plan or has no Direct twin in the AMFI master."""
+    """{scheme_code, scheme_name, isin_growth, isin_reinvestment} of a Regular plan's Direct twin, else None."""
     with get_session() as session:
         me = session.get(AmfiScheme, scheme_code)
         if me is None or (me.plan or "").lower() != "regular plan":
@@ -282,10 +258,7 @@ def find_direct_sibling(scheme_code: int) -> dict | None:
 
 
 def get_scheme_details_by_name(scheme_name: str) -> dict | None:
-    """One scheme's AMFI master + dim text as a flat dict (or None if name not found).
-
-    Returns a plain dict so the MF Analysis header UI needn't import ORM classes.
-    """
+    """One scheme's AMFI master row plus fund house and category text as a flat dict, or None."""
     with get_session() as session:
         row = session.execute(
             sa_select(
@@ -317,13 +290,13 @@ def get_scheme_details_by_name(scheme_name: str) -> dict | None:
 
 
 def latest_amfi_nav_date() -> date | None:
-    """The most recent NAV date AMFI has published across the master."""
+    """Latest NAV date across the AMFI master."""
     with get_session() as session:
         return session.exec(select(func.max(AmfiScheme.nav_date))).one()
 
 
 def get_scheme_count() -> int:
-    """Return total number of schemes in DB."""
+    """Total number of schemes in the DB."""
     with get_session() as session:
         return int(session.exec(select(func.count()).select_from(AmfiScheme)).one() or 0)
 

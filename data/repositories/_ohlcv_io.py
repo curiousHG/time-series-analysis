@@ -1,6 +1,5 @@
-"""Low-level OHLCV table I/O shared by stock_ohlcv and index_ohlcv — upsert / load / date-range
-keyed by a passed-in model (StockOhlcv or IndexOhlcv), plus the shared negative-fetch cache. No
-domain logic, no fetching."""
+"""Low-level OHLCV table I/O (upsert / load / date-range) shared by stock_ohlcv and index_ohlcv, plus the
+negative-fetch cache."""
 
 from __future__ import annotations
 
@@ -18,10 +17,6 @@ from data.constants import EMPTY_OHLCV
 
 logger = logging.getLogger(__name__)
 
-# Negative cache for symbols that returned zero rows. Without this, a symbol yfinance can
-# never serve (e.g. a delisted ticker) keeps `_date_range` returning None, so ensure_* re-runs a
-# slow doomed fetch on every call/rerun — which hangs pages like MF Analysis.
-# In-process, short TTL so transient outages still retry.
 _EMPTY_FETCH_TTL = timedelta(hours=1)
 _empty_fetch_cache: dict[str, datetime] = {}
 
@@ -32,9 +27,8 @@ def _to_date(d: datetime | date) -> date:
 
 @lru_cache(maxsize=1)
 def _special_session_dates() -> frozenset[date]:
-    """Weekend dates on which NSE actually traded (Budget-day / Muhurat sessions), from the
-    index bhavcopy — the only source here that reflects the real trading calendar."""
-    from core.models import IndexOhlcv  # noqa: PLC0415 — model import kept off this module's top level
+    """Weekend dates on which NSE traded (Budget-day / Muhurat sessions), read from the index bhavcopy."""
+    from core.models import IndexOhlcv  # noqa: PLC0415
 
     with get_session() as session:
         rows = session.exec(select(col(IndexOhlcv.date)).where(col(IndexOhlcv.symbol) == "Nifty 50").distinct()).all()
@@ -42,13 +36,7 @@ def _special_session_dates() -> frozenset[date]:
 
 
 def _drop_phantom_weekend_bars(df: pl.DataFrame, symbol: str) -> pl.DataFrame:
-    """Drop Saturday/Sunday bars that are not a known NSE special session.
-
-    yfinance answers a delisted/renamed ticker (TATAMOTORS after the demerger) with a history
-    whose dates are shifted a day earlier, which shows up as a bar on every Sunday. Nothing
-    trades on a weekend except NSE's occasional special sessions, so those are the only weekend
-    dates allowed through.
-    """
+    """Drop Saturday/Sunday bars that are not a known NSE special session."""
     weekend = df.filter(pl.col("Date").dt.weekday() >= 6)
     if weekend.height == 0:
         return df
@@ -67,9 +55,7 @@ def _as_date(d) -> date:
 
 
 def _upsert_ohlcv(model: type, symbol: str, df: pl.DataFrame) -> None:
-    """Upsert OHLCV rows into `model`'s table (StockOhlcv or IndexOhlcv). Rows without a positive
-    close are dropped — yahoo's early-2000s .NS history contains zero/null-close days that would
-    otherwise poison return calculations."""
+    """Upsert OHLCV rows into `model`'s table, dropping rows without a positive close and phantom weekend bars."""
     if df.height == 0:
         return
     df = df.filter(pl.col("Close").is_not_null() & (pl.col("Close") > 0))

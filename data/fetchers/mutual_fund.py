@@ -26,14 +26,11 @@ def _shape_of(payload: object) -> str:
     return type(payload).__name__
 
 
-# MFAPI rate-limits bulk refreshes with HTTP 429 and sends no Retry-After (measured Oct 2026:
-# 114 of 200 requests throttled at 16 workers, some even at 4). Each successive 429 waits longer.
 _MFAPI_BACKOFF_SECONDS = (2.0, 5.0, 10.0, 20.0, 30.0)
 
 
 class _Cooldown:
-    """A pause shared by every thread calling one source: a single 429 holds the whole worker
-    pool, so it backs off together instead of spending the quota it just ran out of."""
+    """A pause shared by every thread calling one source."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -118,7 +115,6 @@ def _normalize_for_match(s: str) -> str:
 
 def resolve_mfapi_code(scheme_name: str) -> str | None:
     """Find the MFAPI scheme code best matching scheme_name (str), or None."""
-    # Use first 3-4 meaningful words for search
     words = [w for w in scheme_name.split() if len(w) > 1 and w.upper() not in ("-",)]
     search_query = " ".join(words[:4])
 
@@ -129,18 +125,15 @@ def resolve_mfapi_code(scheme_name: str) -> str | None:
 
     target = _normalize_for_match(scheme_name)
 
-    # Exact normalized match first
     for r in results:
         if _normalize_for_match(r["schemeName"]) == target:
             return str(r["schemeCode"])
 
-    # Substring containment match
     for r in results:
         candidate = _normalize_for_match(r["schemeName"])
         if target in candidate or candidate in target:
             return str(r["schemeCode"])
 
-    # Fall back to first result if search was specific enough (4+ words)
     if len(words) >= 4 and results:
         return str(results[0]["schemeCode"])
 
@@ -148,14 +141,9 @@ def resolve_mfapi_code(scheme_name: str) -> str | None:
 
 
 def fetch_portfolio(scheme_amfi: str):
-    """POST AdvisorKhoj's portfolio endpoint for one `scheme_amfi` key.
+    """POST AdvisorKhoj's portfolio endpoint for one scheme name (`scheme_amfi`) → parsed JSON.
 
-    The endpoint is keyed by the scheme *name* as AdvisorKhoj spells it ("DSP Large & Mid Cap
-    Fund - Regular Plan - Growth") — its own fund page posts the name verbatim. A hyphenated
-    slug only happens to work for names made of plain words; anything with '.', '&', ':' or
-    brackets gets an empty answer. The key is form-encoded so '&' stays inside the field.
-    An unknown key is answered with HTTP 200 and either an empty body or the HTML homepage,
-    surfaced as `SourceNotFound`.
+    Raises `SourceNotFound` on a non-JSON answer and `UpstreamFormatError` on an unexpected envelope.
     """
     logger.debug("Fetching portfolio from AdvisorKhoj: scheme_amfi=%s", scheme_amfi)
 
@@ -217,12 +205,13 @@ def fetch_nav_from_advisorkhoj(
     }
 
 
-def fetch_fund_metadata(scheme_name: str, *, lookup_key: str | None = None) -> dict:
-    """Scrape AdvisorKhoj fund overview page → metadata dict (missing fields = None).
+_EXIT_LOAD_FIELD_RE = re.compile(r"Exit Load\s*:\s*(.+?)(?=Exit Load\s*:|Turn ?over\s*:|$)", re.DOTALL)
 
-    `lookup_key` is the URL key when it differs from the record's name — the verified
-    AdvisorKhoj slug from the holdings resolver, which the overview page accepts where a
-    current AMFI name gets the homepage. The returned dict is still keyed on `scheme_name`.
+
+def fetch_fund_metadata(scheme_name: str, *, lookup_key: str | None = None) -> dict:
+    """Scrape the AdvisorKhoj overview page → metadata dict (missing fields = None).
+
+    `lookup_key` overrides the URL key; the returned dict is still keyed on `scheme_name`.
     """
     key = lookup_key or scheme_name
     html = fetch_fund_overview_html(key)
@@ -250,15 +239,12 @@ def fetch_fund_metadata(scheme_name: str, *, lookup_key: str | None = None) -> d
         "source_url": url,
     }
 
-    # SEBI riskometer: the level is encoded in the image filename
-    # (e.g. /resources/images/common/Riskometer-Very-High.png → "Very High").
     for img in soup.find_all("img", alt="riskometer"):
         m = re.search(r"Riskometer-([\w-]+)\.png", img.get("src") or "")
         if m:
             out["risk_level"] = m.group(1).replace("-", " ")
             break
 
-    # Investment objective: the paragraph under its section heading.
     for h in soup.select("h1, h2, h3, h4"):
         if "investment objective" in h.get_text(strip=True).lower():
             para = h.find_next("p")
@@ -267,7 +253,6 @@ def fetch_fund_metadata(scheme_name: str, *, lookup_key: str | None = None) -> d
                 out["investment_objective"] = text[:2000] or None
             break
 
-    # Pull all label/value cells from the overview tables.
     cells: list[str] = []
     for table in soup.select("table.sch_over_table"):
         for td in table.select("td"):
@@ -303,7 +288,6 @@ def fetch_fund_metadata(scheme_name: str, *, lookup_key: str | None = None) -> d
     out["min_investment"] = _parse_float(_find("Minimum Investment"))
     out["min_topup"] = _parse_float(_find("Minimum Topup"))
 
-    # TER: "0.62% As on (30-03-2026)"
     ter_raw = _find("TER")
     if ter_raw:
         out["expense_ratio"] = _parse_float(ter_raw)
@@ -311,7 +295,6 @@ def fetch_fund_metadata(scheme_name: str, *, lookup_key: str | None = None) -> d
         if m:
             out["expense_ratio_as_of"] = _parse_date(m.group(1))
 
-    # Total Assets: "128,966.48 Cr As on 31-03-2026(Source:AMFI)"
     aum_raw = _find("Total Assets")
     if aum_raw:
         out["aum_crores"] = _parse_float(aum_raw)
@@ -319,57 +302,41 @@ def fetch_fund_metadata(scheme_name: str, *, lookup_key: str | None = None) -> d
         if m:
             out["aum_as_of"] = _parse_date(m.group(1))
 
-    # Turnover: "46.5%"
     turnover_raw = _find("Turn over") or _find("Turnover")
     if turnover_raw:
         out["turnover_ratio"] = _parse_float(turnover_raw)
 
-    # Exit Load — capital-E "Exit Load:" is the structured field; lowercase
-    # "exit load:" appears inline in the schedule text and shouldn't terminate the match.
-    # Also skip the short "Exit Load: Yes/No/Nil" indicator if a longer one follows.
     joined = " ".join(cells)
     candidates = []
-    for m in re.finditer(r"Exit Load\s*:\s*(.+?)(?=Exit Load\s*:|Turn ?over\s*:|$)", joined, re.DOTALL):
+    for m in _EXIT_LOAD_FIELD_RE.finditer(joined):
         cleaned = re.sub(r"\s+", " ", m.group(1)).strip()
         if cleaned:
             candidates.append(cleaned)
     if candidates:
-        # Prefer the longest candidate; if all are short tokens like "Yes"/"Nil", keep that.
         out["exit_load"] = max(candidates, key=len)[:1000]
 
-    # fund_house intentionally left None here — the repository layer fills it
-    # from `amfi_schemes` (already populated by AMFI master sync).
     return out
 
 
 def fetch_fund_overview_html(scheme_name: str) -> str:
-    """Fetch raw overview HTML. scheme_name e.g. 'SBI ELSS Tax Saver FUND - REGULAR PLAN-GROWTH'.
-
-    Whitespace is collapsed first: AMFI names sometimes carry double spaces, and
-    AdvisorKhoj's redirect to its canonical slug URL corrupts on them (the Location header
-    splices the base URL into the middle of the slug → guaranteed 404).
-    """
+    """Raw AdvisorKhoj overview HTML for a scheme name; raises `SourceNotFound` when the page is the homepage."""
     scheme_name = re.sub(r"\s+", " ", scheme_name).strip()
     url = BASE_OVERVIEW_URL.format(scheme_name=quote(scheme_name))
 
     resp = httpx.get(url, headers=HEADERS, timeout=20, follow_redirects=True)
     resp.raise_for_status()
     if "sch_over_table" not in resp.text:
-        # Unknown scheme names get HTTP 200 + the site homepage, not a 404. Parsing that
-        # yields a row of Nones which the repo used to store and mark "available".
         raise SourceNotFound("AdvisorKhoj overview", scheme_name)
     return resp.text
 
 
 def extract_launch_date(html: str, scheme_name: str) -> str:
-    """Returns launch date as DD-MM-YYYY. AdvisorKhoj serves a shell page with every field
-    blank for some names it lists but holds no data on; that is a miss, not a format change."""
+    """Launch date as DD-MM-YYYY; raises `SourceNotFound` when the page carries none."""
     soup = BeautifulSoup(html, "html.parser")
 
     for td in soup.select("table.sch_over_table td"):
         text = td.get_text(strip=True)
         if "Launch Date:" in text:
-            # Example: "Launch Date: 31-03-1993"
             match = re.search(r"(\d{2}-\d{2}-\d{4})", text)
             if match:
                 return match.group(1)
@@ -387,16 +354,11 @@ def build_nav_params(scheme_name: str, launch_date: str) -> dict:
     }
 
 
-# AMFI scheme-type headers, e.g. "Open Ended Schemes(Equity Scheme - Large Cap Fund)".
 _AMFI_CATEGORY_RE = re.compile(
     r"^\s*(?:Open Ended|Close Ended|Interval Fund)\s+Schemes?\s*\((?P<inner>.+)\)\s*$",
     re.IGNORECASE,
 )
 
-# Canonical asset classes. AMFI spells each class several ways across headers — singular and
-# plural ("Equity Scheme" / "Equity Schemes"), footnote-marked ("Solution Oriented Schemes **"),
-# and legacy close-ended wording ("Income", "Growth") — which previously landed in the category
-# dim as distinct values. Keys here are post-`_normalise_class` (lowercased) forms.
 _ASSET_CLASSES = frozenset({"Equity", "Debt", "Hybrid", "Solution Oriented", "Index", "ETF", "Fund of Funds", "Other"})
 _ASSET_CLASS_ALIASES = {
     "equity": "Equity",
@@ -427,10 +389,6 @@ _ASSET_CLASS_ALIASES = {
     "other": "Other",
 }
 
-# SEBI files index funds, ETFs and FoFs under the catch-all class "Other Scheme", naming the real
-# class only in the sub-category — while the very same funds also arrive under dedicated
-# "Index Funds" / "Exchange Traded Funds (ETFs)" / "Fund of Funds Scheme (Domestic)" headers.
-# Refining "Other" by its sub-category keeps both routes landing on one category.
 _SUB_CLASS_ALIASES = {
     "index funds": "Index",
     "gold etf": "ETF",
@@ -441,9 +399,8 @@ _SUB_CLASS_ALIASES = {
 
 
 def _normalise_class(text: str) -> str:
-    """Collapse an AMFI class label to its bare form: no trailing footnote asterisks, no
-    "Scheme"/"Schemes" filler, straight apostrophes, single spaces."""
-    s = text.replace("’", "'")  # noqa: RUF001 — AMFI emits a curly apostrophe in some class names
+    """Collapse an AMFI class label to its bare form (no footnote asterisks, "Scheme(s)" filler or curly quotes)."""
+    s = text.replace("’", "'")  # noqa: RUF001
     s = re.sub(r"\s+", " ", s).strip()
     s = re.sub(r"\s*\*+$", "", s)
     s = re.sub(r"\s+Schemes?\b", " ", s)
@@ -451,9 +408,7 @@ def _normalise_class(text: str) -> str:
 
 
 def _canonical_asset_class(text: str) -> str:
-    """Map an AMFI class label onto `_ASSET_CLASSES`. Unknown labels fall back to "Other"
-    and are logged, so a new SEBI class shows up in the logs instead of silently splitting
-    the category dim."""
+    """Map an AMFI class label onto `_ASSET_CLASSES`; unknown labels are logged and filed as "Other"."""
     bare = _normalise_class(text)
     if not bare:
         return "Other"
@@ -465,14 +420,7 @@ def _canonical_asset_class(text: str) -> str:
 
 
 def _classify_amfi_header(line: str) -> tuple[str | None, str | None, str | None]:
-    """Classify a non-data AMFI line as (asset_class, sub_category, fund_house).
-
-    Category headers are SEBI scheme-type lines (`Open/Close Ended Schemes(<Class> Scheme - <Sub>)`)
-    → a canonical asset_class ("Equity"/"Debt"/"Hybrid"/…) + the granular sub_category
-    ("Large Cap Fund"). Headers without the " - " split use the whole inner text as both.
-    Everything else is an AMC/fund-house line — these can also contain parentheses (e.g.
-    "IL&FS Mutual Fund (IDF)"), which the old paren-only heuristic mis-filed as a category.
-    """
+    """Classify a non-data AMFI line as (asset_class, sub_category, fund_house); the unused fields are None."""
     m = _AMFI_CATEGORY_RE.match(line)
     if not m:
         return None, None, line.strip()
@@ -486,14 +434,6 @@ def _classify_amfi_header(line: str) -> tuple[str | None, str | None, str | None
         return asset_class, sub, None
     return _canonical_asset_class(inner), _normalise_class(inner), None
 
-
-# ---- NAVAll.txt column layout ----------------------------------------------------------
-# AMFI moved from 6 columns to 8 in 2025, splitting the plan/option suffix out of the scheme
-# name into their own `Plan` and `Option` columns:
-#   old: Code;ISIN Growth;ISIN Reinvestment;Scheme Name;NAV;Date
-#   new: Code;ISIN Growth;ISIN Reinvestment;Scheme Name;Plan;Option;NAV;Date
-# Layout is read from the file's own header row, so a further column move is absorbed without
-# a code change; the positional maps are the fallback when the header is missing or unreadable.
 
 _POSITIONAL_LAYOUTS = {
     8: {
@@ -542,8 +482,7 @@ def _parse_header(line: str) -> dict[str, int] | None:
 
 
 def _layout_for(parts: list[str], header_layout: dict[str, int] | None) -> dict[str, int] | None:
-    """Pick the column map for one data row: the file's header when every index it names is
-    present, else the widest positional layout the row can satisfy."""
+    """Column map for one data row: the header layout if it fits, else the widest positional layout."""
     if header_layout and max(header_layout.values()) < len(parts):
         return header_layout
     for width in sorted(_POSITIONAL_LAYOUTS, reverse=True):
@@ -561,29 +500,16 @@ def _cell(parts: list[str], layout: dict[str, int], field: str) -> str | None:
 
 
 def compose_scheme_name(base: str, plan: str | None, option: str | None) -> str:
-    """Full scheme name, "<base> - <plan> - <option>".
-
-    AMFI's `Scheme Name` column is now the *base* name shared by every plan/option variant of a
-    fund, so on its own it is neither unique (one name covered up to 38 scheme codes) nor
-    parseable by `detect_plan`/`detect_option`. Re-attaching AMFI's own plan/option text restores
-    both, and keeps the " - Direct - Growth" shape that AdvisorKhoj slugs and the display helpers
-    already expect. Rows with no plan/option (closed-ended FMPs) keep the bare name.
-    """
+    """Full scheme name, "<base> - <plan> - <option>"; blank plan/option parts are dropped."""
     return " - ".join(p for p in (base, plan, option) if p)
 
 
-# Output-shape floors for `_validate_amfi`. AMFI has published >10K schemes for years and every
-# live row carries a NAV, so these sit far below normal while still catching a column shift.
 _AMFI_MIN_SCHEMES = 1_000
 _AMFI_MIN_VALUE_COVERAGE = 0.5
 
 
 def _validate_amfi(schemes: list[dict], *, header_seen: bool, header_layout: dict[str, int] | None) -> None:
-    """Fail loudly when the parsed result doesn't look like NAVAll.txt any more.
-
-    The checks are on the parsed rows, not just the header: the last AMFI change produced a
-    full-sized result in which every NAV was None.
-    """
+    """Raise `UpstreamFormatError` when the parsed rows no longer look like NAVAll.txt."""
     names = [row["scheme_name"] for row in schemes]
     if len(names) != len(set(names)):
         raise UpstreamFormatError("AMFI master", "scheme names are not unique after disambiguation")
@@ -613,12 +539,9 @@ def _validate_amfi(schemes: list[dict], *, header_seen: bool, header_layout: dic
 
 
 def parse_amfi_master(payload: str) -> list[dict]:
-    """Parse NAVAll.txt content → list of scheme dicts. Pure: no I/O, so it's directly testable
-    against captured fixtures.
+    """Parse NAVAll.txt content → list of scheme dicts (pure, no I/O).
 
-    Lines with fewer than `_MIN_DATA_FIELDS` semicolon-separated fields are scheme-type
-    (category) or fund-house headers. Raises `UpstreamFormatError` when the result no longer
-    looks like NAVAll.txt.
+    Raises `UpstreamFormatError` when the result no longer looks like NAVAll.txt.
     """
     schemes = []
     current_category = None
@@ -638,7 +561,6 @@ def parse_amfi_master(payload: str) -> list[dict]:
 
         parts = line.split(";")
         if len(parts) < _MIN_DATA_FIELDS:
-            # Scheme-type (asset class + sub-category) or fund-house header.
             asset_class, sub_category, fund_house = _classify_amfi_header(line)
             if asset_class is not None:
                 current_category = asset_class
@@ -709,14 +631,7 @@ def _option_from_isins(row: dict) -> str | None:
 
 
 def disambiguate_scheme_names(schemes: list[dict]) -> None:
-    """Give every scheme a unique name, in place.
-
-    AMFI leaves Plan/Option blank on ~5,700 open-ended rows, so all variants of such a fund
-    arrive with one identical name (Motilal Oswal Midcap Fund: 4 codes). Every name-keyed path
-    (NAV refresh, portfolio value, screener) then mixes the variants. The option is inferred
-    from the ISIN columns (a reinvestment ISIN means IDCW) and stored in `option`; when that
-    still leaves a tie the scheme code is appended, which `base_name` strips again.
-    """
+    """Give every scheme a unique name in place: infer the option from the ISINs, then append the code on ties."""
     by_name: dict[str, list[dict]] = {}
     for row in schemes:
         by_name.setdefault(row["scheme_name"], []).append(row)

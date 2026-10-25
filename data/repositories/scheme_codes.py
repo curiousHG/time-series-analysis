@@ -1,9 +1,4 @@
-"""Scheme name → scheme_code resolution + synthetic-code minting.
-
-Single source of truth for `scheme_name` → `amfi_schemes.scheme_code`. Funds with no AMFI
-master row yet (segregated portfolios, brand-new funds) get a synthetic-negative code;
-AMFI never issues negatives, so synthetic and real namespaces never collide.
-"""
+"""Scheme name → scheme_code resolution; unknown names get a synthetic negative code (AMFI never issues negatives)."""
 
 from __future__ import annotations
 

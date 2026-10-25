@@ -21,9 +21,7 @@ logger = logging.getLogger("data.repositories.metadata")
 
 
 def _attach_amfi_fields(meta: dict) -> dict:
-    """Fill fund_house / category text from amfi_schemes via the dim tables (the legacy
-    text columns were dropped in Phase 1 normalisation).
-    """
+    """Fill missing fund_house / category text from amfi_schemes via the dim tables."""
     with get_session() as session:
         row = session.exec(
             select(AmfiScheme.fund_house_id, AmfiScheme.category_id).where(
@@ -50,11 +48,7 @@ def save_metadata(meta: dict) -> None:
     meta["fetched_at"] = datetime.now(UTC).replace(tzinfo=None)
     scheme_name = meta.pop("scheme_name")
     with get_session() as session:
-        # mf_metadata is keyed on scheme_code. Resolve via amfi_schemes; if absent, mint
-        # a synthetic-negative row so the FK doesn't violate — shares this session so it
-        # commits atomically with the metadata insert.
         scheme_code = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)).first()
-        # .first() may return a scalar or a 1-tuple Row depending on path — unwrap.
         if isinstance(scheme_code, tuple):
             scheme_code = scheme_code[0]
         minted_synthetic = scheme_code is None
@@ -62,7 +56,6 @@ def save_metadata(meta: dict) -> None:
             scheme_code = mint_synthetic_codes(session, [scheme_name])[scheme_name]
             logger.warning("Assigned synthetic code %d for new metadata scheme %s", scheme_code, scheme_name)
         meta["scheme_code"] = scheme_code
-        # Resolve dim FKs and drop the text versions — those columns no longer exist on mf_metadata.
         meta["fund_house_id"] = upsert_amc(session, meta.pop("fund_house", None))
         meta["category_id"] = upsert_category(session, meta.pop("category", None))
         stmt = (
@@ -81,9 +74,7 @@ def save_metadata(meta: dict) -> None:
 
 
 def load_metadata(scheme_names: list[str] | None = None) -> pl.DataFrame:
-    """Read metadata, JOINing amfi_schemes for scheme_name and the dims for AMC / category
-    text. mf_metadata is keyed on scheme_code; the JOIN surfaces scheme_name for callers.
-    """
+    """Metadata for the given schemes (or all), with scheme name, AMC and category joined in."""
     with get_session() as session:
         stmt = (
             select(
@@ -113,7 +104,7 @@ def load_metadata(scheme_names: list[str] | None = None) -> pl.DataFrame:
                 "expenseRatioAsOf": r[1].expense_ratio_as_of,
                 "benchmark": r[1].benchmark,
                 "launchDate": r[1].launch_date,
-                "category": r[3],  # JOIN'd from mf_category
+                "category": r[3],
                 "assetClass": r[1].asset_class,
                 "status": r[1].status,
                 "minInvestment": r[1].min_investment,
@@ -122,7 +113,7 @@ def load_metadata(scheme_names: list[str] | None = None) -> pl.DataFrame:
                 "exitLoad": r[1].exit_load,
                 "investmentObjective": r[1].investment_objective,
                 "riskLevel": r[1].risk_level,
-                "fundHouse": r[2],  # JOIN'd from mf_amc
+                "fundHouse": r[2],
                 "fundManager": r[1].fund_manager,
                 "sourceUrl": r[1].source_url,
                 "fetchedAt": r[1].fetched_at,
@@ -133,8 +124,7 @@ def load_metadata(scheme_names: list[str] | None = None) -> pl.DataFrame:
 
 
 def _advisorkhoj_metadata(scheme_name: str, scheme_code: int | None) -> tuple[dict | None, Exception | None]:
-    """AdvisorKhoj scrape by the verified slug first (the overview page accepts it where a
-    current AMFI name lands on the homepage), then by name for untracked schemes."""
+    """AdvisorKhoj scrape by verified slug first, then by name. Returns (metadata, last_error)."""
     keys: list[str | None] = []
     if scheme_code is not None:
         keys.append(resolve_advisorkhoj_slug(scheme_code))
@@ -158,15 +148,9 @@ def _advisorkhoj_metadata(scheme_name: str, scheme_code: int | None) -> tuple[di
 
 
 def fetch_and_save(scheme_name: str) -> dict:
-    """Fetch metadata for one scheme and persist it. Returns the saved dict.
+    """Fetch metadata for one scheme (Kuvera, then AdvisorKhoj by slug and by name, then a Direct sibling) and save it.
 
-    Sources, in order, each filling only what the previous left empty:
-      1. Kuvera — JSON, candidates ISIN-verified against amfi_schemes, so a fuzzy name match
-         can never store another fund's numbers. Direct plans only (Kuvera sells no Regular).
-      2. AdvisorKhoj by the verified slug from the holdings resolver (covers Regular plans).
-      3. AdvisorKhoj by name — untracked schemes with no registry row.
-    AdvisorKhoj answers unknown keys with its homepage; `fetch_fund_overview_html` raises
-    `SourceNotFound` for that instead of returning the empty shell it used to.
+    Returns the saved dict; raises the last source error when nothing is found.
     """
     amfi_row = get_scheme_details_by_name(scheme_name)
     isins = tuple((amfi_row.get("isin_growth"), amfi_row.get("isin_reinvestment")) if amfi_row else ())
@@ -194,9 +178,6 @@ def fetch_and_save(scheme_name: str) -> dict:
     return meta
 
 
-# Fields that describe the scheme rather than one plan of it. SEBI/AMFI disclose AUM per
-# scheme (both plans combined), and manager / objective / riskometer / category are shared;
-# expense ratio, launch date and minimums differ by plan and are deliberately NOT copied.
 _SCHEME_LEVEL_FIELDS = (
     "aum_crores",
     "category",
@@ -210,8 +191,7 @@ _SCHEME_LEVEL_FIELDS = (
 
 
 def _from_direct_sibling(scheme_name: str, scheme_code: int) -> dict | None:
-    """Last resort for a Regular plan neither source knows: the Direct twin's ISIN-verified
-    Kuvera record, restricted to scheme-level fields. Kuvera lists Direct plans only."""
+    """Scheme-level fields from the Direct twin's Kuvera record, for a plan no source knows."""
     sibling = find_direct_sibling(scheme_code)
     if sibling is None:
         return None
@@ -226,13 +206,11 @@ def _from_direct_sibling(scheme_name: str, scheme_code: int) -> dict | None:
 
 
 def ensure_metadata(scheme_names: list[str]) -> pl.DataFrame:
-    """DB-first: load existing rows, fetch only the missing ones in parallel, return all."""
+    """DB-first: load existing rows, fetch only those missing an AUM in parallel, return all."""
     if not scheme_names:
         return pl.DataFrame(schema={"schemeName": pl.Utf8})
 
     existing = load_metadata(scheme_names)
-    # A row without an AUM is a scrape that landed on nothing useful — treat it as missing
-    # so the next source gets a chance, instead of freezing an empty shell forever.
     have = set(existing.filter(pl.col("aumCrores").is_not_null())["schemeName"].to_list()) if existing.height else set()
     missing = [n for n in scheme_names if n not in have]
 
@@ -256,7 +234,7 @@ def refresh_metadata(scheme_name: str) -> dict:
 
 
 def count_metadata() -> int:
-    """Return total number of mf_metadata rows."""
+    """Total number of mf_metadata rows."""
     with get_session() as session:
         return int(session.exec(select(func.count()).select_from(MfMetadata)).one() or 0)
 

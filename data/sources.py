@@ -1,27 +1,11 @@
-"""Datatype → data-source routing registry — the single documented truth for WHICH external source
-serves WHICH kind of data, and why. Established by live-probing every source (July 2026); the
-Settings → Reference table renders straight from this so the docs can't drift from the code.
+"""Datatype → data-source routing registry, rendered into the Settings → Reference table.
 
-Routing principles:
-- One PRICE BASIS per table: equities store yfinance auto-adjusted OHLCV only. Mixing raw daily
-  appends (bhavcopy) onto adjusted history breaks the series at every split/dividend.
-- The NSE index bhavcopy is kept for indices ONLY — it's the sole source covering all 160+ indices
-  (incl. factor/strategy) plus valuation (P/E·P/B·Div-Yield), and index LEVELS need no adjustment.
-- Fundamentals follow the listing market: screener.in for NSE (far richer for India), yfinance
-  .info for international. CAPM benchmarks likewise: ^NSEI vs ^GSPC.
-
-Retired sources (do not reintroduce):
-- niftyindices.com — endpoint died ~2026-07-02; froze every series it fed. Bhavcopy names replace it.
-- jugaad per-symbol quotes — IST-midnight timestamps shifted dates (+1); the original corruption vector.
-- NSE stock bhavcopy daily append — raw basis onto adjusted history (see principle 1).
+Keys per entry: what / source / fallback / returns / lands_in / why.
 """
 
 from __future__ import annotations
 
-# Rendered by ui/constants.py into the Settings → Reference table. Keys: what/source/fallback/
-# returns/lands_in/why. Keep entries one-line-readable; details live in the owning module.
 SOURCE_ROUTING: tuple[dict[str, str], ...] = (
-    # ---------------- stocks ----------------
     {
         "what": "Equity OHLCV — daily refresh (NSE + international)",
         "source": "yfinance (batched yf.download, auto-adjusted)",
@@ -110,7 +94,6 @@ SOURCE_ROUTING: tuple[dict[str, str], ...] = (
         "lands_in": "stock_registry",
         "why": "The pickable universe; rows that leave the master (delistings) keep history, skip refresh",
     },
-    # ---------------- mutual funds ----------------
     {
         "what": "MF NAV history",
         "source": "MFAPI (api.mfapi.in)",
@@ -151,7 +134,6 @@ SOURCE_ROUTING: tuple[dict[str, str], ...] = (
         "lands_in": "mf_tradebook",
         "why": "Deduped by trade_id; ISIN → scheme via amfi_schemes",
     },
-    # ---------------- derived ----------------
     {
         "what": "MF risk/return metrics (derived)",
         "source": "services.mf_metrics.recompute_metrics",

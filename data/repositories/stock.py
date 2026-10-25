@@ -1,13 +1,4 @@
-"""Stock/index OHLCV repository — facade re-exporting the focused modules this was split into:
-
-- `_ohlcv_io`        — low-level table upsert / load / date-range (model-agnostic) + negative cache
-- `ohlcv_watermark`  — availability state machine (status/floor/streak) + shared DB-first gap-fetch
-- `index_ohlcv`      — the index_ohlcv table (bhavcopy / niftyindices / yfinance, incl. valuation)
-- `stock_ohlcv`      — the stock_ohlcv table (NSE equities; delegates index symbols to index_ohlcv)
-
-Kept as a facade so existing `from data.repositories.stock import …` call sites keep working. New
-code may import from the focused modules directly.
-"""
+"""Facade re-exporting the stock and index OHLCV repositories (_ohlcv_io, ohlcv_watermark, index_ohlcv, stock_ohlcv)."""
 
 from data.repositories.index_ohlcv import (
     ensure_index_data,

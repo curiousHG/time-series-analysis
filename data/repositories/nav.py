@@ -60,8 +60,7 @@ def nav_json_to_df(nav_json: list[list], scheme_name: str) -> pl.DataFrame:
 
 
 def _upsert_nav_rows(session, df: pl.DataFrame, name_to_code: dict[str, int]) -> None:
-    """Upsert df's (date, nav, schemeName[, scheme_code]) rows into mf_nav within the caller's
-    session. A row's own scheme_code wins; the name map only serves rows without one."""
+    """Upsert (date, nav, schemeName[, scheme_code]) rows into mf_nav on the caller's session; a row's own code wins."""
     for row in df.iter_rows(named=True):
         code = row.get("scheme_code") or name_to_code[row["schemeName"]]
         stmt = (
@@ -93,8 +92,7 @@ def _names_without_code(df: pl.DataFrame) -> list[str]:
 
 
 def load_nav_by_codes(scheme_codes: list[int]) -> pl.DataFrame:
-    """NAV as (date, nav, scheme_code) for exactly these codes — the key-safe loader for callers
-    that already know their codes (tradebook positions)."""
+    """NAV as (date, nav, scheme_code) for exactly these codes."""
     rows = []
     if scheme_codes:
         with get_session() as session:
@@ -107,8 +105,7 @@ def load_nav_by_codes(scheme_codes: list[int]) -> pl.DataFrame:
 
 
 def nav_record_stats(scheme_names: list[str] | None = None) -> dict[str, tuple[int, object]]:
-    """Per-scheme NAV record count + earliest date, keyed by scheme name. An aggregate for the
-    Settings status tables — avoids loading the full NAV history (millions of rows) just to count."""
+    """{scheme_name: (record count, earliest date)} aggregated in SQL."""
     with get_session() as session:
         stmt = (
             select(AmfiScheme.scheme_name, func.count(col(MfNav.date)), func.min(col(MfNav.date)))
@@ -137,12 +134,10 @@ def load_nav_df(scheme_names: list[str] | None = None) -> pl.DataFrame:
 
 
 def fetch_single_nav(scheme_name: str, scheme_code: int | None = None) -> pl.DataFrame:
-    """Fetch NAV for a single scheme. Tries MFAPI first, falls back to AdvisorKhoj — except when
-    MFAPI is rate-limiting: that `SourceThrottled` propagates, since AdvisorKhoj not knowing the
-    fund would otherwise mask a transient throttle as a definitive miss.
+    """Fetch NAV for one scheme from MFAPI, falling back to AdvisorKhoj; rows are tagged with the code used.
 
-    Pass `scheme_code` whenever the caller knows it: several AMFI variants share one name, so
-    resolving by name can land on a sibling plan. Rows come back tagged with the code used."""
+    `SourceThrottled` from MFAPI propagates. Pass `scheme_code` when known to avoid name-based sibling mix-ups.
+    """
     known = scheme_code if scheme_code is not None else lookup_scheme_code_by_exact_name(scheme_name)
     tag: int | None = int(known) if known is not None else None
     if known is not None and int(known) <= 0:
@@ -186,7 +181,7 @@ def _recompute_metrics_for(scheme_names: list[str]) -> None:
     if not scheme_names:
         return
     try:
-        from services.mf_metrics import recompute_metrics  # noqa: PLC0415 — repo→service; top-level import would cycle
+        from services.mf_metrics import recompute_metrics  # noqa: PLC0415
 
         recompute_metrics(scheme_names)
     except Exception:
@@ -214,15 +209,13 @@ def ensure_nav_data(scheme_names: list[str]) -> pl.DataFrame:
 
 
 def refresh_nav_data(scheme_names: list[str]) -> pl.DataFrame:
-    """Re-fetch and replace NAV. Only schemes that fetch successfully are replaced, so a transient
-    upstream failure never erases good local history.
-    """
+    """Re-fetch and replace NAV; only schemes that fetch successfully are replaced (delete + insert in one
+    transaction)."""
     new_frames = fetch_nav_parallel(scheme_names)
     fetched_schemes = [name for df in new_frames if df.height for name in df["schemeName"].unique().to_list()]
     if not fetched_schemes:
         return load_nav_df(scheme_names)
 
-    # Delete + re-insert in one transaction so a save failure never wipes NAV with no replacement.
     name_to_code = resolve_codes_with_synthetic(fetched_schemes)
     codes = [name_to_code[n] for n in fetched_schemes if n in name_to_code]
     with get_session() as session:
@@ -243,13 +236,12 @@ def count_distinct_nav_schemes() -> int:
         return int(session.exec(select(func.count(func.distinct(MfNav.scheme_code)))).one() or 0)
 
 
-# A single-day NAV reverting >2x vs BOTH neighbours is upstream corruption, not a market move;
-# permanent steps (side-pocketing, bonus) disagree across neighbours so aren't flagged.
 _GLITCH_RATIO = 2.0
 
 
 def detect_nav_glitches(nav: pl.DataFrame) -> pl.DataFrame:
-    """Flag spurious single-day NAV spikes (NAV<=0 or an isolated reverting spike). In/out cols: scheme_code, date, nav."""
+    """Flag spurious single-day NAV spikes (NAV<=0 or an isolated reverting spike). In/out cols: scheme_code,
+    date, nav."""
     r = _GLITCH_RATIO
     return (
         nav.sort(["scheme_code", "date"])
@@ -275,11 +267,8 @@ def detect_nav_glitches(nav: pl.DataFrame) -> pl.DataFrame:
 
 @timeit("nav.repair_nav_glitches")
 def repair_nav_glitches(scheme_codes: list[int] | None = None, dry_run: bool = False) -> dict:
-    """Delete spurious single-day NAV spikes from mf_nav so they stop poisoning metrics.
-
-    Removing just the bad point keeps the fund's real history instead of the corrupt-NAV guard
-    discarding the whole fund. `dry_run=True` reports without deleting.
-    """
+    """Delete spurious single-day NAV spikes from mf_nav (the bad point only). `dry_run=True` reports without
+    deleting."""
     with get_session() as session:
         stmt = select(MfNav.scheme_code, MfNav.date, MfNav.nav)
         if scheme_codes:
@@ -312,10 +301,10 @@ def repair_nav_glitches(scheme_codes: list[int] | None = None, dry_run: bool = F
     return summary
 
 
-# A persistent clean power-of-10 UP jump in a non-segregated fund is an upstream unit/scale-stitch
-# error (wrong-scale early history spliced onto the real NAV); we rescale the earlier segment up.
-# DOWN power-of-10 breaks are real corporate actions (ETF splits), left untouched.
-_SCALE_BREAK_TOL = 0.04  # |log10(ratio) - k| tolerance to call a jump a clean 10^k
+_SCALE_BREAK_TOL = 0.04
+_SCALE_BREAK_MIN_POINTS = 30
+_PLAUSIBLE_CAGR_MIN = -0.10
+_PLAUSIBLE_CAGR_MAX = 0.60
 
 
 def _scale_break_factor(ratio: float) -> float | None:
@@ -351,7 +340,7 @@ def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool
         series[code].append((d, nav))
         names[code] = name
 
-    fixes: list[tuple[int, list[tuple]]] = []  # (code, [(break_date, factor), ...])
+    fixes: list[tuple[int, list[tuple]]] = []
     skipped: list[dict] = []
     for code, pts in series.items():
         if "segregated" in (names.get(code) or "").lower():
@@ -359,7 +348,7 @@ def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool
         navs = [n for _, n in pts]
         dates = [d for d, _ in pts]
         n = len(navs)
-        if n < 30:
+        if n < _SCALE_BREAK_MIN_POINTS:
             continue
         brks = [
             (dates[i], f, i)
@@ -368,7 +357,6 @@ def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool
         ]
         if not brks:
             continue
-        # Bring every pre-break segment to the latest scale, then sanity-check whole-history CAGR.
         bset = {i: f for _, f, i in brks}
         cum, fac = 1.0, [1.0] * n
         for j in range(n - 1, -1, -1):
@@ -378,7 +366,7 @@ def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool
         corr0 = navs[0] * fac[0]
         yrs = (dates[-1] - dates[0]).days / 365.25
         cagr = (navs[-1] / corr0) ** (1 / yrs) - 1 if yrs > 0 and corr0 > 0 else 0.0
-        if not (-0.10 <= cagr <= 0.60):
+        if not (_PLAUSIBLE_CAGR_MIN <= cagr <= _PLAUSIBLE_CAGR_MAX):
             skipped.append({"scheme_code": code, "name": names.get(code), "cagr_after": round(cagr, 3)})
             continue
         fixes.append((code, [(d, f) for d, f, _ in brks]))
@@ -406,7 +394,7 @@ def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool
 
 
 def last_nav_date_by_code(scheme_codes: list[int]) -> dict[int, object]:
-    """Map scheme_code -> most-recent NAV date in mf_nav."""
+    """{scheme_code: latest NAV date}."""
     if not scheme_codes:
         return {}
     with get_session() as session:
@@ -419,7 +407,7 @@ def last_nav_date_by_code(scheme_codes: list[int]) -> dict[int, object]:
 
 
 def last_nav_date_by_name(scheme_names: list[str]) -> dict:
-    """Map name -> most-recent NAV date in mf_nav; drives the sync service's incremental updates."""
+    """{scheme_name: latest NAV date}."""
     if not scheme_names:
         return {}
     with get_session() as session:

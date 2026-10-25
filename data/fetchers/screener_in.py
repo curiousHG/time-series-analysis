@@ -1,16 +1,4 @@
-"""screener.in scraper — HTTP only, no DB (per the fetcher/repository split).
-
-Public (no login):
-  - `search_company(q)`  → company search JSON (id, name, url)
-  - `fetch_company(sym)` → parsed company page: top ratios + quarters / P&L / balance
-    sheet / cash flow / ratios / shareholding tables
-
-Authenticated (needs a logged-in `sessionid` cookie — set SCREENER_SESSIONID):
-  - `run_screen(query, ...)` → the /screen/raw/ results table as rows
-
-Be polite: keep the request rate low; callers cache results in the DB (DB-first policy).
-The screen endpoint and Excel export are login-gated; company pages and search are public.
-"""
+"""screener.in scraper (HTTP only, no DB): public company search/pages and the login-gated screen endpoint."""
 
 from __future__ import annotations
 
@@ -29,10 +17,7 @@ HEADERS = {
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
     "Accept": "text/html,application/json,application/xhtml+xml",
 }
-# NSE symbol → screener.in slug, for names that differ (corporate-action renames etc.).
-# NSE symbol → screener.in slug, where they diverge (mergers/renames keep the old URL).
 _SLUG_OVERRIDES = {"TATAMOTORS": "TMCV", "LTIM": "MINDTREE"}
-# Company-page section ids → the structured key we expose.
 _SECTIONS = {
     "quarters": "quarters",
     "profit-loss": "profit_loss",
@@ -62,8 +47,6 @@ def _num(text: str | None) -> float | None:
     return float(m.group()) if m else None
 
 
-# Index symbol → screener.in slug (its /company/<slug>/ page lists constituents). Keys are
-# UPPER-CASE; lookup upper-cases the input so both 'Nifty Midcap 150' and legacy forms resolve.
 _INDEX_SCREENER_SLUG = {
     "^NSEI": "NIFTY",
     "^NSEBANK": "BANKNIFTY",
@@ -79,8 +62,7 @@ def index_screener_slug(symbol: str) -> str:
 
 
 def fetch_index_constituents(slug: str) -> list[str]:
-    """Best-effort constituent stock symbols scraped from a screener.in index page (e.g. the
-    /company/CNXREALTY/ page). Returns ordered NSE symbols, or [] if the page has none."""
+    """Ordered constituent NSE symbols scraped from a screener.in index page, or [] if none."""
     with _client() as client:
         try:
             r = client.get(f"/company/{slug}/")
@@ -92,9 +74,7 @@ def fetch_index_constituents(slug: str) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for a in soup.select("a[href^='/company/']"):
-        m = re.match(
-            r"^/company/([A-Z][A-Z0-9&_-]{1,20})/", a.get("href", "")
-        )  # href may be /company/DLF/consolidated/
+        m = re.match(r"^/company/([A-Z][A-Z0-9&_-]{1,20})/", a.get("href", ""))
         if not m:
             continue
         sym = m.group(1)
@@ -118,7 +98,7 @@ def _parse_table(section) -> dict[str, dict[str, float | None]]:
     table = section.find("table")
     if not table:
         return {}
-    periods = [th.get_text(strip=True) for th in table.select("thead th")][1:]  # drop the empty corner cell
+    periods = [th.get_text(strip=True) for th in table.select("thead th")][1:]
     out: dict[str, dict[str, float | None]] = {}
     for tr in table.select("tbody tr"):
         cells = tr.find_all("td")
@@ -154,10 +134,7 @@ def _parse_company_page(html: str, symbol: str) -> dict:
 def fetch_company(symbol: str, *, consolidated: bool = True) -> dict | None:
     """Scrape a company's fundamentals page into a structured dict (None if not found).
 
-    Prefers the consolidated page, but companies that report only standalone financials (e.g. Hitachi
-    Energy India / POWERINDIA) still serve a consolidated page — it loads 200 with the ratio labels
-    present but every value blank. So we don't stop at the first page that loads: we keep the first one
-    whose top-ratios actually carry values, and only fall back to an empty page if none do.
+    Returns the first page (consolidated first unless ) whose top ratios have values.
     """
     slug = _SLUG_OVERRIDES.get(symbol, symbol)
     paths = [f"/company/{slug}/consolidated/", f"/company/{slug}/"]
@@ -171,8 +148,8 @@ def fetch_company(symbol: str, *, consolidated: bool = True) -> dict | None:
                 continue
             data = _parse_company_page(r.text, symbol)
             if any(v is not None for v in data["top_ratios"].values()):
-                return data  # a page with real ratio values — prefer it
-            fallback = fallback or data  # loaded but ratios blank — remember, keep trying
+                return data
+            fallback = fallback or data
     if fallback is not None:
         return fallback
     logger.warning("screener.in: no company page for %s", symbol)

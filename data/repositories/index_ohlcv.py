@@ -1,7 +1,4 @@
-"""Index OHLCV repository — the index_ohlcv table. Sources: the NSE index bhavcopy (bulk, name-keyed,
-incl. valuation P/E·P/B·Div-Yield) and yfinance (literal symbols: ^GSPC, INR=X, URTH). Name-keyed
-NSE indices are maintained ONLY by the bulk bhavcopy refresh — niftyindices.com (the old per-name
-on-demand source) went dead mid-2026 and was removed."""
+"""Index OHLCV repository (index_ohlcv): NSE index bhavcopy for name-keyed indices, yfinance for literal symbols."""
 
 from __future__ import annotations
 
@@ -27,11 +24,11 @@ logger = logging.getLogger(__name__)
 
 
 def save_index_bhavcopy_day(day: date) -> int:
-    """Fetch the NSE index bhavcopy for `day` and bulk-upsert all 160+ indices into index_ohlcv,
-    keyed by the NSE index name (e.g. 'Nifty 50', 'NIFTY200 Quality 30'). Returns rows upserted."""
-    import pandas as pd  # noqa: PLC0415 — pandas only here; the repo is polars-native
+    """Fetch the NSE index bhavcopy for `day` and bulk-upsert every index, keyed by NSE index name. Returns rows
+    upserted."""
+    import pandas as pd  # noqa: PLC0415
 
-    from data.fetchers.stock import fetch_nse_index_bhavcopy  # noqa: PLC0415 — defer heavy import off boot
+    from data.fetchers.stock import fetch_nse_index_bhavcopy  # noqa: PLC0415
 
     df = fetch_nse_index_bhavcopy(day)
     if df is None or df.empty:
@@ -72,21 +69,20 @@ def save_index_bhavcopy_day(day: date) -> int:
 
 
 def last_index_bhavcopy_date() -> date | None:
-    """Last date of the NSE-name index bhavcopy (tracked via the 'Nifty 50' row)."""
+    """Latest bhavcopy date, tracked via the 'Nifty 50' row."""
     with get_session() as session:
         return session.exec(select(func.max(col(IndexOhlcv.date))).where(col(IndexOhlcv.symbol) == "Nifty 50")).one()
 
 
 def first_index_bhavcopy_date() -> date | None:
-    """Earliest date of the NSE-name index bhavcopy (tracked via 'Nifty 50') — the backfill floor."""
+    """Earliest bhavcopy date, tracked via the 'Nifty 50' row."""
     with get_session() as session:
         return session.exec(select(func.min(col(IndexOhlcv.date))).where(col(IndexOhlcv.symbol) == "Nifty 50")).one()
 
 
 def _fetch_and_save_index(symbol: str, start: date, end: date) -> None:
-    """Fetch an index by its literal yfinance symbol (^GSPC, INR=X, URTH) and upsert. Name-keyed NSE
-    indices ("Nifty Midcap 150") have no on-demand source — the daily index-bhavcopy refresh maintains
-    them in bulk — so they no-op here and serve whatever is already stored."""
+    """Fetch an index by its literal yfinance symbol and upsert; name-keyed NSE indices (containing a space) are
+    skipped."""
     if " " in symbol:
         logger.debug("index %r is bhavcopy-maintained (bulk); no on-demand fetch", symbol)
         return
@@ -98,10 +94,8 @@ def _fetch_and_save_index(symbol: str, start: date, end: date) -> None:
         _upsert_ohlcv(IndexOhlcv, symbol, frame)
 
 
-# A broad index does not halve or double in a session. A fetched bar that far from the last
-# stored close is another instrument's bar (the thread-safety failure the fetcher now guards
-# against) or a source glitch — either way it must not be stored.
 _MAX_INDEX_DAY_MOVE = 0.5
+_LIVE_INDEX_WINDOW_DAYS = 45
 
 
 def _reject_implausible_index_bars(symbol: str, frame: pl.DataFrame) -> pl.DataFrame:
@@ -158,15 +152,13 @@ def refresh_index_to_today(symbol: str) -> tuple[date, date | None]:
 
 
 def read_index_ohlcv(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
-    """Read index OHLCV straight from index_ohlcv (no fetch) shaped for charting — for bhavcopy-
-    sourced indices (name-keyed) that are refreshed in bulk, not on demand."""
+    """Read index OHLCV from index_ohlcv without fetching, with a Symbol column added."""
     df = _load_ohlcv(IndexOhlcv, symbol, _to_date(start_date), _to_date(end_date))
     return df if df.is_empty() else df.with_columns(pl.lit(symbol).alias("Symbol"))
 
 
 def latest_index_valuation(symbol: str) -> dict | None:
-    """Most recent P/E, P/B, Div Yield and turnover (₹ cr) for an index (from the bhavcopy), or None
-    if the index has no valuation rows (e.g. foreign `^` indices sourced from yfinance)."""
+    """Latest P/E, P/B, Div Yield and turnover (₹ cr) for an index, or None if it has no valuation rows."""
     with get_session() as session:
         row = session.exec(
             select(
@@ -186,18 +178,14 @@ def latest_index_valuation(symbol: str) -> dict | None:
 
 
 def list_index_symbols() -> list[str]:
-    """Distinct index symbols we hold OHLC for (index_ohlcv)."""
+    """Distinct index symbols with stored OHLCV."""
     with get_session() as session:
         rows = session.exec(select(col(IndexOhlcv.symbol)).distinct().order_by(col(IndexOhlcv.symbol))).all()
     return list(rows)
 
 
 def list_bhavcopy_index_names() -> list[str]:
-    """Distinct LIVE NSE-name indices from the index bhavcopy — the comprehensive 160+ set incl.
-    factor/strategy indices. 'Live' = published within ~45 days of the newest bhavcopy day, so
-    matured target-maturity indices and renamed/retired ones (which stop appearing in the file)
-    drop out of pickers instead of lingering as frozen entries. All-caps official names like
-    'NIFTY SME EMERGE' are live indices and stay in."""
+    """NSE-name indices published within the last 45 days of the newest bhavcopy day."""
     with get_session() as session:
         newest = session.exec(
             select(func.max(col(IndexOhlcv.date))).where(~col(IndexOhlcv.symbol).startswith("^"))
@@ -208,7 +196,7 @@ def list_bhavcopy_index_names() -> list[str]:
             select(col(IndexOhlcv.symbol))
             .where(~col(IndexOhlcv.symbol).startswith("^"), ~col(IndexOhlcv.symbol).contains("="))
             .group_by(col(IndexOhlcv.symbol))
-            .having(func.max(col(IndexOhlcv.date)) >= newest - timedelta(days=45))
+            .having(func.max(col(IndexOhlcv.date)) >= newest - timedelta(days=_LIVE_INDEX_WINDOW_DAYS))
             .order_by(col(IndexOhlcv.symbol))
         ).all()
     return list(rows)

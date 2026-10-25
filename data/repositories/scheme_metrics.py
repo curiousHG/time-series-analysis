@@ -24,7 +24,7 @@ logger = logging.getLogger("data.repositories.scheme_metrics")
 
 
 def load_metrics(scheme_names: list[str] | None = None) -> pl.DataFrame:
-    """Return cached metrics for the given schemes (or all); `scheme_name` via JOIN to amfi_schemes."""
+    """Cached metrics for the given schemes (or all), with `scheme_name` joined from amfi_schemes."""
     with get_session() as session:
         stmt = select(AmfiScheme.scheme_name.label("scheme_name"), MfSchemeMetrics).join(
             AmfiScheme, MfSchemeMetrics.scheme_code == AmfiScheme.scheme_code
@@ -49,11 +49,14 @@ def load_metrics(scheme_names: list[str] | None = None) -> pl.DataFrame:
 _UPSERT_CHUNK = 500
 
 
+def _last_row_per_scheme_code(payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return list({d["scheme_code"]: d for d in payload}.values())
+
+
 @timeit("scheme_metrics.upsert_many")
 def upsert_metrics(rows: list[dict[str, Any]]) -> int:
-    """Bulk-upsert metric rows. Each must carry `scheme_name`, resolved to scheme_code via
-    amfi_schemes (synthetic negatives for missing names).
-    """
+    """Bulk-upsert metric rows keyed by `scheme_name` (resolved to scheme_code, minting synthetic codes). Returns
+    the count."""
     if not rows:
         return 0
 
@@ -71,14 +74,10 @@ def upsert_metrics(rows: list[dict[str, Any]]) -> int:
         d["computed_at_nav_date"] = r.get("computed_at_nav_date") or r.get("last_nav_date")
         payload.append(d)
 
-    # Names are not unique across plan/option siblings, so two input rows can resolve to one
-    # scheme_code; ON CONFLICT refuses to touch a row twice in one statement. Last write wins.
-    payload = list({d["scheme_code"]: d for d in payload}.values())
+    payload = _last_row_per_scheme_code(payload)
     if not payload:
         return 0
 
-    # One statement per chunk: ~70 columns x a full-universe recompute (3-4K rows) is well past
-    # PostgreSQL's 65,535 bind-parameter limit, which silently killed the whole save.
     with get_session() as session:
         for i in range(0, len(payload), _UPSERT_CHUNK):
             chunk = payload[i : i + _UPSERT_CHUNK]
@@ -92,14 +91,9 @@ def upsert_metrics(rows: list[dict[str, Any]]) -> int:
 
 
 def find_stale_schemes() -> list[str]:
-    """Return scheme_names whose cached metric is older than the latest NAV.
-
-    A scheme is stale when:
-      • it has NAV history but no metrics row, or
-      • its `computed_at_nav_date` < max(MfNav.date) for the same scheme.
-    """
+    """scheme_names with NAV history but no metrics row, or whose `computed_at_nav_date` is older than their
+    latest NAV."""
     with get_session() as session:
-        # Latest NAV date per scheme. JOIN to amfi_schemes for the scheme_name.
         nav_stmt = (
             select(AmfiScheme.scheme_name, func.max(MfNav.date).label("max_date"))
             .join(AmfiScheme, MfNav.scheme_code == AmfiScheme.scheme_code)
@@ -107,7 +101,6 @@ def find_stale_schemes() -> list[str]:
         )
         latest_nav = {r[0]: r[1] for r in session.exec(nav_stmt).all()}
 
-        # All cached metric rows.
         m_stmt = select(AmfiScheme.scheme_name, MfSchemeMetrics.computed_at_nav_date).join(
             AmfiScheme, MfSchemeMetrics.scheme_code == AmfiScheme.scheme_code
         )
@@ -122,7 +115,7 @@ def find_stale_schemes() -> list[str]:
 
 
 def clear_metrics(scheme_names: list[str] | None = None) -> int:
-    """Drop cached metrics for the given names (or all). Useful when the metrics schema changes."""
+    """Drop cached metrics for the given names (or all). Returns the number of rows deleted."""
     with get_session() as session:
         if scheme_names:
             codes = list(

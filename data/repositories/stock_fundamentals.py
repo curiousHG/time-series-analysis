@@ -1,10 +1,5 @@
-"""Stock fundamentals store — scrape screener.in company pages, compute a screener-shaped
-snapshot, persist DB-first (fetch only missing/stale symbols).
-
-Layout mirrors the MF metrics pattern: raw quarterly rows in `stock_quarterly`, a derived
-per-symbol snapshot in `stock_metrics`, and a `fundamentals_status`/`fundamentals_as_of`
-marker on `stock_registry`.
-"""
+"""Stock fundamentals store: scrape screener.in company pages DB-first into stock_quarterly, stock_metrics and
+the registry marker."""
 
 from __future__ import annotations
 
@@ -23,10 +18,10 @@ from data.fetchers.screener_in import fetch_company
 
 logger = logging.getLogger(__name__)
 
+_RETRY_BACKOFF_SECONDS = 2.0
 _MONTHS = {
     m: i for i, m in enumerate(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)
 }
-# screener.in quarterly row label → StockQuarterly field.
 _QMAP = {
     "Sales": "sales",
     "Expenses": "expenses",
@@ -40,7 +35,6 @@ _QMAP = {
     "Net Profit": "net_profit",
     "EPS in Rs": "eps",
 }
-# screener.in top-ratio label → StockMetrics field.
 _TMAP = {
     "Market Cap": "market_cap",
     "Current Price": "current_price",
@@ -123,6 +117,10 @@ def _metrics_row(symbol: str, data: dict) -> dict:
     return row
 
 
+def _carries_no_top_ratios(metrics_row: dict) -> bool:
+    return all(metrics_row.get(f) is None for f in _TMAP.values())
+
+
 def _growth_diff(curr: float | None, prev: float | None) -> float | None:
     """Absolute (percentage-point) change — promoter holding is already a percentage."""
     if curr is None or prev is None:
@@ -140,10 +138,7 @@ def save_company_fundamentals(symbol: str, data: dict | None) -> bool:
             return False
 
         m_row = _metrics_row(symbol, data)
-        # A page that loaded but carries no top-ratio values is a soft failure — a throttled/blocked
-        # response, or the empty consolidated page of a standalone-only reporter. Don't clobber
-        # existing good data with nulls and don't mark it "available"; leave it to be retried.
-        if all(m_row.get(f) is None for f in _TMAP.values()):
+        if _carries_no_top_ratios(m_row):
             _mark_status(session, symbol, "unavailable", now)
             session.commit()
             return False
@@ -175,7 +170,6 @@ def _mark_status(session, symbol: str, status: str, when: dt.datetime, *, name: 
         session.add(row)
     row.fundamentals_status = status
     row.fundamentals_as_of = when
-    # Backfill the name from screener.in for symbols absent from the NSE master (e.g. LTIM).
     if name and not row.stock_name:
         row.stock_name = name
 
@@ -187,11 +181,8 @@ def ensure_stock_fundamentals(
     request_delay: float = 0.7,
     retries: int = 1,
 ) -> pl.DataFrame:
-    """DB-first: scrape only symbols missing or older than max_age_days; return their metrics.
-
-    Scrapes are throttled (`request_delay` between requests, with `retries` on failure) so a
-    bulk run stays polite to screener.in and avoids the rate-limiting that nulls out fields.
-    """
+    """DB-first: scrape only symbols missing or older than max_age_days, throttled by `request_delay` with
+    `retries`. Returns their metrics."""
     cutoff = dt.datetime.now(dt.UTC).replace(tzinfo=None) - dt.timedelta(days=max_age_days)
     with get_session() as session:
         fresh = set(
@@ -208,7 +199,7 @@ def ensure_stock_fundamentals(
         data = fetch_company(sym)
         attempt = 0
         while data is None and attempt < retries:
-            time.sleep(2.0)  # back off, then retry a throttled/empty response
+            time.sleep(_RETRY_BACKOFF_SECONDS)
             data = fetch_company(sym)
             attempt += 1
         save_company_fundamentals(sym, data)

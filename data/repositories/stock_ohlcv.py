@@ -1,6 +1,4 @@
-"""Stock (equity) OHLCV repository — the stock_ohlcv + stock_registry tables. Keyed by the bare NSE
-symbol (RELIANCE); index symbols are delegated to index_ohlcv. Sources: yfinance (adjusted per-symbol
-history; the single OHLCV source of truth) and the NSE stock bhavcopy (bulk one-day snapshots)."""
+"""Equity OHLCV repository (stock_ohlcv + stock_registry), keyed by bare NSE symbol; index symbols go to index_ohlcv."""
 
 from __future__ import annotations
 
@@ -38,6 +36,7 @@ OHLCV_MANY_SCHEMA = {
     "Volume": pl.Int64,
 }
 SYMBOL_CHUNK = 500
+_DESPIKE_RATIO = 5
 
 
 def sync_nse_universe() -> int:
@@ -74,11 +73,8 @@ def sync_nse_universe() -> int:
 
 
 def sync_nse_etf_universe() -> int:
-    """Tag the NSE-listed ETF universe in stock_registry (quote_type='ETF'), registering any not yet
-    known. This is what lets the analysis picker classify a symbol as an ETF vs a plain equity — the
-    live NAV/underlying/performance metadata is fetched on demand for the ETF view, not stored here.
-    Returns the ETF count."""
-    from data.fetchers.stock import fetch_nse_etf_list  # noqa: PLC0415 — defer heavy import off boot
+    """Tag the NSE-listed ETFs in stock_registry (quote_type='ETF'), registering unknown ones. Returns the count."""
+    from data.fetchers.stock import fetch_nse_etf_list  # noqa: PLC0415
 
     etfs = fetch_nse_etf_list()
     if not etfs:
@@ -101,24 +97,18 @@ def sync_nse_etf_universe() -> int:
 
 
 def _yf_fetch_symbol(symbol: str) -> str:
-    """yfinance symbol to fetch for a stored stock symbol. NSE bare symbols get `.NS`; symbols
-    that already carry an exchange qualifier (`.` / `^`) or are registered on a non-NSE exchange
-    (global tickers like AAPL) are fetched as-is."""
+    """yfinance ticker for a stored symbol: NSE bare symbols get `.NS`, qualified or non-NSE ones are as-is."""
     if "." in symbol or symbol.startswith("^"):
         return symbol
     with get_session() as session:
         exchange = session.exec(select(StockRegistry.exchange).where(StockRegistry.symbol == symbol)).first()
     if exchange and exchange.upper() not in _NSE_EXCHANGES:
-        return symbol  # global (e.g. US) — no .NS suffix
+        return symbol
     return f"{symbol}.NS"
 
 
 def _fetch_and_save_stock(symbol: str, start: date, end: date) -> None:
-    """Fetch an equity from yfinance — the single reliable source — and upsert into stock_ohlcv.
-
-    yfinance is split/dividend-adjusted and correctly dated. jugaad-data was dropped: its rows are
-    timestamped at IST midnight (18:30 UTC), so `.date()` shifted them a day forward — they landed on
-    the wrong date and never overwrote corrupt rows, and it occasionally returned spiky values."""
+    """Fetch an equity from yfinance and upsert it into stock_ohlcv."""
     data = fetch_symbol_data(_yf_fetch_symbol(symbol), start=start, end=end)
     if data is not None and not data.empty:
         _upsert_ohlcv(StockOhlcv, symbol, pl.from_pandas(data.reset_index()))
@@ -127,8 +117,7 @@ def _fetch_and_save_stock(symbol: str, start: date, end: date) -> None:
 def register_stock(
     symbol: str, *, name: str | None = None, exchange: str | None = None, quote_type: str | None = None
 ) -> None:
-    """Upsert a stock_registry row — for stocks added outside the NSE master (e.g. global tickers),
-    so `_yf_fetch_symbol` knows to fetch them as-is."""
+    """Upsert a stock_registry row for a stock outside the NSE master (e.g. a global ticker)."""
     with get_session() as session:
         row = session.get(StockRegistry, symbol)
         if row is None:
@@ -144,10 +133,8 @@ def register_stock(
 
 
 def refresh_stocks_batch(symbols: list[str], start: date, end_exclusive: date) -> int:
-    """Upsert a recent OHLCV window for many equities from ONE batched yfinance download. `symbols`
-    are bare keys (RELIANCE, AAPL); each is suffixed per its registry exchange like the per-symbol
-    path, so NSE and international stocks refresh through the same call. Returns rows saved."""
-    from data.fetchers.stock import fetch_symbols_batch  # noqa: PLC0415 — defer heavy import off boot
+    """Upsert an OHLCV window for many bare-key equities from one batched yfinance download. Returns rows saved."""
+    from data.fetchers.stock import fetch_symbols_batch  # noqa: PLC0415
 
     if not symbols:
         return 0
@@ -163,8 +150,6 @@ def refresh_stocks_batch(symbols: list[str], start: date, end_exclusive: date) -
         exch = (exchange_of.get(bare) or "NSE").upper()
         return bare if exch not in _NSE_EXCHANGES else f"{bare}.NS"
 
-    # A registry row with NULL exchange means the symbol left the NSE master (delisted/renamed in a
-    # demerger — e.g. TATAMOTORS → TMCV/TMPV). Its history is static; skip it instead of 404ing daily.
     live = [b for b in symbols if not (b in exchange_of and exchange_of[b] is None)]
     yf_to_bare = {_yf(b): b for b in live}
     total = 0
@@ -179,8 +164,7 @@ def refresh_stocks_batch(symbols: list[str], start: date, end_exclusive: date) -
 
 
 def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
-    """DB-first OHLCV loader. Equities are keyed by the bare NSE symbol (RELIANCE); index
-    symbols are delegated to ensure_index_data (index_ohlcv). Fetches only missing gaps."""
+    """DB-first OHLCV loader for one symbol; fetches only missing gaps, index symbols go to ensure_index_data."""
     start = _to_date(start_date)
     end = _to_date(end_date)
     if is_index_symbol(symbol):
@@ -199,9 +183,10 @@ def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: dateti
 
 
 def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
-    """Force-fetch the forward gap db_max→today, bypassing MIN_FETCH_DAYS, for callers needing
-    guaranteed-fresh data (e.g. the metrics-recompute benchmark). Index symbols are delegated.
-    Returns (today, db_max_after); db_max_after is None if nothing fetched. No-op if current."""
+    """Force-fetch the gap from the last stored date to today, bypassing MIN_FETCH_DAYS.
+
+    Returns (today, db_max_after); db_max_after is None if nothing is stored. No-op if current.
+    """
     if is_index_symbol(symbol):
         return refresh_index_to_today(symbol)
     sym = to_bare_symbol(symbol)
@@ -209,13 +194,11 @@ def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
 
 
 def _despike(rows: list[dict]) -> list[dict]:
-    """Drop one-day glitch rows: a close >5x away from BOTH neighbours' closes. Yahoo's early-2000s
-    .NS history has days where values spike (or swap between tickers) and recover the next session —
-    e.g. CIPLA 2003-04-14: 49.3 → 3.9 → 49.5. Real splits are level SHIFTS (the new level persists),
-    so they never match the both-neighbours pattern. `rows` must be date-sorted with positive closes."""
+    """Drop rows whose close is more than 5x away from both neighbours. `rows` must be date-sorted with positive
+    closes."""
 
     def _spiky(a: float, b: float) -> bool:
-        return a / b > 5 or b / a > 5
+        return a / b > _DESPIKE_RATIO or b / a > _DESPIKE_RATIO
 
     keep = rows[:1]
     for i in range(1, len(rows) - 1):
@@ -232,19 +215,18 @@ def _despike(rows: list[dict]) -> list[dict]:
 
 
 def refetch_stock_full(symbol: str, *, since=None) -> None:
-    """Replace an equity's entire stored history with a fresh yfinance pull, ATOMICALLY. Fetch first;
-    only if that succeeds, delete + re-insert in a single transaction. This fully cleans a corrupt or
-    mixed-scale series (a plain upsert would leave stale rows on dates the new pull happens to skip),
-    and it's interrupt-safe: a failed/empty fetch or a kill mid-transaction leaves the old rows intact.
-    Zero-close rows are dropped and one-day glitches despiked before insert."""
+    """Replace an equity's stored history with a fresh yfinance pull (delete + insert in one transaction).
+
+    A failed or empty fetch leaves the old rows intact; zero closes are dropped and glitches despiked.
+    """
     import datetime as _dt  # noqa: PLC0415
 
-    import pandas as pd  # noqa: PLC0415 — pandas only here; the repo is polars-native
+    import pandas as pd  # noqa: PLC0415
 
     bare = to_bare_symbol(symbol)
     data = fetch_symbol_data(_yf_fetch_symbol(bare), start=(since or _dt.date(2000, 1, 1)), end=_dt.date.today())
     if data is None or data.empty:
-        return  # never wipe on a failed/empty fetch
+        return
 
     def _num(v: object) -> float | None:
         return float(v) if pd.notna(v) else None
@@ -271,24 +253,21 @@ def refetch_stock_full(symbol: str, *, since=None) -> None:
 
 
 def list_stock_symbols() -> list[str]:
-    """Distinct equity symbols we hold OHLCV for (stock_ohlcv) — the fetched set."""
+    """Distinct equity symbols with stored OHLCV."""
     with get_session() as session:
         rows = session.exec(select(col(StockOhlcv.symbol)).distinct().order_by(col(StockOhlcv.symbol))).all()
     return list(rows)
 
 
 def list_registry_symbols() -> list[str]:
-    """Every equity symbol in the NSE master (stock_registry) — the full pickable universe, including
-    ones we haven't fetched OHLCV for yet. Those are fetched on demand the first time they're opened."""
+    """Every equity symbol in stock_registry, including ones without stored OHLCV."""
     with get_session() as session:
         rows = session.exec(select(col(StockRegistry.symbol)).distinct().order_by(col(StockRegistry.symbol))).all()
     return list(rows)
 
 
 def load_registry_catalog() -> pl.DataFrame:
-    """symbol · name · quote_type · exchange for the whole registry. The analysis picker reads
-    quote_type to tell ETFs from plain equities, and exchange to badge/route international stocks
-    (non-NSE exchange → yfinance fundamentals, S&P 500 CAPM benchmark)."""
+    """symbol, name, quote_type, exchange for the whole registry."""
     with get_session() as session:
         rows = session.exec(
             select(
@@ -307,9 +286,7 @@ def load_registry_catalog() -> pl.DataFrame:
 
 
 def load_stock_ohlcv_many(symbols: list[str], start: date, end: date) -> pl.DataFrame:
-    """OHLCV rows for many equities in one read per chunk of `SYMBOL_CHUNK` symbols, ordered by
-    symbol then date. Columns: Symbol, Date, Open, High, Low, Close, Volume. No fetching — callers
-    run `ensure_stock_data` per symbol first."""
+    """OHLCV rows for many equities, ordered by symbol then date (columns per `OHLCV_MANY_SCHEMA`). Never fetches."""
     wanted = sorted(set(symbols))
     parts: list[pl.DataFrame] = []
     with get_session() as session:
@@ -335,8 +312,7 @@ def load_stock_ohlcv_many(symbols: list[str], start: date, end: date) -> pl.Data
 
 
 def load_instrument_kinds(symbols: list[str]) -> dict[str, str]:
-    """{symbol: 'etf' | 'equity'} from stock_registry.quote_type; symbols absent from the registry
-    default to 'equity'. The backtest cost model charges ETF and equity legs differently."""
+    """{symbol: 'etf' | 'equity'} from stock_registry.quote_type; unregistered symbols default to 'equity'."""
     if not symbols:
         return {}
     with get_session() as session:
@@ -348,9 +324,8 @@ def load_instrument_kinds(symbols: list[str]) -> dict[str, str]:
 
 
 def nse_trading_days(start: date, end: date) -> list[date]:
-    """NSE trading calendar between `start` and `end` inclusive — the dates the index bhavcopy
-    published Nifty 50, which is the only source here that reflects holidays and special sessions."""
-    from core.models import IndexOhlcv  # noqa: PLC0415 — model import kept local to this helper
+    """NSE trading days between `start` and `end` inclusive, taken from the Nifty 50 index bhavcopy dates."""
+    from core.models import IndexOhlcv  # noqa: PLC0415
 
     with get_session() as session:
         rows = session.exec(
@@ -362,16 +337,11 @@ def nse_trading_days(start: date, end: date) -> list[date]:
 
 
 def stock_gap_ranges(symbols: list[str] | None = None, *, lookback_days: int = 730) -> dict[str, tuple[date, date]]:
-    """{symbol: (first_missing, last_missing)} for NSE equities missing trading days *inside*
-    their stored history over the lookback — the internal holes a forward-only refresh never
-    revisits. A symbol's own first stored date bounds the check, so thin new listings are not
-    reported as gaps."""
+    """{symbol: (first_missing, last_missing)} for NSE equities missing trading days inside their stored history."""
     today = date.today()
     since = today - timedelta(days=lookback_days)
-    # Weekend special sessions (Budget day) are real trading days the bhavcopy records, but
-    # yfinance never publishes equity bars for them — a gap that can never be filled.
-    calendar = [d for d in nse_trading_days(since, today) if d.weekday() < 5]
-    if not calendar:
+    weekday_calendar = [d for d in nse_trading_days(since, today) if d.weekday() < 5]
+    if not weekday_calendar:
         return {}
     with get_session() as session:
         live = session.exec(
@@ -391,15 +361,14 @@ def stock_gap_ranges(symbols: list[str] | None = None, *, lookback_days: int = 7
     gaps: dict[str, tuple[date, date]] = {}
     for sym, dates in have.items():
         first, last = min(dates), max(dates)
-        missing = [d for d in calendar if first <= d <= last and d not in dates]
+        missing = [d for d in weekday_calendar if first <= d <= last and d not in dates]
         if missing:
             gaps[sym] = (missing[0], missing[-1])
     return gaps
 
 
 def fill_stock_gaps(symbols: list[str] | None = None, *, chunk: int = 200) -> int:
-    """Refetch every internal hole found by `stock_gap_ranges`, batching symbols that share the
-    same missing window. Returns rows upserted."""
+    """Refetch every hole found by `stock_gap_ranges`, batching symbols with the same window. Returns rows upserted."""
     gaps = stock_gap_ranges(symbols)
     if not gaps:
         return 0
@@ -415,10 +384,7 @@ def fill_stock_gaps(symbols: list[str] | None = None, *, chunk: int = 200) -> in
 
 
 def last_nse_stock_ohlcv_date() -> date | None:
-    """The date up to which the *typical* live NSE equity is stored: the median of per-symbol
-    max dates. The plain max is dragged forward by the handful of international tickers that
-    keep updating while every NSE symbol sits weeks behind, which is how a forward-only refresh
-    window opened a 40-day hole across the whole universe."""
+    """Median of per-symbol latest dates across NSE equities, or None if empty."""
     with get_session() as session:
         rows = session.exec(
             select(func.max(col(StockOhlcv.date)))
@@ -431,13 +397,13 @@ def last_nse_stock_ohlcv_date() -> date | None:
 
 
 def last_stock_ohlcv_date() -> date | None:
-    """Most recent date present in stock_ohlcv (across all symbols), or None if empty."""
+    """Latest date in stock_ohlcv across all symbols, or None if empty."""
     with get_session() as session:
         return session.exec(select(func.max(col(StockOhlcv.date)))).one()
 
 
 def search_stock_symbols(query: str):
-    """Search stock symbols through the repository boundary."""
+    """Search stock symbols (delegates to the fetcher's `query_stocks`)."""
     return query_stocks(query)
 
 

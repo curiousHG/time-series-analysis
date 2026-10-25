@@ -1,9 +1,4 @@
-"""Holdings, sector, and asset allocation repository.
-
-Tables are keyed on `scheme_code` (FK → amfi_schemes), but public APIs still take
-`slugs: list[str]` — resolved to scheme_code via a cached `make_slug(scheme_name)` map.
-Output frames re-derive `schemeSlug` / `schemeName` so downstream callers don't change.
-"""
+"""Holdings, sector and asset allocation repository; public APIs take scheme slugs, tables are keyed on scheme_code."""
 
 from __future__ import annotations
 
@@ -37,20 +32,10 @@ from mutual_funds.table_schema import (
 logger = logging.getLogger("data.repositories.holdings")
 
 
-# ---- Slug ↔ scheme_code resolution -------------------------------------------------------
-
-
 @lru_cache(maxsize=1)
 def _slug_to_code_map_cached() -> dict[str, int]:
-    """Build `{slug → scheme_code}` from amfi_schemes. Process-level LRU cache (size 1).
-
-    The persisted `scheme_slug` column was dropped, so this is the only slug → code
-    path. Every code path that mutates `amfi_schemes` MUST call `clear_slug_cache()`
-    after commit, else newly inserted schemes stay invisible to holdings save/load
-    until process restart (mutators: sync_amfi_master, save_nav_df / save_metadata
-    synthetic-mint branches, registry_service._resolve_or_mint_code,
-    scripts/dedupe_synthetic_codes.py).
-    """
+    """`{slug → scheme_code}` from amfi_schemes, cached per process; callers that mutate amfi_schemes must
+    `clear_slug_cache()` after commit."""
     with get_session() as session:
         rows = session.exec(select(AmfiScheme.scheme_code, AmfiScheme.scheme_name)).all()
     out: dict[str, int] = {}
@@ -81,9 +66,6 @@ def _resolve_slugs(slugs: list[str]) -> list[int]:
     return [m[s] for s in slugs if s in m]
 
 
-# ---- Save paths --------------------------------------------------------------------------
-
-
 def _polars_row_to_holding(row: dict, scheme_code: int) -> MfHolding:
     fields = {HOLDINGS_FIELD_MAP[k]: row.get(k) for k in HOLDINGS_FIELD_MAP}
     return MfHolding(scheme_code=scheme_code, **fields)  # type: ignore[arg-type]
@@ -105,8 +87,7 @@ def _asset_row(row: dict, code: int) -> MfAssetAllocation:
 
 
 def _stage_rows(session, df: pl.DataFrame, build, scheme_code: int | None = None) -> None:
-    """Stage one ORM row per frame row on `session` (no commit). A row whose slug resolves to no
-    scheme is skipped with a warning."""
+    """Stage one ORM row per frame row on `session` without committing; rows with an unresolvable slug are skipped."""
     for row in df.iter_rows(named=True):
         code = scheme_code if scheme_code is not None else _resolve_slug(row.get("schemeSlug") or "")
         if code is None:
@@ -151,13 +132,6 @@ def save_assets(df: pl.DataFrame, *, scheme_code: int | None = None) -> None:
         session.commit()
 
 
-# ---- Load paths --------------------------------------------------------------------------
-#
-# Every loader returns only the LATEST `portfolio_date` per scheme, deduped by the natural
-# key — old snapshots and duplicate rows from refresh cycles that didn't DELETE first would
-# otherwise leak in, but callers always want the active portfolio.
-
-
 def _latest_per_scheme(df: pl.DataFrame, dedup_keys: list[str]) -> pl.DataFrame:
     """Keep only the latest `portfolioDate` row per scheme, deduped by `dedup_keys`."""
     if df.is_empty() or "portfolioDate" not in df.columns:
@@ -172,8 +146,7 @@ def _latest_per_scheme(df: pl.DataFrame, dedup_keys: list[str]) -> pl.DataFrame:
 
 
 def holdings_count_by_scheme(scheme_names: list[str] | None = None) -> dict[str, int]:
-    """Per-scheme holdings row count, keyed by scheme name. An aggregate for the Settings status
-    tables — avoids loading every holding row just to count them."""
+    """{scheme_name: holdings row count} aggregated in SQL."""
     with get_session() as session:
         stmt = (
             select(AmfiScheme.scheme_name, func.count(col(MfHolding.scheme_code)))
@@ -279,13 +252,8 @@ def load_assets(slugs: list[str] | None = None) -> pl.DataFrame:
     return _latest_per_scheme(df, dedup_keys=["schemeCode", "assetClass"])
 
 
-# ---- delete helpers ---------------------------------------------------------------------
-
-
 def delete_holdings_for_slugs(slugs: list[str]) -> int:
-    """Delete every holdings/sector/asset row for the given slugs. Returns count of
-    resolved scheme_codes (0 if none resolved).
-    """
+    """Delete every holdings/sector/asset row for the given slugs. Returns the number of resolved scheme_codes."""
     if not slugs:
         return 0
     codes = _resolve_slugs(slugs)
@@ -307,11 +275,9 @@ def replace_holdings_atomic(
     *,
     scheme_code: int | None = None,
 ) -> None:
-    """Delete + re-insert one fund's holdings/sector/asset rows in a single transaction,
-    so a failed insert never leaves a fund with holdings but no sectors/assets.
+    """Delete and re-insert one fund's holdings/sector/asset rows in a single transaction.
 
-    Pass `scheme_code` whenever the caller knows it: plan/option variants of a fund share a
-    slug, so resolving the slug alone can file the rows under a sibling scheme.
+    Pass `scheme_code` when known; plan/option variants can share a slug.
     """
     code = scheme_code
     if code is None:
@@ -330,12 +296,8 @@ def replace_holdings_atomic(
         session.commit()
 
 
-# ---- ensure / refresh --------------------------------------------------------------------
-
-
 def _name_from_source_url(url: str | None) -> str | None:
-    """The scheme name an earlier AdvisorKhoj scrape requested — AMFI's pre-2025 spelling, which
-    AdvisorKhoj still keys by. None for non-AdvisorKhoj URLs."""
+    """The scheme name an earlier AdvisorKhoj scrape requested, taken from `url`; None for other URLs."""
     if not url or "advisorkhoj.com" not in url:
         return None
     tail = unquote(url.rstrip("/").rsplit("/", 1)[-1]).strip()
@@ -343,9 +305,7 @@ def _name_from_source_url(url: str | None) -> str | None:
 
 
 def _returned_same_fund(row: dict, scheme_code: int, our_base: str) -> bool:
-    """Whether an AdvisorKhoj portfolio row belongs to our fund (any plan/option variant of it —
-    variants share one portfolio). AdvisorKhoj fuzzy-matches unknown slugs onto *other* funds,
-    so every hit is checked before it is stored."""
+    """Whether an AdvisorKhoj portfolio row belongs to our fund (any plan/option variant)."""
     try:
         got = int(row.get("scheme_code"))
     except (TypeError, ValueError):
@@ -371,14 +331,10 @@ def _store_advisorkhoj_slug(scheme_code: int, slug: str) -> None:
 
 
 def resolve_and_fetch_portfolio(scheme_code: int) -> tuple[str, dict]:
-    """Find the AdvisorKhoj key for a scheme and return (key, portfolio payload).
+    """Find the verified AdvisorKhoj key for a scheme → (key, portfolio payload).
 
-    Tries, in order: the key stored from an earlier success, the spelling an earlier metadata
-    scrape used, then the generated candidates from `name_candidates` — posted as scheme
-    *names*, which is what AdvisorKhoj keys the endpoint by. A hit counts only if the
-    returned rows belong to the same fund; the winning key is persisted on
-    `mf_registry.advisorkhoj_slug` (a name now; older rows hold the slugs that happened to
-    work) so later refreshes are one request. Raises `SourceNotFound` when nothing verifies.
+    Tries the stored key, the earlier metadata spelling, then `name_candidates`; the winner is
+    persisted on `mf_registry.advisorkhoj_slug`. Raises `SourceNotFound` when nothing verifies.
     """
     with get_session() as session:
         scheme = session.get(AmfiScheme, scheme_code)
@@ -420,8 +376,7 @@ def resolve_and_fetch_portfolio(scheme_code: int) -> tuple[str, dict]:
 
 
 def resolve_advisorkhoj_slug(scheme_code: int) -> str | None:
-    """The verified AdvisorKhoj key for a scheme, or None when nothing on AdvisorKhoj matches.
-    Served from `mf_registry.advisorkhoj_slug` after the first success."""
+    """The verified AdvisorKhoj key for a scheme (from `mf_registry` when stored), or None."""
     with get_session() as session:
         reg = session.get(MfRegistry, scheme_code)
         if reg is not None and reg.advisorkhoj_slug:
@@ -434,9 +389,7 @@ def resolve_advisorkhoj_slug(scheme_code: int) -> str | None:
 
 
 def fetch_holdings_for_scheme(scheme_code: int) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Resolve + fetch + normalise one scheme's holdings. Frames carry the scheme's *own*
-    slug (`make_slug(scheme_name)`) regardless of which AdvisorKhoj spelling resolved, so the
-    existing slug-keyed loaders keep working; save with `scheme_code=` to avoid the slug map."""
+    """Resolve, fetch and normalise one scheme's (holdings, sectors, assets), tagged with its own slug."""
     _, resp = resolve_and_fetch_portfolio(scheme_code)
     with get_session() as session:
         own_slug = make_slug(session.get(AmfiScheme, scheme_code).scheme_name)

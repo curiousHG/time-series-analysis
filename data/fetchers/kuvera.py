@@ -1,9 +1,4 @@
-"""Kuvera public JSON API — fallback metadata source when AdvisorKhoj lacks a fund.
-
-Resolution is two-step: a normalized token-set name match against Kuvera's scheme list
-proposes candidate codes, then the candidate's detail payload must ISIN-match the AMFI
-record before anything is accepted — a name match can propose, only the ISIN disposes.
-"""
+"""Kuvera public JSON API: fallback fund-metadata source, name-matched then ISIN-verified."""
 
 from __future__ import annotations
 
@@ -24,12 +19,8 @@ _LIST_URL = "https://api.kuvera.in/mf/api/v4/fund_schemes/list.json"
 _DETAIL_URL = "https://api.kuvera.in/mf/api/v5/fund_schemes/{code}.json"
 _FUND_URL = "https://kuvera.in/mutual-funds/scheme/{slug}"
 
-# Tokens that differ between AMFI and Kuvera naming conventions but carry no identity.
 _NOISE_TOKENS = frozenset({"fund", "plan", "option", "scheme", "of", "the", "-"})
 
-# Kuvera publishes no rate limit and sends no rate-limit headers (measured: ~130 ms/call, no
-# 429s at 4 workers). If it ever throttles, back off once and then surface the error so a
-# bulk run stops instead of failing every fund in turn.
 _THROTTLE_STATUSES = frozenset({429, 403, 503})
 _BACKOFF_SECONDS = 5.0
 
@@ -66,7 +57,7 @@ def _code_index() -> list[tuple[frozenset[str], str]]:
             "Kuvera scheme list", f"expected a {{class: {{sub: {{amc: [...]}}}}}} object, got {type(payload).__name__}"
         )
     index: list[tuple[frozenset[str], str]] = []
-    for asset_class in payload.values():  # {class: {sub_cat: {amc: [{c, n, ...}]}}}
+    for asset_class in payload.values():
         for sub_cat in asset_class.values():
             for funds in sub_cat.values():
                 for f in funds:
@@ -86,7 +77,7 @@ def _candidate_codes(scheme_name: str, max_candidates: int = 4) -> list[str]:
     scored: list[tuple[float, str]] = []
     for tokens, code in _code_index():
         if tokens == target:
-            scored.append((2.0, code))  # exact set match outranks everything
+            scored.append((2.0, code))
             continue
         union = len(tokens | target)
         if union:
@@ -105,14 +96,14 @@ def fetch_fund_metadata_kuvera(scheme_name: str, isins: tuple[str | None, ...]) 
     """
     accept = {i for i in isins if i}
     if not accept:
-        return None  # without an ISIN there is no safe way to verify a name match
+        return None
 
     for code in _candidate_codes(scheme_name):
         try:
             payload = _get_detail(code)
         except httpx.HTTPStatusError as e:
             if e.response.status_code in _THROTTLE_STATUSES:
-                raise  # let the caller stop the run rather than burn through every candidate
+                raise
             logger.debug("Kuvera detail failed for %s: %s", code, e)
             continue
         except Exception as e:
@@ -127,12 +118,11 @@ def fetch_fund_metadata_kuvera(scheme_name: str, isins: tuple[str | None, ...]) 
         aum = _num(d.get("aum"))
         return {
             "scheme_name": scheme_name,
-            # Kuvera reports AUM in Rs millions (verified vs AdvisorKhoj crores).
             "aum_crores": round(aum / 10.0, 2) if aum else None,
             "aum_as_of": None,
             "expense_ratio": _num(d.get("expense_ratio")),
             "expense_ratio_as_of": _iso_date(d.get("expense_ratio_date")),
-            "benchmark": None,  # Kuvera doesn't expose the SEBI benchmark
+            "benchmark": None,
             "launch_date": _iso_date(d.get("start_date")),
             "category": d.get("fund_category"),
             "asset_class": d.get("fund_type"),
@@ -144,7 +134,7 @@ def fetch_fund_metadata_kuvera(scheme_name: str, isins: tuple[str | None, ...]) 
             "investment_objective": (d.get("investment_objective") or "")[:2000] or None,
             "risk_level": (d.get("crisil_rating") or "").removesuffix(" Risk") or None,
             "fund_manager": d.get("fund_manager"),
-            "fund_house": None,  # repository fills from amfi_schemes, same as AdvisorKhoj path
+            "fund_house": None,
             "source_url": _FUND_URL.format(slug=d.get("slug", code)),
         }
     return None

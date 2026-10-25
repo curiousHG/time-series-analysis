@@ -43,9 +43,7 @@ def _resolve_isin_to_scheme_code(session, isins: list[str]) -> dict[str, int]:
 
 
 def _import_tradebook_df(df: pl.DataFrame) -> tuple[int, int]:
-    """Upsert a tradebook DataFrame, denormalising `scheme_code` via ISIN→amfi_schemes.
-    Returns (new, skipped).
-    """
+    """Insert new trades (deduped on trade_id), resolving `scheme_code` via ISIN. Returns (new, skipped)."""
     if df.is_empty():
         return 0, 0
 
@@ -53,7 +51,6 @@ def _import_tradebook_df(df: pl.DataFrame) -> tuple[int, int]:
     new_count = 0
 
     with get_session() as session:
-        # Bulk-resolve ISINs once before the row loop
         unique_isins = list({str(r) for r in df["isin"].drop_nulls().to_list()})
         isin_to_code = _resolve_isin_to_scheme_code(session, unique_isins)
 
@@ -91,9 +88,7 @@ def _import_tradebook_df(df: pl.DataFrame) -> tuple[int, int]:
 
 
 def load_tradebook_from_db() -> pl.DataFrame:
-    """Load all trades with `scheme_code` and `schemeName` JOINed from amfi_schemes.
-    Trades with NULL scheme_code (unresolved at import) come back with schemeName=None.
-    """
+    """All trades with `schemeName` joined from amfi_schemes (None where the scheme_code is unresolved)."""
     with get_session() as session:
         rows = session.exec(
             select(MfTradebook, AmfiScheme.scheme_name)
@@ -130,7 +125,7 @@ def load_tradebook_from_db() -> pl.DataFrame:
 
 
 def get_tradebook_stats() -> dict:
-    """Return summary stats for the tradebook."""
+    """Summary counts and date range for the tradebook."""
     with get_session() as session:
         rows = session.exec(select(MfTradebook)).all()
 

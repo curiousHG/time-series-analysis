@@ -17,20 +17,11 @@ from data.exceptions import UpstreamFormatError
 
 logger = logging.getLogger("data.fetchers.stock")
 
-# yfinance shares one session/cache across threads and is not thread-safe: concurrent
-# `yf.download` calls can hand one caller another caller's frame. Observed in production —
-# every '^' index received a stock's bar on refresh days because MF-metric threads refreshed
-# benchmarks while stock-metric threads fetched forward gaps. All yfinance calls go through
-# this lock, and every returned frame is checked against the ticker that was asked for.
 _YF_LOCK = threading.Lock()
 
 
 def _require_columns(df: pd.DataFrame, required: tuple[str, ...], source: str) -> None:
-    """Raise `UpstreamFormatError` when a downloaded CSV is missing columns we read by name.
-
-    Only for payloads that arrived intact — an unavailable file (404, holiday) is handled by the
-    caller's own miss path. A renamed or dropped column, by contrast, silently empties a sync.
-    """
+    """Raise `UpstreamFormatError` when a downloaded CSV is missing columns we read by name."""
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise UpstreamFormatError(source, f"missing column(s) {missing}; got {list(df.columns)}")
@@ -55,9 +46,7 @@ def fetch_nse_equity_list() -> list[dict]:
 
 
 def fetch_nse_etf_list() -> list[dict]:
-    """The NSE-listed ETF universe from the live /api/etf endpoint → one dict per ETF with its
-    classification key + display metadata. Underlying (`assets`), NAV, last price, 52-week range and
-    30d/1Y performance all come in this single call. Returns [] on any failure (best-effort)."""
+    """NSE-listed ETFs from /api/etf → one dict per ETF (underlying, NAV, price, range, performance). [] on failure."""
 
     def _f(v: object) -> float | None:
         try:
@@ -67,7 +56,7 @@ def fetch_nse_etf_list() -> list[dict]:
 
     try:
         with httpx.Client(timeout=30, follow_redirects=True, headers=NSE_HEADERS) as client:
-            client.get("https://www.nseindia.com/market-data/exchange-traded-funds-etf")  # prime cookies
+            client.get("https://www.nseindia.com/market-data/exchange-traded-funds-etf")
             r = client.get("https://www.nseindia.com/api/etf")
             r.raise_for_status()
             rows = r.json().get("data", [])
@@ -98,10 +87,8 @@ def fetch_nse_etf_list() -> list[dict]:
 
 
 def fetch_nse_index_bhavcopy(day: date) -> pd.DataFrame | None:
-    """All NSE index OHLCV for a single day in one download (ind_close_all) — 160+ indices incl.
-    sectoral + factor/strategy indices (Quality/Value/Momentum/Alpha/Low-Vol), which yfinance and
-    niftyindices don't serve. Returns Date/Name/Open/High/Low/Close/Volume (Name = NSE index name)."""
-    from jugaad_data.nse import bhavcopy_index_raw  # noqa: PLC0415 — heavy optional dep, only on this path
+    """All NSE index bars for one day (ind_close_all) → frame with Date/Name/OHLCV/valuation columns, or None."""
+    from jugaad_data.nse import bhavcopy_index_raw  # noqa: PLC0415
 
     try:
         raw = bhavcopy_index_raw(day)
@@ -139,9 +126,7 @@ def fetch_nse_index_bhavcopy(day: date) -> pd.DataFrame | None:
 
 
 def fetch_nse_index_constituents(index_name: str) -> list[str]:
-    """Constituent symbols of an NSE index from its published `ind_<name>list.csv` (full official
-    list — covers broad/sectoral indices incl. midcap/smallcap). Factor/strategy indices use
-    irregular file names and 404 here; the caller falls back to screener.in. Returns [] on any miss."""
+    """Constituent symbols of an NSE index from its published `ind_<name>list.csv`; [] on any miss."""
     slug = "".join(c for c in index_name.lower() if c.isalnum())
     url = f"https://nsearchives.nseindia.com/content/indices/ind_{slug}list.csv"
     try:
@@ -167,11 +152,10 @@ def fetch_nifty500_symbols() -> list[str]:
 
 
 def search_global_tickers(query: str, *, max_results: int = 8) -> list[dict]:
-    """Search Yahoo Finance for tradable tickers worldwide → [{symbol, name, exchange, quote_type}].
+    """Search Yahoo Finance for EQUITY/ETF tickers → [{symbol, name, exchange, quote_type}]; [] on failure.
 
-    yf.Search gives clean (symbol, name, exchange-display) triples across every exchange; when it's
-    throttled/empty we fall back to yf.Lookup. Only EQUITY/ETF quote types are returned — indices and
-    crypto have their own routing. Best-effort: [] on failure."""
+    Falls back to yf.Lookup when yf.Search is throttled or empty.
+    """
     try:
         quotes = yf.Search(query, max_results=max_results).quotes
     except Exception as e:
@@ -189,7 +173,7 @@ def search_global_tickers(query: str, *, max_results: int = 8) -> list[dict]:
     ]
     if out:
         return out
-    lookup = query_stocks(query)  # Lookup fallback (equities only)
+    lookup = query_stocks(query)
     return [
         {
             "symbol": str(sym),
@@ -202,11 +186,10 @@ def search_global_tickers(query: str, *, max_results: int = 8) -> list[dict]:
 
 
 def fetch_global_fundamentals(symbol: str) -> dict | None:
-    """Fundamentals for an INTERNATIONAL ticker from yfinance — the `.info` snapshot (valuation and
-    quality ratios in the listing currency) + `quarterly_income_stmt` (quarterly Sales / Net Profit /
-    EPS). The NSE path scrapes screener.in instead, which is far richer for Indian companies.
-    Ratio fields arrive as fractions (returnOnEquity 0.14 = 14%) and are converted to percentages;
-    dividendYield already comes as a percentage. None when yahoo doesn't know the symbol."""
+    """yfinance `.info` snapshot + quarterly income statement for an international ticker; None if unknown.
+
+    Ratio fields are returned as percentages.
+    """
     ticker = yf.Ticker(symbol)
     try:
         info = ticker.info or {}
@@ -271,11 +254,7 @@ def fetch_global_fundamentals(symbol: str) -> dict | None:
 
 
 def query_stocks(query: str) -> pd.DataFrame:
-    """Return equity symbols matching the query (any exchange — Indian or global), indexed by symbol.
-
-    Defensive: yfinance's Lookup returns an empty, column-less frame for no-match / throttled
-    responses (and can raise), so we normalise those to an empty result instead of a KeyError.
-    """
+    """Equity symbols matching the query (any exchange), indexed by symbol; empty frame on no match or failure."""
     empty = pd.DataFrame(columns=["shortName", "exchange", "quoteType"])
     empty.index.name = "symbol"
     try:
@@ -289,11 +268,11 @@ def query_stocks(query: str) -> pd.DataFrame:
 
 
 def fetch_symbols_batch(symbols: list[str], start: date, end_exclusive: date) -> dict[str, pd.DataFrame]:
-    """One threaded yf.download for MANY tickers → {ticker: OHLCV frame}. Same auto-adjusted basis
-    as fetch_symbol_data, so bulk daily refreshes land on the identical price basis as full-history
-    fetches (mixing an unadjusted daily source with adjusted history drifts after every corporate
-    action). Tickers with no rows in the window are omitted; `end_exclusive` follows yfinance's
-    exclusive-end convention."""
+    """One threaded auto-adjusted yf.download for many tickers → {ticker: OHLCV frame}.
+
+    Tickers with no rows are omitted; `end_exclusive` is yfinance's exclusive end date.
+    Raises `UpstreamFormatError` if ticker attribution is lost.
+    """
     if not symbols:
         return {}
     try:
@@ -315,10 +294,8 @@ def fetch_symbols_batch(symbols: list[str], start: date, end_exclusive: date) ->
     if raw is None or raw.empty:
         return {}
     out: dict[str, pd.DataFrame] = {}
-    if not isinstance(raw.columns, pd.MultiIndex):  # flat columns → yfinance collapsed to one ticker
+    if not isinstance(raw.columns, pd.MultiIndex):
         if len(symbols) != 1:
-            # Which of the requested tickers this is cannot be known; filing it under symbols[0]
-            # is exactly how one instrument's bars end up stored under another's key.
             raise UpstreamFormatError(
                 "yfinance batch", f"flat frame for a {len(symbols)}-ticker request — ticker attribution lost"
             )
@@ -349,12 +326,8 @@ def _verified_single(data: pd.DataFrame | None, symbol: str) -> pd.DataFrame | N
 
 
 def fetch_symbol_data(symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame | None:
-    """Fetch historical data for a given stock symbol using yfinance."""
+    """Auto-adjusted yfinance history for one symbol; None on failure."""
     try:
-        # auto_adjust=True matches yfinance's new default (silences FutureWarning) and gives
-        # split/dividend-adjusted closes, which is what we want for return calculations.
-        # group_by="ticker" keeps the ticker in the column index so the frame can be verified
-        # as the one asked for before it is flattened.
         with _YF_LOCK:
             data = yf.download(
                 symbol,
@@ -370,6 +343,5 @@ def fetch_symbol_data(symbol: str, start: str, end: str, interval: str = "1d") -
         raise
     except Exception as e:
         logger.error(f"Error fetching data for symbol {symbol}: {e}")
-        # Surface to the UI (drained as a toast); de-dup per symbol so repeats collapse.
         push_notice(f"Price fetch failed for {symbol}: {e}", level="error", key=f"fetch:{symbol}")
         return None

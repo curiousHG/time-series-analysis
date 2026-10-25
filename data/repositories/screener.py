@@ -1,10 +1,4 @@
-"""Unified screener data loader.
-
-Single SELECT joining the AMFI universe with metadata, cached metrics, registry status,
-and the AMC / category dims. Screener-shaped (one row per scheme, exact column names
-`services.screener_service.apply_filters` expects) — distinct from the piecewise loaders
-that other pages reuse with tighter requirements.
-"""
+"""Unified screener data loader: one SELECT joining AMFI schemes with metadata, metrics, registry and dims."""
 
 from __future__ import annotations
 
@@ -21,13 +15,7 @@ from data.constants import METRIC_COLS
 
 @timeit("screener.load_screener_view")
 def load_screener_view() -> pl.DataFrame:
-    """Run the screener's master JOIN as a single SELECT — one row per AMFI scheme,
-    LEFT-JOINed with metadata / metrics / registry / dim tables. (category: metadata's
-    preferred over AMFI's; metrics: every mf_scheme_metrics column.)
-    """
-    # Category = AMFI's SEBI asset class (Equity/Debt/Hybrid/…); sub_category = the granular
-    # SEBI type. AMFI is the authoritative source — the old AdvisorKhoj-metadata coalesce
-    # mixed vocabularies (e.g. "Fund of Funds-Overseas" vs "FoF Overseas") and is dropped.
+    """One row per AMFI scheme, LEFT-JOINed with metadata, every metrics column, registry status and dims."""
     amfi_cat = aliased(MfCategory)
 
     stmt = (
@@ -64,7 +52,4 @@ def load_screener_view() -> pl.DataFrame:
 
     if not rows:
         return pl.DataFrame()
-    # infer_schema_length=None scans every row: sparse columns (plan/option are null for the ~40%
-    # of schemes AMFI leaves blank, and the blanks lead) otherwise infer as Null from the first
-    # window and then fail to accept a string further down.
     return pl.from_dicts([dict(r) for r in rows], infer_schema_length=None)
