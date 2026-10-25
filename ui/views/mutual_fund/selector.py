@@ -1,8 +1,4 @@
-"""MF Analysis fund selector — selectbox over the tracked universe.
-
-Fund discovery/filtering lives on the **MF Screener** page (click a fund to open it here),
-so this page only needs to pick among the funds already tracked.
-"""
+"""MF Analysis fund selector: a selectbox over the tracked universe (discovery lives on the MF Screener)."""
 
 from __future__ import annotations
 
@@ -15,11 +11,10 @@ from mutual_funds.display import detect_option, detect_plan, unique_short_names
 from ui.persistence.selections import load_selection, save_selection
 from ui.state.filter_persistence import hydrate_filters, make_persist_callback
 
-# Selected-fund state persisted to selections.json so it survives page nav/refresh.
 _MF_PERSIST_KEY = "mf_analysis_filters"
 _MF_FILTER_DEFAULTS = {"mf_analysis_fund": None}
 _persist_mf_filters = make_persist_callback(_MF_PERSIST_KEY, _MF_FILTER_DEFAULTS)
-_BOOKMARKS_KEY = "mf_bookmarks"  # user-curated quick-access funds (selections.json)
+_BOOKMARKS_KEY = "mf_bookmarks"
 
 
 def _quick_jump() -> None:
@@ -105,7 +100,6 @@ def _load_tracked_enriched(names: tuple[str, ...]) -> pl.DataFrame:
     if not names:
         return pl.DataFrame(schema=empty_schema)
 
-    # inception_date (first NAV date) from cached metrics — the age filter's anchor.
     _m = load_metrics(list(names))
     inc = (
         _m.select(["scheme_name", "inception_date"])
@@ -115,7 +109,6 @@ def _load_tracked_enriched(names: tuple[str, ...]) -> pl.DataFrame:
 
     amfi = load_amfi_df().filter(pl.col("scheme_name").is_in(list(names)))
     if amfi.is_empty():
-        # Fallback: scheme_name + computed plan/option so search still works.
         return (
             pl.DataFrame({"scheme_name": list(names)})
             .with_columns(
@@ -145,25 +138,21 @@ def select_fund(tracked: pl.DataFrame) -> tuple[str | None, pl.DataFrame]:
     all_tracked_names = tracked["schemeName"].to_list()
     enriched = _load_tracked_enriched(tuple(all_tracked_names))
 
-    hydrate_filters(_MF_PERSIST_KEY, _MF_FILTER_DEFAULTS)  # seed selection from disk before the widget
+    hydrate_filters(_MF_PERSIST_KEY, _MF_FILTER_DEFAULTS)
 
-    # Sort by full name so plan/option variants (Direct/Regular, Growth/IDCW) group together.
     scheme_names = sorted(all_tracked_names)
     if not scheme_names:
         st.info("No tracked funds yet. Add funds via the **MF Screener** page.")
         return None, enriched
 
     tracked_set = set(scheme_names)
-    # Drop a persisted fund that is no longer tracked, so the selectbox value stays in its options.
     if st.session_state.get("mf_analysis_fund") not in scheme_names:
         st.session_state.pop("mf_analysis_fund", None)
 
-    # Quick access + the full-name Fund picker side by side, with the bookmark toggle.
     col_quick, col_fund, col_star = st.columns([1, 1.8, 0.15], vertical_alignment="bottom")
     with col_quick:
         _render_quick_access(tracked_set)
     with col_fund:
-        # Full scheme name shown so Direct/Regular, Growth/IDCW variants are distinguishable.
         selected = st.selectbox("Fund", options=scheme_names, key="mf_analysis_fund", on_change=_persist_mf_filters)
     with col_star:
         _render_bookmark_toggle(selected)

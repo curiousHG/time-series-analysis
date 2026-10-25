@@ -22,21 +22,17 @@ class FundContext:
 
     scheme_name: str
     short_name: str
-    nav_pd: pd.Series  # daily NAV indexed by date
-    returns: pd.Series  # daily pct-change of NAV
-    meta: dict  # mf_metadata row ({} when absent)
-    amfi_row: dict | None  # amfi_schemes row
-    metrics_row: dict | None  # cached mf_scheme_metrics row
+    nav_pd: pd.Series
+    returns: pd.Series
+    meta: dict
+    amfi_row: dict | None
+    metrics_row: dict | None
     sub_category: str | None
     holdings_status: str
 
 
 def load_index_returns(symbol: str, start: datetime, end: datetime) -> pd.Series:
-    """Daily pct-change series via the shared cached loader; empty Series on failure.
-
-    Failures degrade gracefully in the UI (a caption instead of a chart) but are logged
-    with a full trace here — a silent `except` made benchmark problems undiagnosable.
-    """
+    """Daily pct-change series via the shared cached loader; empty Series on failure (logged with trace)."""
     try:
         series = load_benchmark_returns(symbol, start, end)
     except Exception:

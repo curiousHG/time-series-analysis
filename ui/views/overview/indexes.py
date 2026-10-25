@@ -28,7 +28,7 @@ _persist = make_persist_callback(_PERSIST_KEY, _DEFAULTS)
 
 
 def render() -> None:
-    hydrate_filters(_PERSIST_KEY, _DEFAULTS)  # restore the persisted index + indicator choices
+    hydrate_filters(_PERSIST_KEY, _DEFAULTS)
 
     _render_international()
     st.divider()
@@ -95,7 +95,7 @@ def _render_chart() -> str | None:
     with col_p:
         panels_sel = st.multiselect("Panels (below)", panel_names, key="ov_idx_panels", on_change=_persist)
 
-    overlays_sel = [o for o in overlays_sel if o in overlay_names]  # guard stale persisted names
+    overlays_sel = [o for o in overlays_sel if o in overlay_names]
     panels_sel = [p for p in panels_sel if p in panel_names]
     overlays, panels = compute_indicators(chart_df, overlays_sel + panels_sel)
     chart_tab.render(chart_df, overlays, panels, panels_sel, index_display_name(sel) if sel.startswith("^") else sel)

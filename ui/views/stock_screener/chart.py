@@ -1,9 +1,4 @@
-"""Alpha categorisation scatter — stocks on the CAPM alpha (Y) vs beta (X) plane.
-
-Quadrants split at alpha=0 and beta=1, colour-coded by category. The market-cap-sized
-bubbles let outperformers/laggards and defensive/aggressive names be read at a glance —
-the stock analogue of the MF screener's alpha/beta mode.
-"""
+"""Alpha categorisation scatter: stocks on the CAPM alpha (Y) vs beta (X) plane, split at alpha=0 and beta=1."""
 
 from __future__ import annotations
 

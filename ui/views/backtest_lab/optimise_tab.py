@@ -1,8 +1,6 @@
 """Optimise view: search a run's parameter space with Optuna and apply the winner to a new run.
 
-The search runs off-thread under `bt_opt_<run id>`; every trial is persisted as it completes, so the
-charts here are drawn from stored trial records rather than a live study, and closing the browser
-does not lose the search.
+The search runs off-thread under `bt_opt_<run id>`; charts read persisted trial records.
 """
 
 from __future__ import annotations

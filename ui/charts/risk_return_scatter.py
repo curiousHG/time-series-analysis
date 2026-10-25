@@ -1,8 +1,6 @@
-"""Shared risk/return scatter — one parametrized Plotly builder for every quadrant chart.
+"""Shared risk/return scatter: one parametrized Plotly builder for every quadrant chart.
 
-Callers own data assembly (axis resolution, filtering, scaling); this module owns the
-figure: bubbles, colouring, reference lines, optional Pareto frontier, optional highlight
-marker. Replaces the per-page copies in the MF screener, stock screener and portfolio.
+Callers own data assembly; this module owns the figure.
 """
 
 from __future__ import annotations
@@ -44,18 +42,13 @@ def render_scatter(
     overlay_name: str = "My holdings",
     height: int = 560,
 ) -> None:
-    """Render the scatter.
+    """Render the risk/return scatter.
 
-    :param color_continuous: diverging RdYlGn scale (e.g. Sharpe colouring); otherwise
-        `color_col` is treated as categorical (with optional `color_discrete_map`).
-    :param color_range: explicit (cmin, cmax) for the continuous scale — pass robust
-        quantile bounds so outliers don't stretch the colourbar. Defaults to midpoint 0
-        with autoscaled ends when omitted.
-    :param frontier: overlay the Pareto frontier of the (x, y) cloud (max y per running x).
-    :param highlight: optional star marker, e.g. the portfolio point:
-        `{"x": .., "y": .., "name": "Portfolio"}`.
-    :param overlay_pdf: optional rows (same x/y columns) drawn on top as outlined diamond
-        markers with `overlay_label_col` text — e.g. the user's held funds.
+    :param color_continuous: diverging RdYlGn scale; otherwise `color_col` is categorical.
+    :param color_range: explicit (cmin, cmax) for the continuous scale.
+    :param frontier: overlay the Pareto frontier of the (x, y) cloud.
+    :param highlight: optional star marker, `{"x": .., "y": .., "name": ..}`.
+    :param overlay_pdf: rows drawn as outlined diamonds labelled by `overlay_label_col`.
     """
     import plotly.express as px  # noqa: PLC0415 — heavy viz deps; deferred to chart-render time
 

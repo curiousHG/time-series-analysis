@@ -3,16 +3,15 @@
 import plotly.graph_objects as go
 import plotly.io as pio
 
-# Color palette
 COLORS = [
-    "#6366f1",  # indigo
-    "#f59e0b",  # amber
-    "#10b981",  # emerald
-    "#ef4444",  # red
-    "#8b5cf6",  # violet
-    "#06b6d4",  # cyan
-    "#f97316",  # orange
-    "#ec4899",  # pink
+    "#6366f1",
+    "#f59e0b",
+    "#10b981",
+    "#ef4444",
+    "#8b5cf6",
+    "#06b6d4",
+    "#f97316",
+    "#ec4899",
 ]
 
 BG_COLOR = "#0f1117"
@@ -21,21 +20,18 @@ GRID_COLOR = "#1e293b"
 TEXT_COLOR = "#e2e8f0"
 FONT_FAMILY = "Inter, system-ui, sans-serif"
 
-# Semantic colours — import these instead of hard-coding hex in views/charts.
-POSITIVE = "#10b981"  # emerald — gains, good deltas
-POSITIVE_SOFT = "#86efac"  # light green — raw NAV / price lines
-NEGATIVE = "#ef4444"  # red — losses, bad deltas
-NEGATIVE_SOFT = "#fca5a5"  # light red — drawdown fills
-NEUTRAL = "#64748b"  # slate — zero/reference lines
-QUADRANT_LINE = "#475569"  # darker slate — quadrant split lines
-ACCENT = "#6366f1"  # indigo — primary series
-INFO = "#60a5fa"  # blue — secondary series (rolling returns etc.)
-BENCHMARK_LINE = "#94a3b8"  # grey — benchmark index overlays
-WARNING = "#fbbf24"  # amber — highlights, frontier, portfolio marker
-LINK = "#5aa9ff"  # clickable cell/link styling
+POSITIVE = "#10b981"
+POSITIVE_SOFT = "#86efac"
+NEGATIVE = "#ef4444"
+NEGATIVE_SOFT = "#fca5a5"
+NEUTRAL = "#64748b"
+QUADRANT_LINE = "#475569"
+ACCENT = "#6366f1"
+INFO = "#60a5fa"
+BENCHMARK_LINE = "#94a3b8"
+WARNING = "#fbbf24"
+LINK = "#5aa9ff"
 
-# Tight margins for dense views (e.g. MF Analysis) where charts sit under an st.subheader
-# (no Plotly title) — trims the default whitespace so more fits on screen without scrolling.
 COMPACT_MARGIN = {"l": 48, "r": 16, "t": 24, "b": 36}
 
 
@@ -80,6 +76,5 @@ DASHBOARD_TEMPLATE = go.layout.Template(
     )
 )
 
-# Register as the default template
 pio.templates["dashboard"] = DASHBOARD_TEMPLATE
 pio.templates.default = "dashboard"

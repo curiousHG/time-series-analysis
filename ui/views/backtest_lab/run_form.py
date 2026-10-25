@@ -1,9 +1,6 @@
-"""The new-run composer and the edit dialog.
+"""The new-run composer and the edit dialog; both end in `build_config`.
 
-Both draw the same controls — strategy, its declared parameters, risk and sizing overrides, the
-universe, the cost model and the period — and both end in `build_config`, the one place a
-`BacktestConfig` is assembled from widget values. A finished run is immutable, so editing one saves
-a new draft instead of rewriting the result.
+A finished run is immutable, so editing saves a new draft.
 """
 
 from __future__ import annotations

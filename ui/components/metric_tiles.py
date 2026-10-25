@@ -1,8 +1,4 @@
-"""Consistent KPI tiles — one call renders a row of `st.metric` with shared formatting.
-
-Replaces the hand-rolled `st.columns(4)` + per-tile f-string blocks repeated across pages.
-Missing values (None/NaN) always render as an em-dash.
-"""
+"""KPI tiles: one call renders a row of `st.metric` with shared formatting; None/NaN render as an em-dash."""
 
 from __future__ import annotations
 
@@ -62,18 +58,15 @@ _FORMATTERS = {
 
 @dataclass(frozen=True)
 class Kpi:
-    """One metric tile. `fmt` picks a shared formatter; None renders `value` verbatim.
-
-    `pill` is an optional (streamlit-color, text) rating badge rendered under the value — a
-    quick good/bad read of what the number means (e.g. ("green", "Good")).
-    """
+    """One metric tile; `fmt` picks the formatter (None shows `value` verbatim), `pill` is an optional (color,
+    text) badge."""
 
     label: str
     value: Any
     delta: str | None = None
     help: str | None = None
-    fmt: str | None = None  # "pct" | "pct_unsigned" | "ratio" | "inr" | "inr_compact"
-    pill: tuple[str, str] | None = None  # (color, text) — color ∈ green/orange/red/blue/gray
+    fmt: str | None = None
+    pill: tuple[str, str] | None = None
 
 
 def render_kpi_row(tiles: list[Kpi], columns: int | None = None) -> None:

@@ -1,8 +1,4 @@
-"""MF Analysis · Benchmark tab — is this fund earning its keep vs its benchmark?
-
-Cumulative excess return, cached CAPM stats, a rolling-alpha (alpha-decay) chart, and
-any Overview alerts for this fund.
-"""
+"""MF Analysis · Benchmark tab: excess return, CAPM stats, rolling alpha and Overview alerts for the fund."""
 
 from __future__ import annotations
 
@@ -22,7 +18,7 @@ from ui.views.mutual_fund.context import load_index_returns
 if TYPE_CHECKING:
     from ui.views.mutual_fund.context import FundContext
 
-_ALPHA_WINDOW = 126  # ~6 months of trading days
+_ALPHA_WINDOW = 126
 
 
 def _resolve_benchmark(ctx: FundContext) -> tuple[str | None, str]:

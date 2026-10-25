@@ -28,10 +28,6 @@ TTL_INTRADAY = 900
 TTL_HOURLY = 3600
 TTL_DAILY = 24 * 3600
 
-# Instrumentation note: only the heavy loaders carry @timeit (screener / metrics / stock
-# bulk loads). @st.cache_data is the outermost decorator, so cache hits skip @timeit and
-# anything in logs/perf.log is a real cache miss — work that actually ran.
-
 
 @st.cache_data(show_spinner=False)
 def load_txn_data() -> pl.DataFrame | None:
@@ -73,9 +69,8 @@ def load_stock_open_close(
     for symbol in symbols:
         df = ensure_stock_data(symbol, start, end)
         if df.is_empty():
-            continue  # dropped symbols (no data) fall out; the page auto-removes confirmed-dead ones
+            continue
 
-        # Label with the canonical bare symbol so the frame matches how OHLCV is now keyed.
         bare = to_bare_symbol(symbol)
         df = df.select(["Date", "Open", "Close", "High", "Low", "Volume"]).with_columns(pl.lit(bare).alias("Symbol"))
 
@@ -285,10 +280,7 @@ def load_optimization_cached(optimization_id: int):
 
 @st.cache_data(ttl=TTL_FAST, show_spinner=False)
 def load_strategy_catalog_cached() -> dict:
-    """Discoverable basket strategies with their declared parameters — drives the run form.
-
-    Cached briefly rather than daily: a strategy file dropped into the strategy directory should
-    appear without restarting the app, and the Strategies view can clear this outright."""
+    """Discoverable basket strategies with their declared parameters; short TTL so new strategy files appear."""
     from services.backtest.runs import strategy_catalog  # noqa: PLC0415 — pulls the engine in
 
     return strategy_catalog()

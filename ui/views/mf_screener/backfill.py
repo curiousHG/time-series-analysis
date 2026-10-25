@@ -1,6 +1,4 @@
-"""Add-to-tracked + fetch-data controls for the MF Screener. Picks the top-N rows *as
-displayed in the grid* (client-side sort + header filters), upserts to mf_registry,
-fetches NAV + metadata, then clears caches on success."""
+"""Add-to-tracked and fetch-data controls for the MF Screener; picks the top-N rows as displayed in the grid."""
 
 from __future__ import annotations
 
@@ -25,18 +23,11 @@ _REFRESH = BackgroundRefresh(
     summarize=lambda r: f"fetched {len(r['fetched'])}, failed {len(r['failed'])}" if isinstance(r, dict) else str(r),
 )
 
-# Set by the page after the grid renders: scheme names in the order the user actually sees
-# (AgGrid client-side sort + floating filters applied). Survives to the next rerun, so when
-# the Fetch button (rendered above the grid) fires, we pick what the user was looking at.
 DISPLAY_ORDER_KEY = "screener_display_order"
 
 
 def pick_backfill_names(filtered: pl.DataFrame, displayed: list[str] | None, n: int) -> list[str]:
-    """Top-N scheme names to fetch: displayed grid order first, server frame as fallback.
-
-    Displayed names are intersected with the current filtered frame so a stale grid order
-    (sidebar filters changed since last render) can't pick rows that are no longer shown.
-    """
+    """Top-N scheme names to fetch: displayed grid order first, filtered server frame as fallback."""
     valid = set(filtered["scheme_name"].to_list())
     if displayed:
         picked = [s for s in displayed if s in valid][:n]
@@ -68,7 +59,7 @@ def render_inline_backfill(filtered: pl.DataFrame, n_col, btn_col) -> None:
         names = pick_backfill_names(filtered, st.session_state.get(DISPLAY_ORDER_KEY), int(batch))
         return backfill_missing(
             scheme_names=names,
-            max_per_run=int(batch) * 2,  # nav + metadata per fund
+            max_per_run=int(batch) * 2,
             progress_cb=lambda done, total, name, source: set_task_progress(
                 _BACKFILL_KEY, phase=source, done=done, total=total
             ),

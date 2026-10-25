@@ -1,9 +1,4 @@
-"""Stock Screener — filter NSE stocks on fundamentals + categorise by CAPM alpha vs Nifty.
-
-Seeded from the Nifty 50 (screener.in fundamentals + price-derived alpha/beta). The headline
-is the alpha-categorisation scatter; an AgGrid table (same interaction model as the MF
-screener) sits beneath it — click a Symbol to open the stock in Stock Analysis.
-"""
+"""Stock Screener: filter NSE stocks on fundamentals and categorise by CAPM alpha vs Nifty."""
 
 from __future__ import annotations
 
@@ -53,9 +48,10 @@ _NSE_EXCHANGES = {"NSE", "NSI", "BSE", "BO"}
 
 
 def _add_stocks(picks: list[tuple[str, str, str]]) -> None:
-    """Add stocks from a yfinance search (each pick = (symbol, name, exchange)). NSE stocks get
-    the full flow (OHLCV + screener.in fundamentals + CAPM). Global stocks (US, etc.) get OHLCV
-    only — screener.in / CAPM-vs-Nifty are India-specific — but are chartable in Stock Analysis."""
+    """Add stocks from a yfinance search, each pick a (symbol, name, exchange).
+
+    NSE stocks get OHLCV + screener.in fundamentals + CAPM; global stocks get OHLCV only.
+    """
     from data.repositories.stock import ensure_stock_data, register_stock  # noqa: PLC0415 — defer off boot
     from services.stock_sync_service import sync_stocks  # noqa: PLC0415
 
@@ -67,21 +63,21 @@ def _add_stocks(picks: list[tuple[str, str, str]]) -> None:
         if sym.endswith(".NS") or (exch or "").upper() in _NSE_EXCHANGES:
             nse_bare.append(to_bare_symbol(sym))
         else:
-            register_stock(sym, name=name, exchange=exch or "GLOBAL", quote_type="equity")  # so it fetches as-is
+            register_stock(sym, name=name, exchange=exch or "GLOBAL", quote_type="equity")
             global_syms.append(sym)
 
     with st.spinner(f"Pulling full history for {len(nse_bare) + len(global_syms)} stock(s)…"):
         for sym in nse_bare + global_syms:
-            ensure_stock_data(sym, wide_start, today)  # whole-range OHLCV → stock_ohlcv (DB-first)
+            ensure_stock_data(sym, wide_start, today)
         if nse_bare:
-            sync_stocks(nse_bare)  # screener.in fundamentals + CAPM alpha/beta → stock_metrics (NSE only)
+            sync_stocks(nse_bare)
 
     existing = {to_bare_symbol(s) for s in load_selection("selected_stocks", [])}
     watchlist = sorted(existing | set(nse_bare) | set(global_syms))
     save_selection("selected_stocks", watchlist)
     st.session_state.selected_stocks = watchlist
-    load_stock_screener_df_cached.clear()  # new NSE rows appear in the table
-    load_stock_open_close.clear()  # Stock Analysis picks up the freshly pulled history
+    load_stock_screener_df_cached.clear()
+    load_stock_open_close.clear()
     st.toast(f"Added {len(picks)} stock(s).", icon="✅")
 
 
@@ -114,12 +110,10 @@ with st.expander("Add ticker (stock or index)", expanded=False, icon=":material/
             if not _res.empty:
                 _ex = _res["exchange"] if "exchange" in _res.columns else pd.Series([""] * len(_res))
                 _opts = list(zip(_res["symbol"], _res["shortName"], _ex, strict=False))
-        # Migrate any legacy 2-tuple picks in session to (symbol, name, exchange) 3-tuples.
         _raw = st.session_state.get("stock_scr_add_picked", [])
         _norm = [(p[0], p[1], p[2] if len(p) > 2 else "") for p in _raw if len(p) >= 2]
         if _norm != _raw:
             st.session_state["stock_scr_add_picked"] = _norm
-        # Keep already-selected options so picks survive query changes (accumulate across searches).
         _merged = _opts + [o for o in _norm if o not in _opts]
         _picked = st.multiselect(
             "Selected to add",
@@ -137,9 +131,9 @@ with st.expander("Add ticker (stock or index)", expanded=False, icon=":material/
             _add_index(BENCHMARK_CHOICES[_ilabel], _ilabel)
             st.rerun()
 
-render_toasts()  # surface any fetch errors from a populate/add-stocks run
+render_toasts()
 
-_POPULATE.consume()  # swap-to-fresh + toast if a populate just finished (before we read the frame)
+_POPULATE.consume()
 _df = load_stock_screener_df_cached()
 
 if _df.is_empty():
@@ -185,7 +179,6 @@ _filtered = apply_stock_filters(
 
 page_header("Stock Screener", f"{_filtered.height} of {_df.height} stocks match the filters")
 
-# Category summary — counts per alpha quadrant.
 counts = dict(_filtered.group_by("alpha_category").len().iter_rows())
 cols = st.columns(len(CATEGORY_COLORS))
 for col, cat in zip(cols, CATEGORY_COLORS, strict=False):
@@ -193,7 +186,6 @@ for col, cat in zip(cols, CATEGORY_COLORS, strict=False):
 
 chart_view.render_alpha_chart(_filtered)
 
-# Column-visibility multiselect + AgGrid table; click a Symbol to open Stock Analysis.
 visible_metrics = st.multiselect(
     "Visible metrics",
     options=[c for c in STOCK_METRIC_RENAME.values() if c != "Symbol"],

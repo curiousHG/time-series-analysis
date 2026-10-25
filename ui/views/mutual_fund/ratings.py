@@ -1,12 +1,6 @@
-"""Interpretive good/bad ratings for MF Analysis KPI pills.
+"""Good/bad ratings for MF Analysis KPI pills.
 
-Each `rate_*` returns a (streamlit-color, short-label) badge that makes a metric self-explanatory
-— e.g. a Sharpe of 1.3 reads "Good", a 28% drawdown reads "Deep". Thresholds are tuned for
-**equity** funds (the common case); debt/liquid funds run lower on every axis, so their bands
-read conservatively — a caveat, not a bug.
-
-Green = healthy, orange = caution / middling, red = poor, blue = neutral/informational.
-All inputs are decimal fractions (0.15 = 15%) except TER (a percent number, e.g. 0.61) and AUM (₹Cr).
+Each `rate_*` returns a (streamlit-color, label) badge. Inputs are decimal fractions except TER (percent) and AUM (₹Cr).
 """
 
 from __future__ import annotations
@@ -15,7 +9,7 @@ Pill = tuple[str, str]
 
 
 def _ok(v: object) -> bool:
-    return isinstance(v, (int, float)) and v == v  # not None, not NaN
+    return isinstance(v, (int, float)) and v == v
 
 
 def rate_return_vs_benchmark(alpha_1y: float | None) -> Pill | None:

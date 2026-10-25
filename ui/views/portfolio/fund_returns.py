@@ -70,7 +70,7 @@ def _render_monthly_heatmap(nav_df: pl.DataFrame):
         st.info("Not enough data for monthly returns.")
         return
 
-    monthly_avg = monthly.mean(axis=1)  # portfolio-average monthly return
+    monthly_avg = monthly.mean(axis=1)
     monthly_df = pd.DataFrame({"month": monthly_avg.index, "return": monthly_avg.values})
     fig = px.bar(
         monthly_df,

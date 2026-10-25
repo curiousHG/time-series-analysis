@@ -1,4 +1,4 @@
-"""File-based persistence for user selections (replaces flaky cookie layer)."""
+"""File-based persistence for user selections."""
 
 import json
 from typing import Any

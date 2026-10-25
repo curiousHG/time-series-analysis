@@ -21,7 +21,6 @@ def render(pv: pd.DataFrame):
     col2.metric("Max Drawdown Date", str(max_dd_date)[:10])
     col3.metric("Current Drawdown", f"{current_dd:.2f}%")
 
-    # Drawdown chart
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -38,7 +37,6 @@ def render(pv: pd.DataFrame):
     fig.update_layout(height=350, yaxis_title="Drawdown (%)", xaxis_title="Date", hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True, key="drawdown")
 
-    # Underwater chart
     fig2 = go.Figure()
     fig2.add_trace(
         go.Scatter(

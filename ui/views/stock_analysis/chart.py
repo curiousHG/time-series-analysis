@@ -1,10 +1,4 @@
-"""Chart tab — TradingView Lightweight Charts candlestick with indicator overlays + panes.
-
-Uses the `streamlit-lightweight-charts` component (proper financial charting: crosshair, scroll/zoom,
-fixed bar spacing) instead of a static Plotly figure. Layout: a price pane (candles + overlay lines),
-an optional volume pane, and one stacked pane per selected panel indicator (RSI/MACD/…). Candle
-interval (Daily/Weekly/Monthly) is chosen upstream via `resample_ohlc`.
-"""
+"""Chart tab: TradingView Lightweight Charts candlesticks with indicator overlays and panes."""
 
 import pandas as pd
 from streamlit_lightweight_charts import renderLightweightCharts
@@ -76,16 +70,14 @@ def render(
     symbol: str,
     markers: list[dict] | None = None,
 ):
-    """Draw the price / volume / indicator panes. `markers` (optional) are lightweight-charts marker
-    dicts (`time`, `position`, `color`, `shape`, `text`) attached to the price series — trade entries and
-    exits on the candles."""
+    """Draw the price, volume and indicator panes; optional `markers` are lightweight-charts marker dicts on the
+    price series."""
     df = sdf.reset_index(drop=True)
     if "time" not in df.columns:
         df = df.assign(time=pd.to_datetime(df["Date"]).dt.strftime("%Y-%m-%d"))
     times = df["time"]
     has_volume = "Volume" in df.columns and bool(df["Volume"].notna().any())
 
-    # ---- Price pane: candles (or a close line when OHLC is incomplete) + overlay lines ----
     candles = [
         {"time": t, "open": float(o), "high": float(h), "low": float(low), "close": float(c)}
         for t, o, h, low, c in zip(times, df["Open"], df["High"], df["Low"], df["Close"], strict=False)
@@ -104,7 +96,6 @@ def render(
             },
         }
     else:
-        # Some indices (e.g. "CNX 100 Equal Weight") only carry close values — fall back to a line.
         price = _line(times, df["Close"], _UP, "Close")
         price["options"]["lineWidth"] = 2
     if markers:
@@ -118,7 +109,6 @@ def render(
     ]
     charts = [{"chart": _chart_opts(560), "series": price_series}]
 
-    # ---- Volume pane ----
     if has_volume:
         vol = [
             {"time": t, "value": float(v), "color": (_UP if (pd.notna(o) and pd.notna(c) and c >= o) else _DOWN)}
@@ -132,7 +122,6 @@ def render(
             }
         )
 
-    # ---- Panel panes (recompute per indicator so multi-series like MACD group together) ----
     for ind_name in selected_panels:
         result = INDICATOR_REGISTRY[ind_name]["fn"](df)
         series = []

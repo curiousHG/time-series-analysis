@@ -21,11 +21,7 @@ _DIVERGING = [
 
 
 def probability_heatmap(matrix: pd.DataFrame, *, height: int = 460) -> go.Figure:
-    """P(tomorrow's bucket | today's bucket), each row a distribution that sums to one.
-
-    Colour is centred on the uniform probability, so a cell reads as "more likely than chance"
-    rather than as a raw level: with eleven buckets every cell would otherwise look small.
-    """
+    """P(next bucket | current bucket); each row sums to one, coloured around the uniform probability."""
     values = matrix.to_numpy(dtype=float)
     uniform = 1.0 / max(matrix.shape[1], 1)
     spread = float(np.nanmax(np.abs(values - uniform))) or uniform
@@ -52,11 +48,7 @@ def probability_heatmap(matrix: pd.DataFrame, *, height: int = 460) -> go.Figure
 
 
 def state_edge_bar(states: pd.DataFrame, *, height: int = 320) -> go.Figure:
-    """How much each bucket lifts the odds of an up bar above the sample's own base rate.
-
-    A bar above zero is a bucket worth betting on; the bar's width in observations is what the
-    strategy's sample floor is guarding against, so the count rides along in the hover.
-    """
+    """How much each bucket lifts the odds of an up bar over the sample base rate; counts ride in the hover."""
     frame = states.dropna(subset=["lift_vs_base"])
     lift = frame["lift_vs_base"].astype(float)
     fig = go.Figure(

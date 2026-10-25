@@ -52,7 +52,6 @@ def render_growth_comparison(mapped: pl.DataFrame, pv: pd.DataFrame):
     merged = pd.merge_asof(pv.sort_values("date"), ci.sort_values("date"), on="date", direction="backward")
     merged["cum_invested"] = merged["cum_invested"].ffill().fillna(0)
 
-    # Nifty
     nifty = ensure_stock_data("^NSEI", start_dt, end_dt)
     nifty_pd = (
         nifty.select(["Date", "Close"])
@@ -81,7 +80,6 @@ def render_growth_comparison(mapped: pl.DataFrame, pv: pd.DataFrame):
         )
         merged["nifty_value"] = merged["cum_nifty_units"] * merged["nifty_close"]
 
-    # FD
     interest_rate = 0.065
     fd_values = []
     for d in merged["date"].values:

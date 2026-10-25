@@ -90,7 +90,7 @@ with tab_dashboard:
         st.info("No tradebook loaded yet — upload your Kite/Zerodha CSV to unlock the portfolio desk.")
         st.page_link(navigation.SETTINGS_PAGE, label="Open Settings →")
     else:
-        _mapped, _portfolio_nav = _result  # type: ignore[misc]  # guarded by _pv_df above
+        _mapped, _portfolio_nav = _result  # type: ignore[misc]
         snapshot.render(_mapped, _portfolio_nav, _pv_df)
         st.divider()
         col_alerts, col_movers = st.columns([3, 2], gap="large")

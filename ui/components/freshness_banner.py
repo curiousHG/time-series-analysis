@@ -70,7 +70,6 @@ def render_freshness_banner(scheme_names: list[str], scheme_slugs: list[str]) ->
     if holdings_report.has_stale:
         lines.append(_holdings_line(holdings_report))
 
-    # Mirror the banner into the logs so stale-data states are greppable, not UI-only.
     logger.warning("Data freshness: %s", " | ".join(line.replace("**", "") for line in lines))
 
     st.warning("\n\n".join(lines))

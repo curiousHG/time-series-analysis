@@ -1,8 +1,4 @@
-"""Movers panel — biggest 1W / 1M moves among the user's held funds.
-
-Fund-level rather than look-through stock-level: OHLCV coverage for the underlying
-holdings is thin today, and the panel says what it shows.
-"""
+"""Movers panel: biggest 1W / 1M moves among the user's held funds (fund-level, not look-through)."""
 
 from __future__ import annotations
 

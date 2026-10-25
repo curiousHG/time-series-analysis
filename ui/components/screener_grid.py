@@ -1,7 +1,4 @@
-"""Shared AgGrid screener table — header/floating filters, typed columns, pinned link
-column, native Cmd/Ctrl+C copy. Generalized from the MF screener so the stock screener
-(and future grids) get the same interaction model.
-"""
+"""Shared AgGrid screener table: header filters, typed columns, pinned link column and Cmd/Ctrl+C copy."""
 
 from __future__ import annotations
 
@@ -14,8 +11,6 @@ from ui.charts.theme import LINK
 if TYPE_CHECKING:
     import pandas as pd
 
-# Re-fit columns to grid width on first render and on resize. Respects each column's
-# min/max, so many metrics overflow to a horizontal scroll instead of being crushed.
 _FIT_COLUMNS = JsCode("function(params) { params.api.sizeColumnsToFit(); }")
 
 _NUMERIC_FORMATTER = "x == null ? '' : Number(x).toFixed(2)"
@@ -30,15 +25,13 @@ def _build_grid_options(
     link_col: str | None,
     pinned_min_width: int = 300,
 ):
-    """Configure AgGrid: header filters, numeric vs text filter type, pinned link column,
-    native Cmd/Ctrl+C copy.
-    """
+    """Configure AgGrid filters, column types, the pinned link column and copy behaviour."""
     gob = GridOptionsBuilder.from_dataframe(pdf)
     gob.configure_default_column(
         sortable=True,
         resizable=True,
         filter=True,
-        floatingFilter=True,  # filter input under the column header
+        floatingFilter=True,
         minWidth=80,
     )
     for c in pdf.columns:
@@ -62,12 +55,12 @@ def _build_grid_options(
         domLayout="normal",
         suppressHorizontalScroll=False,
         alwaysShowVerticalScroll=True,
-        enableCellTextSelection=True,  # text-selectable cells for native copy
-        ensureDomOrder=True,  # Cmd/Ctrl+C honours visual order
+        enableCellTextSelection=True,
+        ensureDomOrder=True,
         suppressCopyRowsToClipboard=False,
-        copyHeadersToClipboard=True,  # include column names in the clipboard
-        onGridSizeChanged=_FIT_COLUMNS,  # re-fit on resize
-        onFirstDataRendered=_FIT_COLUMNS,  # ...and on initial render
+        copyHeadersToClipboard=True,
+        onGridSizeChanged=_FIT_COLUMNS,
+        onFirstDataRendered=_FIT_COLUMNS,
     )
 
     return gob.build()
@@ -84,12 +77,7 @@ def render_screener_grid(
     height: int = 650,
     pinned_min_width: int = 300,
 ) -> dict:
-    """Render the grid and return the AgGrid response (for click-through).
-
-    Deliberately keyless: with a fixed `key`, st_aggrid keeps the first mount's data and
-    won't re-render when the filtered frame changes (unless `reload_data` gymnastics are
-    added). One grid per page means no key is needed.
-    """
+    """Render the grid and return the AgGrid response; keyless by design (a fixed key freezes the first data)."""
     grid_options = _build_grid_options(
         pdf,
         numeric_cols=numeric_cols,
@@ -103,11 +91,8 @@ def render_screener_grid(
         gridOptions=grid_options,
         height=height,
         theme=theme,
-        allow_unsafe_jscode=True,  # required for the sizeColumnsToFit callbacks
-        # `cellClicked` drives open-on-click; the rest keep filter / sort in sync.
+        allow_unsafe_jscode=True,
         update_on=["cellClicked", "filterChanged", "sortChanged"],
-        # Return rows in the order the user actually sees (client-side sort + header filters
-        # applied) so callers like the screener's "Fetch top N" can be WYSIWYG.
         data_return_mode="FILTERED_AND_SORTED",
     )
 

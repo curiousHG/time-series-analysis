@@ -1,7 +1,6 @@
-"""Backtest Lab chart builders — every figure the run Detail / Compare views draw.
+"""Backtest Lab chart builders for the run Detail and Compare views.
 
-Builders take plain pandas inputs and return `go.Figure` with no in-figure title (the view puts an
-`st.markdown` heading above each) and compact margins; colours come from `ui.charts.theme` only.
+Builders take plain pandas inputs and return an untitled `go.Figure`; colours come from `ui.charts.theme`.
 """
 
 from __future__ import annotations

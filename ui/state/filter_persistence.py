@@ -1,8 +1,4 @@
-"""Generic hydrate/persist helpers for filter widget state backed by selections.json.
-
-One implementation shared by every page with persisted sidebar filters (MF Screener,
-MF Analysis, Stock Screener), replacing per-page copies of the same pattern.
-"""
+"""Hydrate/persist helpers for filter widget state backed by selections.json."""
 
 from __future__ import annotations
 
@@ -20,9 +16,7 @@ if TYPE_CHECKING:
 def hydrate_filters(persist_key: str, defaults: dict) -> None:
     """Seed missing session-state keys from selections.json, falling back to `defaults`.
 
-    Idempotent so live edits aren't clobbered; re-seeds each run since Streamlit GCs
-    widget keys on page nav. Widgets that read a seeded key must omit `default=`/`value=`.
-    `None` values are never seeded (a selectbox must not be pre-seeded with None).
+    Idempotent; None values are never seeded. Widgets reading a seeded key must omit `default=`/`value=`.
     """
     saved = load_selection(persist_key, {})
     for key, default in defaults.items():
@@ -44,11 +38,8 @@ def make_persist_callback(persist_key: str, keys: Iterable[str]) -> Callable[[],
 
 
 def cascade_subcategory_options(df: pl.DataFrame, *, cat_key: str, sub_cat_key: str) -> list[str]:
-    """Sub-category options cascading off the selected categories.
-
-    Prunes stale persisted sub-categories so the keyed multiselect never holds a value
-    outside its options. `df` needs `category` and `sub_category` columns.
-    """
+    """Sub-category options for the selected categories, pruning stale persisted values. `df` needs `category`
+    and `sub_category`."""
     sel_cats = st.session_state.get(cat_key) or []
     source = df.filter(pl.col("category").is_in(sel_cats)) if sel_cats else df
     options = sorted(source["sub_category"].drop_nulls().unique().to_list())

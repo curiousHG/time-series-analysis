@@ -70,7 +70,6 @@ def plot_kde_returns(pct: pd.DataFrame):
         if len(series) < 50 or np.std(series) == 0:
             continue
 
-        # Silverman's rule of thumb for bandwidth
         bandwidth = 1.06 * np.std(series) * len(series) ** (-1 / 5)
         y = _numpy_kde(series, x_grid, bandwidth)
 

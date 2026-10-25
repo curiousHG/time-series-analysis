@@ -1,8 +1,7 @@
-"""Settings → Stocks and indices: freshness in dates, the routine price refresh, and the
-unavailable-symbol picker. Repair jobs live on the Maintenance tab.
+"""Settings → Stocks and indices: freshness dates, the routine price refresh and the unavailable-symbol picker.
 
-Refresh and backfill run on background tasks via the shared BackgroundRefresh component — the view
-keeps showing the last-cached data and swaps to fresh once a task finishes."""
+Refresh and backfill run as background tasks; repair jobs live on the Maintenance tab.
+"""
 
 from __future__ import annotations
 

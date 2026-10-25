@@ -1,9 +1,6 @@
-"""Stock Analysis · Fundamentals tab — momentum, valuation percentiles, quarterly trend.
+"""Stock Analysis · Fundamentals tab: momentum, valuation percentiles and quarterly trend.
 
-Data is routed by listing market: NSE stocks use screener.in snapshots (stock_metrics /
-stock_quarterly; percentile badges vs the screened universe), international stocks use a live
-yfinance snapshot (.info + quarterly income statement — screener.in only covers India).
-Momentum comes from our own OHLCV either way.
+NSE stocks use screener.in snapshots; international stocks use a live yfinance snapshot.
 """
 
 from __future__ import annotations
@@ -163,8 +160,6 @@ def _render_momentum(symbol: str) -> None:
 
 def _render_valuation(bare: str) -> None:
     st.subheader("Valuation & quality")
-    # Fundamentals come from screener.in and are scraped lazily (the Nifty 500 seed loads price
-    # metrics only). Auto-fetch on first open; if screener.in has nothing usable, offer a retry.
     from data.repositories.stock_fundamentals import ensure_stock_fundamentals, fundamentals_status_of  # noqa: PLC0415
 
     status = fundamentals_status_of(bare)

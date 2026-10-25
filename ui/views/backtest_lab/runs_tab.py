@@ -1,9 +1,6 @@
 """Runs view: the new-run composer, the run grid and its toolbar.
 
-The grid re-renders itself every three seconds while a run is executing (and only then), so a
-launched run fills in its progress and headline metrics without the page being touched. Launching is
-capped at two concurrent runs — one when an ML strategy or an optimisation is in the mix, because
-those retrain a model per walk-forward window and would otherwise starve each other.
+The grid auto-refreshes while a run executes; at most two runs launch concurrently.
 """
 
 from __future__ import annotations

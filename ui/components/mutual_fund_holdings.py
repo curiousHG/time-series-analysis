@@ -13,10 +13,6 @@ def render_holdings_table(
 ):
     st.subheader(f"📋 Portfolio Breakdown - {display_name or scheme_slug}")
 
-    # --------------------
-    # Holdings (Top N + Others)
-    # --------------------
-
     h = (
         holdings_df.filter(pl.col("schemeSlug") == scheme_slug)
         .sort("weight", descending=True)
@@ -39,26 +35,16 @@ def render_holdings_table(
             ]
         )
 
-    # --------------------
-    # Sector allocation
-    # --------------------
     s = sector_df.filter(pl.col("schemeSlug") == scheme_slug).select("sector", "weight").sort("weight", descending=True)
 
-    # --------------------
-    # Asset allocation
-    # --------------------
     a = (
         assets_df.filter(pl.col("schemeSlug") == scheme_slug)
         .select("assetClass", "weight")
         .sort("weight", descending=True)
     )
 
-    # --------------------
-    # Layout
-    # --------------------
     col1, col2, col3 = st.columns([2.2, 1.2, 1.2])
 
-    # ---- Holdings treemap
     with col1:
         fig_holdings = px.treemap(
             top.to_pandas(),
@@ -69,7 +55,6 @@ def render_holdings_table(
 
         fig_holdings.update_traces(
             textinfo="label",
-            # textfont=dict(size=22, color="black"),
             tiling=dict(
                 packing="squarify",
                 pad=6,
@@ -83,7 +68,6 @@ def render_holdings_table(
 
         st.plotly_chart(fig_holdings, use_container_width=True, key=f"holdings-tree-{scheme_slug}")
 
-    # ---- Sector donut
     with col2:
         if s.height > 0:
             fig_sector = px.pie(
@@ -98,7 +82,6 @@ def render_holdings_table(
         else:
             st.write("No sector data available")
 
-    # ---- Asset donut
     with col3:
         if a.height > 0:
             fig_asset = px.pie(
@@ -113,9 +96,6 @@ def render_holdings_table(
         else:
             st.write("No asset data available")
 
-    # --------------------
-    # Optional: Data table (collapsed)
-    # --------------------
     with st.expander("📄 View holdings table"):
         st.dataframe(
             h.select("instrumentName", "weight"),

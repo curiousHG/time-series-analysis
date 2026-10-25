@@ -1,7 +1,4 @@
-"""Portfolio page — PM cockpit: Overview · Positions · Risk · Flows over the tradebook.
-
-Positions/holdings views are shared with MF Analysis (`ui.views.mutual_fund.*`).
-"""
+"""Portfolio page: PM cockpit tabs Overview · Positions · Risk · Flows."""
 
 from __future__ import annotations
 

@@ -1,7 +1,6 @@
-"""Drain the Streamlit-free notice bus (core.notifications) and surface entries as toasts.
+"""Drain the core.notifications bus and surface entries as toasts.
 
-Call `render_toasts()` on a page right after its data load so notices pushed during a
-cache-miss run (e.g. yfinance fetch failures) show that same run and auto-dismiss.
+Call `render_toasts()` right after a page's data load.
 """
 
 from __future__ import annotations

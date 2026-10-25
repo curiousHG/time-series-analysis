@@ -1,8 +1,4 @@
-"""Portfolio sub-tab — risk vs. return scatter per active fund.
-
-Two modes: CAGR vs Volatility (total-return) and Alpha vs Beta (CAPM vs a benchmark).
-A gold "Portfolio" diamond marks the aggregate; bubble colour encodes allocation %.
-"""
+"""Portfolio sub-tab: risk vs return scatter per active fund (CAGR/Volatility or Alpha/Beta)."""
 
 from __future__ import annotations
 
@@ -45,7 +41,7 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
         default=MODE_CAGR_VOL,
         key="risk-return-mode",
     )
-    if mode is None:  # segmented_control returns None when nothing is selected
+    if mode is None:
         mode = MODE_CAGR_VOL
 
     benchmark_label = DEFAULT_BENCHMARK_LABEL
@@ -78,7 +74,6 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
         st.info("No active fund holdings to plot.")
         return
 
-    # Latest NAV per fund → invested value per fund
     latest_nav = portfolio_nav.sort("date").group_by("schemeName").agg(pl.col("nav").last().alias("nav"))
     units_per_fund = mapped.group_by("schemeName").agg(pl.col("signed_qty").sum().alias("units"))
     value_df = (
@@ -88,7 +83,6 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
     )
     value_by_name = dict(zip(value_df["schemeName"].to_list(), value_df["value"].to_list(), strict=False))
 
-    # Benchmark fetch window: portfolio NAV span (covers the funds), else a 2-year fallback.
     nav_dates = portfolio_nav.select("date").to_series()
     if nav_dates.len() > 0:
         start_dt = pd.to_datetime(nav_dates.min()).to_pydatetime()
@@ -97,7 +91,6 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
         end_dt = datetime.now()
         start_dt = end_dt - timedelta(days=730)
 
-    # Pre-load benchmark returns once for alpha/beta mode; errors surface as toasts.
     bench_returns: pd.Series = pd.Series(dtype="float64")
     if mode == MODE_ALPHA_BETA:
         try:
@@ -120,7 +113,6 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
             )
             mode = MODE_CAGR_VOL
 
-    # Single SELECT against mf_scheme_metrics — avoids per-fund quantstats compute on every rerun.
     cached_metrics = load_cached_metrics(active_names)
     metrics_by_name: dict[str, dict] = {}
     if cached_metrics.height:
@@ -129,7 +121,7 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
 
     rows: list[dict] = []
     skipped: list[str] = []
-    insufficient: list[str] = []  # has history but <60 day overlap with chosen benchmark
+    insufficient: list[str] = []
     with st.spinner("Loading per-fund risk metrics…"):
         for name in active_names:
             m = metrics_by_name.get(name)
@@ -178,7 +170,6 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
     total_invested = max(df["value"].sum(), 1.0)
     df["allocation"] = df["value"] / total_invested * 100.0
 
-    # Portfolio aggregate metrics from the time-weighted (cash-flow-adjusted) return series.
     try:
         portfolio_point = _portfolio_metrics(mapped, portfolio_nav, mode, bench_returns)
     except Exception as e:
@@ -215,11 +206,7 @@ def _portfolio_metrics(
     mode: str,
     bench_returns: pd.Series,
 ) -> dict | None:
-    """Metric pair for the portfolio aggregate point (None if unavailable).
-
-    Uses the time-weighted (cash-flow-adjusted) series: pct_change of total value would
-    treat each SIP contribution as a return and inflate CAGR.
-    """
+    """Metric pair for the portfolio aggregate point (None if unavailable), from the time-weighted series."""
     pf_returns = build_portfolio_returns_series(mapped, portfolio_nav)
     if pf_returns.empty:
         return None
@@ -259,7 +246,6 @@ def _render_cagr_vol(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None) -
     x0, x1 = max(0.0, min(xs) - 2), max(xs) + 2
     y0, y1 = min(ys) - 2, max(ys) + 2
 
-    # Quadrant shading
     fig.add_shape(
         type="rect",
         x0=x0,
@@ -329,7 +315,6 @@ def _render_cagr_vol(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None) -
 
     _add_portfolio_marker(fig, portfolio, x_key="vol", y_key="cagr", mode=MODE_CAGR_VOL)
 
-    # Quadrant labels
     fig.add_annotation(
         x=x0 + 0.5,
         y=y1 - 0.5,
@@ -381,7 +366,6 @@ def _render_alpha_beta(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None,
     has = df[df["has_capm"]].copy()
     grey = df[~df["has_capm"]].copy()
 
-    # Range: union of fund points and portfolio (if defined).
     all_betas = list(has["beta"]) if not has.empty else []
     all_alphas = list(has["alpha"]) if not has.empty else []
     if portfolio and portfolio.get("has_capm"):
@@ -393,7 +377,6 @@ def _render_alpha_beta(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None,
         all_alphas = [-5.0, 5.0]
     x0, x1 = min(all_betas) - 0.15, max(all_betas) + 0.15
     y0, y1 = min(all_alphas) - 2, max(all_alphas) + 2
-    # Make sure the β=1 and alpha=0 reference lines are in view.
     x0, x1 = min(x0, 0.5), max(x1, 1.3)
     y0, y1 = min(y0, -1.0), max(y1, 1.0)
 
@@ -428,7 +411,6 @@ def _render_alpha_beta(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None,
         )
 
     if not grey.empty:
-        # Place greyed-out funds at β=1, alpha=0 visual anchor with reduced opacity.
         fig.add_trace(
             go.Scatter(
                 x=[1.0] * len(grey),
@@ -450,7 +432,6 @@ def _render_alpha_beta(fig: go.Figure, df: pd.DataFrame, portfolio: dict | None,
 
     _add_portfolio_marker(fig, portfolio, x_key="beta", y_key="alpha", mode=MODE_ALPHA_BETA)
 
-    # Quadrant labels — alpha/beta interpretation
     fig.add_annotation(
         x=x0 + 0.02,
         y=y1 - 0.5,

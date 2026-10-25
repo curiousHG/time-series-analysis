@@ -1,8 +1,4 @@
-"""App-wide chrome: the global stylesheet and the shared page header.
-
-The theme itself lives in .streamlit/config.toml; this file only tightens spacing that the theme
-cannot reach and gives every page the same title row.
-"""
+"""Global stylesheet and the shared page header."""
 
 from __future__ import annotations
 

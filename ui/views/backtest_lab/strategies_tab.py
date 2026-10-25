@@ -1,11 +1,4 @@
-"""Strategies view: what the app found, where it found it, and how to add one.
-
-The picker on the Runs view only shows names. This view shows the whole catalogue the way
-`freqtrade list-strategies` does — built-ins alongside anything dropped into the strategy directory,
-with the file each one came from, the parameters it declares and the risk defaults it ships. A file
-that failed to import is reported here rather than swallowed, because otherwise a typo just makes a
-strategy quietly disappear from the picker.
-"""
+"""Strategies view: the discovered catalogue, its source files, parameters and risk defaults."""
 
 from __future__ import annotations
 

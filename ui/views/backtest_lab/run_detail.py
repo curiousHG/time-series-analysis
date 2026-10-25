@@ -1,8 +1,4 @@
-"""Detail view: everything one finished run produced.
-
-Reads a `RunDetail` through the cached loader and never recomputes — the equity curve, trades and
-summary were persisted when the run finished, so opening a run is a database read.
-"""
+"""Detail view for one finished run, read from the cached loader without recomputation."""
 
 from __future__ import annotations
 

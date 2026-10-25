@@ -34,7 +34,7 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
         "X-axis (risk)",
         options=list(RISK_AXIS_OPTIONS.keys()),
         format_func=lambda k: RISK_AXIS_OPTIONS[k][1],
-        index=1,  # downside_vol_1y default
+        index=1,
         key="screener_chart_x",
     )
     return_choice = cc2.selectbox(
@@ -68,8 +68,6 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
     risk_db_col, risk_label, risk_take_abs = RISK_AXIS_OPTIONS[risk_choice]
     chart_pdf = filtered.to_pandas()
 
-    # A freshly-added metric column won't be on the cached frame yet — bust caches and rerun
-    # once (session-state guard avoids ping-ponging).
     if risk_db_col not in chart_pdf.columns and not st.session_state.get("_screener_cache_busted"):
         st.session_state["_screener_cache_busted"] = True
         load_screener_df_cached.clear()
@@ -84,7 +82,6 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
         )
         st.stop()
 
-    # Some Y axes are derivations (excess return, IR numerator), not direct cache reads.
     return_label, needed_y = _resolve_return_axis(chart_pdf, return_choice)
 
     chart_pdf = chart_pdf.dropna(subset=[risk_db_col, needed_y, "__return__"])
@@ -97,7 +94,6 @@ def render_risk_return_chart(filtered: pl.DataFrame) -> None:
 
     chart_pdf["__risk__"] = chart_pdf[risk_db_col].abs() if risk_take_abs else chart_pdf[risk_db_col]
 
-    # Stored fractions are decimals — scale to percent for the axes.
     chart_pdf["__risk__"] *= 100
     risk_label += " (%)"
     chart_pdf["__return__"] *= 100
@@ -156,11 +152,9 @@ def _apply_return_axis(pdf: pd.DataFrame, return_choice: str) -> None:
 def _holdings_overlay(
     risk_db_col: str, risk_take_abs: bool, return_choice: str
 ) -> tuple[pd.DataFrame | None, dict | None]:
-    """Held funds on the current axes + the portfolio's aggregate point.
+    """Held funds on the current axes plus the portfolio aggregate point.
 
-    Held funds come from the FULL screener frame so sidebar filters can't hide them.
-    Returns (overlay frame with __risk__/__return__ in %, portfolio highlight dict);
-    (None, None) without a tradebook.
+    Returns (overlay frame with __risk__/__return__ in %, portfolio highlight dict); (None, None) without a tradebook.
     """
     from mutual_funds.display import unique_short_names  # noqa: PLC0415 — deferred with the chart deps
     from services.mf_metrics import portfolio_axis_metrics  # noqa: PLC0415
@@ -188,7 +182,6 @@ def _holdings_overlay(
         overlay["__label__"] = overlay["scheme_name"].map(unique_short_names(overlay["scheme_name"]))
         overlay_pdf = overlay if not overlay.empty else None
 
-    # Portfolio net point from the time-weighted returns series, on the same axes.
     portfolio_point = None
     pf_returns = build_portfolio_returns_series(mapped, portfolio_nav)
     metrics = portfolio_axis_metrics(pf_returns)
@@ -237,14 +230,12 @@ def _draw_scatter(
 
     from ui.charts.risk_return_scatter import render_scatter  # noqa: PLC0415 — heavy viz deps
 
-    # Bubble size: AUM floored + log-scaled so micro-funds stay visible, or uniform.
     if size_mode == "AUM" and "aum_crores" in chart_pdf.columns:
-        aum = chart_pdf["aum_crores"].fillna(0).clip(lower=10)  # floor at ₹10 Cr
+        aum = chart_pdf["aum_crores"].fillna(0).clip(lower=10)
         chart_pdf["__size__"] = np.log10(aum + 1) * 6 + 6
     else:
         chart_pdf["__size__"] = 12
 
-    # Sharpe / Sortino are continuous; Category / Asset class are categorical.
     color_continuous = False
     color_label = None
     if color_mode == "Sharpe" and "sharpe_1y" in chart_pdf.columns:
@@ -260,9 +251,6 @@ def _draw_scatter(
         chart_pdf["__color__"] = chart_pdf["asset_class"].fillna("(unknown)")
         color_label = "Asset class"
 
-    # Robust colourbar for the continuous modes: a lone outlier Sharpe/Sortino used to
-    # stretch the scale until every other fund looked mid-yellow. Clamp to the 5th–95th
-    # percentile (always spanning 0 so negative stays red); outliers clip to the end colours.
     color_range = None
     if color_continuous:
         vals = chart_pdf["__color__"].dropna()

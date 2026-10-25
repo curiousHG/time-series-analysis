@@ -1,7 +1,6 @@
-"""Optimiser chart builders — drawn from persisted trial records (a DataFrame), never a live study.
+"""Optimiser chart builders, drawn from persisted trial records (a DataFrame).
 
-Expected trial columns: `number`, `value` (the objective), optional `state` (COMPLETE / PRUNED /
-FAIL), optional `oos_value`, and one column per searched parameter.
+Trial columns: `number`, `value`, optional `state` and `oos_value`, plus one column per searched parameter.
 """
 
 from __future__ import annotations

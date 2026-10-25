@@ -47,7 +47,6 @@ def render(ctx: FundContext) -> None:
     vol_3y = _q(qs.stats.volatility, last_3y)
     max_dd_all = _q(qs.stats.max_drawdown, returns)
 
-    # Beta vs Nifty (1Y)
     nifty_r = load_index_returns(
         "^NSEI",
         nav_pd.index.min().to_pydatetime(),
@@ -85,7 +84,6 @@ def render(ctx: FundContext) -> None:
     )
 
     st.subheader("vs Nifty 50 (1Y)")
-    # Tracking error vs the fund's benchmark; falls back to Nifty if unmappable.
     bench_returns_for_te = nifty_r
     bench_label_for_te = "Nifty 50"
     bench_sym = resolve_benchmark_symbol(ctx.meta.get("benchmark"))

@@ -24,8 +24,6 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame, pv_df: pd.DataFram
 
     pv = pv_df.set_index("date")["portfolio_value"]
     as_of = pv.index[-1]
-    # Value ALL units at the latest known NAV (matches the Portfolio page) — the pv series
-    # excludes units bought after the last NAV date, understating value when NAV is stale.
     current_value = sum(fund_values_from_nav(mapped, portfolio_nav).values())
 
     signed = get_signed_invested(mapped)

@@ -1,23 +1,7 @@
-"""Reusable stale-while-revalidate background refresh for Streamlit views.
+"""Stale-while-revalidate background refresh for Streamlit views.
 
-Wraps `core.background` (start_task / task_state / consume_if_finished / set_task_progress) + a
-polling `st.fragment` so any view can: keep showing the last-cached data, run a refresh off-thread,
-show live progress, and swap to fresh data + toast the moment it finishes — in ~5 lines.
-
-Usage (single task):
-
-    from ui.components.background_refresh import BackgroundRefresh, progress_cb
-
-    _RF = BackgroundRefresh("stock_data_refresh", "Data refresh", cache_clearers=(_clear_caches,),
-                            summarize=lambda r: f"{r['stock_rows']:,} rows")
-    def render():
-        _RF.consume()                       # 1) swap-to-fresh + toast if a run just finished
-        if _RF.is_running():
-            _RF.poll()                      # 2) live banner/progress + full-rerun when done
-        _RF.start_button("🔄 Refresh all data", lambda: refresh_all_stock_data(
-            progress_cb=progress_cb(_RF.key)), type="primary")
-
-For a view driving several tasks, wrap them in a `BackgroundRefreshGroup`.
+Wraps `core.background` plus a polling `st.fragment`. Per run: `consume()`, then `poll()` while `is_running()`,
+then `start_button(...)`. Views driving several tasks use `BackgroundRefreshGroup`.
 """
 
 from __future__ import annotations
@@ -44,16 +28,12 @@ if TYPE_CHECKING:
 
     from core.background import TaskState
 
-# Rows of the running log shown at once; the rest stays scrollable in the same box.
 _LOG_VIEW_HEIGHT_PX = 220
 
 
 def progress_cb(key: str) -> Callable[..., None]:
-    """Adapter turning a service's `progress_cb(**fields)` into task progress + log lines.
-
-    `message=` is appended to the task's rolling log; every other field merges into `meta`
-    (phase / done / total), which drives the banner and progress bar.
-    """
+    """Adapt a service's `progress_cb(**fields)` into task progress: `message=` joins the log, the rest merges
+    into `meta`."""
 
     def _cb(**fields: Any) -> None:
         message = fields.pop("message", None)
@@ -171,7 +151,7 @@ class BackgroundRefreshGroup:
         def _poll() -> None:
             running = [(k, lbl) for k, lbl in keys_labels if is_running(k)]
             if not running:
-                st.rerun(scope="app")  # a task just finished → rerun the page to consume + show fresh
+                st.rerun(scope="app")
                 return
             if compact:
                 st.caption(compact_summary(running))

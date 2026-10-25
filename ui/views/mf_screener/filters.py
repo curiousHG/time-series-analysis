@@ -38,22 +38,20 @@ class FilterState:
     sharpe_min: float | None
     dd_min: float | None
     visible_metrics: list[str]
-    aggrid_theme: Any  # str or StAggridTheme
+    aggrid_theme: Any
 
 
 def render_sidebar(df: pl.DataFrame) -> FilterState:
     """Render the sidebar (heavy filters) + the inline column-visibility multiselect."""
-    hydrate_filters(SCREENER_PERSIST_KEY, _ALL_DEFAULTS)  # seed session_state before any widget renders
+    hydrate_filters(SCREENER_PERSIST_KEY, _ALL_DEFAULTS)
 
     amc_options = sorted(df["fund_house"].drop_nulls().unique().to_list())
     cat_options = sorted(df["category"].drop_nulls().unique().to_list())
-    # Sub-category options cascade off the selected asset class(es); stale values pruned.
     sub_cat_options = cascade_subcategory_options(df, cat_key="screener_cats", sub_cat_key="screener_sub_cats")
 
     with st.sidebar:
         st.header("Filters")
 
-        # Section 1 — Search & classification.
         with st.container(border=True):
             name_query = st.text_input(
                 "Search by name",
@@ -75,7 +73,6 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
                 on_change=_persist_filters,
             )
 
-        # Section 2 — Numeric thresholds + risk sliders (gated by Has NAV).
         with st.container(border=True):
             n1, n2 = st.columns(2)
             aum_min = n1.number_input(
@@ -118,7 +115,6 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
 
         st.caption("Each table column also has its own header filter for ad-hoc slicing.")
 
-    # Column-visibility multiselect sits above the table — toggled often while scanning.
     visible_metrics = st.multiselect(
         "Visible metrics",
         options=list(ALL_METRIC_COLS),
@@ -127,7 +123,6 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
         help="Columns to display; Scheme and Category are always shown.",
     )
 
-    # Fixed to the custom Streamlit-dark variant; AgGrid's built-ins don't render dark here.
     aggrid_theme = streamlit_dark_aggrid_theme()
 
     return FilterState(

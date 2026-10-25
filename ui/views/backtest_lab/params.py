@@ -1,10 +1,6 @@
-"""Widgets generated from a strategy's declared parameters, plus the risk and sizing attributes a
-run may override on top of the strategy class.
+"""Widgets generated from a strategy's declared parameters, plus risk and sizing overrides.
 
-Every widget is keyed `bt_<form>_p_<strategy_slug>_<parameter>` so two strategies never share a key
-and the values survive a rerun. Values are seeded into session state before the widget renders, the
-way `ui/state/filter_persistence.hydrate_filters` does, so no widget carries both a `value=` and a
-session-state entry.
+Widget keys are `bt_<form>_p_<strategy_slug>_<parameter>`; values are seeded into session state first.
 """
 
 from __future__ import annotations

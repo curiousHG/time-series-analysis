@@ -1,9 +1,4 @@
-"""MF Analysis · About tab — fund facts in order of usefulness.
-
-Costs/size and investment terms up front as tiles, exit-load prose collapsed, and the
-identifiers/provenance rows (scheme codes, ISINs, slugs) tucked into an expander — they
-matter for debugging, not for judging a fund.
-"""
+"""MF Analysis · About tab: costs, size and terms as tiles, exit load collapsed, identifiers in an expander."""
 
 from __future__ import annotations
 
@@ -80,14 +75,12 @@ def render(ctx: FundContext) -> None:
 
     exit_load = meta.get("exitLoad")
     if exit_load and exit_load != "—":
-        # Often a paragraph of slab conditions — headline the short form, collapse the rest.
         if len(exit_load) > 120:
             with st.expander(f"Exit load — {exit_load[:90]}…"):
                 st.write(exit_load)
         else:
             st.markdown(f"**Exit load:** {exit_load}")
 
-    # ---- Data provenance, one quiet line
     st.divider()
     fetched = meta.get("fetchedAt")
     fetched_s = fetched.strftime("%d %b %Y") if isinstance(fetched, datetime) else "—"

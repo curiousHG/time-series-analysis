@@ -1,9 +1,7 @@
-"""Settings → Funds: freshness in dates, the two routine refresh jobs, and the unresolved-source
-picker. The per-fund status tables live on the Maintenance tab.
+"""Settings → Funds: freshness dates, the two routine refresh jobs and the unresolved-source picker.
 
-Refresh runs on a background task (stale-while-revalidate): the view keeps showing the
-last-computed freshness while NAV/holdings update off-thread and swaps to fresh data when the task
-finishes. Orchestration lives in services.sync_service / data_freshness / registry_service."""
+Refresh runs as a background task; per-fund status tables live on the Maintenance tab.
+"""
 
 from __future__ import annotations
 

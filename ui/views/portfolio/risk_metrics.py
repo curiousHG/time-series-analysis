@@ -16,18 +16,15 @@ from ui.constants import RISK_FREE
 def render(pv: pd.DataFrame, mapped: pl.DataFrame):
     pv = pv.sort_values("date").copy()
 
-    # Time-weighted daily returns: raw pct_change on SIP days includes new money, so subtract it.
     cashflows = daily_net_invested(mapped).select("date", pl.col("invested").alias("cashflow")).to_pandas()
 
     merged = pv.merge(cashflows, on="date", how="left")
     merged["cashflow"] = merged["cashflow"].fillna(0)
 
-    # r_t = (V_t - V_{t-1} - CF_t) / V_{t-1}; CF_t net cash flow (+ deposit, - withdrawal)
     merged["prev_value"] = merged["portfolio_value"].shift(1)
     merged["twr"] = (merged["portfolio_value"] - merged["prev_value"] - merged["cashflow"]) / merged["prev_value"]
     merged = merged.dropna(subset=["twr"])
 
-    # Clip extreme values caused by edge cases (first day, tiny denominator)
     merged["twr"] = merged["twr"].clip(-0.15, 0.15)
 
     returns = merged.set_index("date")["twr"]
@@ -58,7 +55,6 @@ def _render_summary_metrics(returns: pd.Series):
     avg_l = qs.stats.avg_loss(returns) * 100
     payoff = abs(avg_w / avg_l) if avg_l != 0 else 0
 
-    # Row 1 — return metrics
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(
         "CAGR",
@@ -81,7 +77,6 @@ def _render_summary_metrics(returns: pd.Series):
         help="Average daily return. Positive is good. Multiply by 252 for rough annualized estimate.",
     )
 
-    # Row 2 — risk-adjusted
     c5, c6, c7, c8 = st.columns(4)
     c5.metric(
         "Sharpe Ratio",
@@ -104,7 +99,6 @@ def _render_summary_metrics(returns: pd.Series):
         help="Sum of gains / sum of losses. >1 means gains exceed losses. >2 is strong momentum.",
     )
 
-    # Row 3 — volatility & tail risk
     c9, c10, c11, c12 = st.columns(4)
     c9.metric(
         "Annual Volatility",
@@ -127,7 +121,6 @@ def _render_summary_metrics(returns: pd.Series):
         help="Largest single-day loss. Shows tail risk. <-3% is a significant drop.",
     )
 
-    # Row 4 — advanced
     c13, c14, c15, c16 = st.columns(4)
     c13.metric(
         "Value at Risk (95%)",
@@ -150,7 +143,6 @@ def _render_summary_metrics(returns: pd.Series):
         help="Tail thickness vs normal distribution. ~3 is normal. >5 means fat tails (more extreme moves). <3 means thinner tails.",
     )
 
-    # Row 5 — position sizing
     c17, c18, c19, c20 = st.columns(4)
     c17.metric(
         "Kelly Criterion",
@@ -228,7 +220,6 @@ def _render_charts(returns: pd.Series, pv: pd.DataFrame):
         )
         st.plotly_chart(fig_vol, use_container_width=True, key="rolling-vol")
 
-    # Rolling Sharpe
     rolling_sharpe = (returns.rolling(60).mean() * 252 - RISK_FREE) / (returns.rolling(60).std() * np.sqrt(252))
     fig_sharpe = go.Figure()
     fig_sharpe.add_trace(

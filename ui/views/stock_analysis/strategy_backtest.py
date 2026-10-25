@@ -142,7 +142,6 @@ def _render_summary(portfolio, init_cash):
 
 
 def _render_metrics(metrics: dict):
-    # Row 1 — return & risk
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("CAGR", f"{metrics['cagr']:.2f}%", help="Compound annual growth rate.")
     c2.metric(
@@ -153,7 +152,6 @@ def _render_metrics(metrics: dict):
         "Annual Volatility", f"{metrics['annual_volatility']:.2f}%", help="Annualized standard deviation of returns."
     )
 
-    # Row 2 — risk-adjusted
     c5, c6, c7, c8 = st.columns(4)
     c5.metric(
         "Sharpe Ratio",
@@ -166,7 +164,6 @@ def _render_metrics(metrics: dict):
     pf_display = f"{pf:.2f}" if pf != float("inf") else "INF"
     c8.metric("Profit Factor", pf_display, help="Gross wins / gross losses. >1 is profitable.")
 
-    # Row 3 — trade stats
     c9, c10, c11, c12 = st.columns(4)
     c9.metric("Trade Win Rate", f"{metrics['win_rate']:.1f}%", help="Percentage of profitable trades.")
     c10.metric("Avg Winning Trade", f"{metrics['avg_win']:.2f}%", help="Average return on winning trades.")
@@ -177,14 +174,12 @@ def _render_metrics(metrics: dict):
         help="Avg win / avg loss magnitude. >1 means wins larger than losses.",
     )
 
-    # Row 4 — advanced
     c13, c14, c15, c16 = st.columns(4)
     c13.metric("Best Trade", f"{metrics['best_trade']:+.2f}%", help="Largest single trade return.")
     c14.metric("Worst Trade", f"{metrics['worst_trade']:+.2f}%", help="Worst single trade return.")
     c15.metric("Expectancy", f"₹{metrics['expectancy']:,.0f}", help="Average P&L per trade.")
     c16.metric("SQN", f"{metrics['sqn']:.2f}", help="System Quality Number. >2 good, >3 excellent, >5 superb.")
 
-    # Row 5 — tail risk & position sizing
     c17, c18, c19, c20 = st.columns(4)
     c17.metric("VaR (95%)", f"{metrics['var_95']:.2f}%", help="95% confidence daily loss bound.")
     c18.metric("CVaR (95%)", f"{metrics['cvar_95']:.2f}%", help="Expected loss in the worst 5% of days.")
@@ -193,7 +188,6 @@ def _render_metrics(metrics: dict):
 
 
 def _render_charts(portfolio, price, returns, entries, exits, symbol):
-    # Equity curve — strategy vs buy-and-hold
     equity = portfolio.value()
     bh = price / price.iloc[0] * equity.iloc[0]
 
@@ -224,7 +218,6 @@ def _render_charts(portfolio, price, returns, entries, exits, symbol):
     )
     st.plotly_chart(fig_eq, use_container_width=True, key="bt-equity-curve")
 
-    # Drawdown + returns distribution
     col1, col2 = st.columns(2)
 
     with col1:
@@ -274,7 +267,6 @@ def _render_charts(portfolio, price, returns, entries, exits, symbol):
         )
         st.plotly_chart(fig_hist, use_container_width=True, key="bt-returns-hist")
 
-    # Trade signals on price
     fig_trades = go.Figure()
     fig_trades.add_trace(
         go.Scatter(

@@ -52,7 +52,6 @@ if _amfi_count == 0:
 page_header("MF Screener", "The AMFI universe with cached risk and return metrics")
 _df = load_screener_df_cached()
 
-# Sidebar + inline filters → resolved FilterState.
 _state = render_sidebar(_df)
 
 _filtered = apply_filters(
@@ -66,7 +65,7 @@ _filtered = apply_filters(
     aum_min=_state.aum_min,
     ter_max=_state.ter_max,
     min_age_years=_state.min_age_years,
-    only_tracked=False,  # filter retired — see ui.views.mf_screener.filters
+    only_tracked=False,
     only_untracked=_state.only_untracked,
     has_nav=_state.has_nav,
     cagr_min=_state.cagr_min,
@@ -74,19 +73,14 @@ _filtered = apply_filters(
     dd_min=_state.dd_min,
 )
 
-# Header + inline add-to-tracked (needs `_filtered` for the Top-N picker).
 _render_universe_summary(_amfi_count, _filtered)
 st.caption(f"{_filtered.height:,} of {_df.height:,} schemes match · click a fund name to open it in MF Analysis")
 
-# Table → grid response → open-fund action.
 _, _grid_response = render_table(_filtered, _state.visible_metrics, _state.aggrid_theme)
 render_open_action(_grid_response)
 
-# Remember the displayed order (grid sort + header filters) so the next "Fetch top N"
-# click picks exactly what the user is looking at, not the server frame's order.
 _grid_data = _grid_response.get("data")
 if _grid_data is not None and len(_grid_data) and "Scheme" in _grid_data.columns:
     st.session_state[DISPLAY_ORDER_KEY] = _grid_data["Scheme"].tolist()
 
-# Risk-vs-return scatter for the filtered universe.
 render_risk_return_chart(_filtered)

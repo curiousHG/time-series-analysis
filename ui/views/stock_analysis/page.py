@@ -35,9 +35,7 @@ def _chart_pdf(frame: pl.DataFrame, sym: str) -> pd.DataFrame:
 
 
 def _refresh_stock_on_open(ticker: str, frame: pl.DataFrame) -> None:
-    """On the first open of a stock this session: pull its OHLCV forward to today (cheap no-op when
-    already fresh) and make sure its CAPM/price metrics exist (compute if this is a brand-new stock).
-    Reloads only if new bars arrived. Screener.in fundamentals are fetched by the Fundamentals tab."""
+    """On first open per session: forward-fill OHLCV, ensure price metrics exist, reload if new bars arrived."""
     import contextlib  # noqa: PLC0415
 
     from data.repositories.stock import refresh_stock_to_today  # noqa: PLC0415 — defer off boot
@@ -56,7 +54,6 @@ def _refresh_stock_on_open(ticker: str, frame: pl.DataFrame) -> None:
     with st.spinner(f"Refreshing {ticker}…"):
         with contextlib.suppress(Exception):
             _, new_max = refresh_stock_to_today(bare)
-        # Metrics: pick from cache if present, else compute now for this newly-opened stock.
         with contextlib.suppress(Exception):
             if load_stock_metrics([bare]).is_empty():
                 recompute_price_metrics([bare])
@@ -134,8 +131,6 @@ def _etf_view(ticker: str, frame: pl.DataFrame) -> None:
         backtest_tab.render(sdf, ticker)
 
 
-# Unified ticker picker — one search across stocks, ETFs and indices (previously a confusing split).
-# The selected item's kind drives which view renders; every ticker is loaded on demand.
 _BADGE = {"stock": "Stock · NSE", "etf": "ETF · NSE", "index": "Index"}
 _catalog = load_analysis_catalog_cached()
 if not _catalog:
@@ -186,8 +181,6 @@ def _render_add_international() -> None:
 
             register_stock(pick["symbol"], name=pick["name"], exchange=pick["exchange"], quote_type=pick["quote_type"])
             load_analysis_catalog_cached.clear()
-            # The sa_ticker selectbox already rendered this run — a widget-keyed state can't be
-            # written after instantiation. Stage the selection; it's applied pre-widget on rerun.
             st.session_state.sa_ticker_pending = pick["symbol"]
             st.toast(f"Added {pick['symbol']} ({pick['exchange']}).", icon="🌍")
             st.rerun()
@@ -197,10 +190,16 @@ _options = [c["id"] for c in _catalog]
 _n_stock = sum(1 for c in _catalog if c["kind"] == "stock")
 _n_etf = sum(1 for c in _catalog if c["kind"] == "etf")
 _n_index = sum(1 for c in _catalog if c["kind"] == "index")
-# A selection staged by the add-international flow (or navigation) — apply it BEFORE the selectbox
-# instantiates; Streamlit forbids writing a widget's key after its widget rendered in the same run.
-if (_pending := st.session_state.pop("sa_ticker_pending", None)) is not None:
-    st.session_state.sa_ticker = _pending
+
+
+def _apply_staged_ticker() -> None:
+    """Move a ticker staged in `sa_ticker_pending` into `sa_ticker`; must run before the selectbox
+    renders, since Streamlit rejects writes to a widget's key after the widget is drawn."""
+    if (staged := st.session_state.pop("sa_ticker_pending", None)) is not None:
+        st.session_state.sa_ticker = staged
+
+
+_apply_staged_ticker()
 if st.session_state.get("sa_ticker") not in _options:
     st.session_state.pop("sa_ticker", None)
 ticker = st.selectbox(
@@ -224,7 +223,6 @@ page_header(_disp, _badge)
 if _kind == "index":
     _index_view(ticker)
 else:
-    # Stock/ETF: load the selected ticker's history — fetched + stored on demand if we don't have it.
     with st.spinner(f"Loading {ticker}…"):
         frame = load_stock_open_close([ticker], pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
     render_toasts()

@@ -18,10 +18,10 @@ _MARGIN = {"l": 48, "r": 16, "t": 16, "b": 36}
 
 
 def feature_importance_bar(importance: pd.DataFrame, *, top_n: int = 20, height: int = 420) -> go.Figure:
-    """Mean importance across walk-forward windows (top `top_n` features) with the std as error bars.
+    """Top `top_n` features by mean walk-forward importance, with the std as error bars.
 
-    Reads the frame `strategies.ml.diagnostics` builds: index of feature names, an `importance`
-    column holding the across-window mean and a `std` column."""
+    Expects the `strategies.ml.diagnostics` frame: feature-name index, `importance` and `std` columns.
+    """
     top = importance.sort_values("importance", ascending=False).head(top_n).iloc[::-1]
     fig = go.Figure(
         go.Bar(
@@ -44,9 +44,7 @@ def feature_importance_bar(importance: pd.DataFrame, *, top_n: int = 20, height:
 
 
 def window_metrics_bar(windows: pd.DataFrame, metric: str, *, height: int = 280) -> go.Figure:
-    """One bar per walk-forward window. Rank metrics are drawn against the level that means no
-    skill (0.5 for AUC and hit rate), so a bar only shows above the line when the window beat a
-    coin toss."""
+    """One bar per walk-forward window; rank metrics are drawn against the 0.5 no-skill level."""
     baseline = NO_SKILL_BASELINE.get(metric, 0.0)
     frame = windows.dropna(subset=[metric])
     values = frame[metric].astype(float)

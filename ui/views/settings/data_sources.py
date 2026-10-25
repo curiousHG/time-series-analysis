@@ -1,9 +1,4 @@
-"""Settings → Reference: the data-flow map as one mermaid diagram.
-
-The diagram is generated from `data.sources.SOURCE_ROUTING` (sources) plus the node/edge tables
-below, so the Reference page cannot drift from the routing registry. Boxes carry only the short
-name; hovering a box shows what it returns, where it lands, and why that route was chosen.
-"""
+"""Settings → Reference: the data-flow map as one mermaid diagram built from `data.sources.SOURCE_ROUTING`."""
 
 from __future__ import annotations
 

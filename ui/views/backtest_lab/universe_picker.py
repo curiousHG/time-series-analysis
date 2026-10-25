@@ -1,8 +1,4 @@
-"""Universe picker for the run form: an NSE index, the Stock Analysis watchlist, or a pasted list.
-
-The picker always resolves the choice to bare symbols and shows the count, so nobody launches a
-ten-year run against an index whose constituent list came back empty.
-"""
+"""Universe picker for the run form: an NSE index, the watchlist, or a pasted list, as bare symbols."""
 
 from __future__ import annotations
 

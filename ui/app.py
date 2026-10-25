@@ -14,9 +14,6 @@ with timed("boot.init_schema"):
     init_schema()
 
 
-# Once-per-day boot-refresh guard — so restarting the process during the day doesn't re-run the
-# full bhavcopy pass. Shares the "stock_data_refresh" background key with the Settings > Stock Data
-# button, so the two can't run concurrently (dedup) and the boot pass is visible in that view.
 _BOOT_REFRESH_KEY = "stock_data_refresh"
 _BOOT_GUARD = Path("data/user/.last_boot_refresh")
 
@@ -32,10 +29,7 @@ def _boot_refreshed_today() -> bool:
 
 @st.cache_resource(show_spinner=False)
 def _kickoff_background_refresh() -> bool:
-    """Kick off a once-per-day background pass that keeps market data fresh: seed the Nifty 500
-    (DB-first, resumable) + batched-yfinance forward-fill for tracked stocks + the NSE index
-    bhavcopy + recompute metrics. Routed through core.background under the shared stock-refresh key
-    so it can't race a user-triggered Settings refresh, and guarded to run at most once per day."""
+    """Start the once-per-day background market-data refresh under the shared stock-refresh key."""
     import datetime  # noqa: PLC0415 — keep boot imports minimal
     import logging  # noqa: PLC0415
 
@@ -47,8 +41,8 @@ def _kickoff_background_refresh() -> bool:
     def _work() -> dict:
         from services.stock_sync_service import refresh_all_stock_data, seed_nifty500  # noqa: PLC0415
 
-        seed_nifty500()  # fill any missing Nifty 500 constituents (no-op once populated)
-        result = refresh_all_stock_data()  # batched-yfinance stocks + 160 bhavcopy indices + metrics
+        seed_nifty500()
+        result = refresh_all_stock_data()
         _BOOT_GUARD.parent.mkdir(parents=True, exist_ok=True)
         _BOOT_GUARD.write_text(datetime.date.today().isoformat())
         logging.getLogger("boot").info("boot data refresh done: %s", result)
@@ -61,7 +55,7 @@ def _kickoff_background_refresh() -> bool:
 def run():
     with timed("page.run"):
         st.set_page_config(layout="wide")
-        _kickoff_background_refresh()  # background data refresh (cached → starts once per process)
+        _kickoff_background_refresh()
         pages = [
             st.Page("ui/views/overview/page.py", title="Overview", url_path="overview", default=True),
             st.Page("ui/views/portfolio/page.py", title="Portfolio", url_path="portfolio"),

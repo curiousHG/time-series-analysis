@@ -1,8 +1,6 @@
-"""Session-state contract for the Backtest Lab: the visible view, the open run, the compare queue.
+"""Session-state contract for the Backtest Lab: visible view, open run, compare queue.
 
-The view switcher and the detail run picker are keyed widgets, and a widget key cannot be written
-after its widget rendered — so every cross-view jump stages a `*_pending` key that `apply_pending`
-applies at the top of the next run (the `sa_ticker_pending` pattern).
+Cross-view jumps stage `*_pending` keys that `apply_pending` applies at the top of the next run.
 """
 
 from __future__ import annotations

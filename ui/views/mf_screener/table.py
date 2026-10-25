@@ -31,24 +31,19 @@ def _build_display_pdf(filtered: pl.DataFrame, visible_metrics: list[str]) -> pd
     """Project + rename + percent-scale the screener frame to match the AgGrid display."""
     pdf = filtered.to_pandas()
 
-    # Per-source tracking glyphs (✓ / ✗ / —) for which datasets each fund has.
     pdf["NAV"] = pdf["nav_status"].apply(status_cell) if "nav_status" in pdf.columns else "—"
     pdf["Holdings"] = pdf["holdings_status"].apply(status_cell) if "holdings_status" in pdf.columns else "—"
     pdf["Metadata"] = pdf["metadata_status"].apply(status_cell) if "metadata_status" in pdf.columns else "—"
 
-    # DB names → display names, ordered as in METRIC_RENAME.
     db_cols_in_order = [c for c in METRIC_RENAME if c in pdf.columns]
     extra_status = [c for c in ("NAV", "Holdings", "Metadata") if c in pdf.columns]
     pdf = pdf[db_cols_in_order + extra_status].rename(columns=METRIC_RENAME)
 
-    # Visibility filter: identity always shown + user-selected metrics.
     visible = [c for c in IDENTITY_COLS if c in pdf.columns] + [c for c in visible_metrics if c in pdf.columns]
     pdf = pdf[visible]
 
-    # Canonical left-to-right order so columns don't shuffle as the user toggles.
     pdf = pdf[[c for c in DISPLAY_COL_ORDER if c in pdf.columns]]
 
-    # Percent-scale stored decimal fractions.
     for col in METRIC_PCT_COLS:
         if col in pdf.columns:
             pdf[col] = pdf[col] * 100
@@ -86,6 +81,6 @@ def render_open_action(grid_response: dict) -> None:
             scheme_names=[scheme_name],
             sources=("nav", "metadata"),
             max_per_run=2,
-            submit_delay=0.0,  # single fund, no rate limiting needed
+            submit_delay=0.0,
         )
     open_fund_in_analysis(scheme_name)

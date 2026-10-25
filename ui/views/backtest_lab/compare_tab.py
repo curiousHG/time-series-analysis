@@ -1,8 +1,4 @@
-"""Compare view: two to five runs on one equity axis, one metrics table and the settings that differ.
-
-The parameter table deliberately shows only rows where the runs disagree — the point of a comparison
-is the delta, and a full config dump buries it.
-"""
+"""Compare view: two to five runs on one equity axis, one metrics table, and the settings that differ."""
 
 from __future__ import annotations
 

@@ -106,7 +106,7 @@ def _render_growth_chart(ctx: FundContext) -> None:
         hovermode="x unified",
         yaxis_title="Index (start = 100)",
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
-        margin={"l": 48, "r": 16, "t": 36, "b": 36},  # extra top for the horizontal legend
+        margin={"l": 48, "r": 16, "t": 36, "b": 36},
     )
     st.plotly_chart(fig, use_container_width=True, key="mf-detail-growth")
 
@@ -128,7 +128,6 @@ def _render_rolling_returns(ctx: FundContext) -> None:
     )
     win = _RR_WINDOWS[win_label]
     rr = nav_pd.pct_change(win, fill_method=None).dropna()
-    # Annualise windows ≥ 252 days; otherwise show the period return as-is.
     if win >= 252:
         rr = (1 + rr) ** (252 / win) - 1
         ylabel = f"{win_label} CAGR %"
