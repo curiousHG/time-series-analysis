@@ -273,12 +273,9 @@ def test_loggers_use_module_name():
         "getLogger with hardcoded dotted path",
         violations,
         allowlist={
-            "data/fetchers/mutual_fund.py",
             "data/fetchers/screener_in.py",
             "data/fetchers/stock.py",
-            "data/repositories/holdings.py",
             "data/repositories/metadata.py",
-            "data/repositories/nav.py",
             "data/repositories/scheme_codes.py",
             "data/repositories/scheme_metrics.py",
         },

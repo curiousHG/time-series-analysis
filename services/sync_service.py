@@ -16,7 +16,8 @@ import httpx
 import polars as pl
 
 from data.exceptions import SourceNotFound, SourceThrottled
-from data.repositories.holdings import fetch_holdings_for_scheme, replace_holdings_atomic, slug_to_code_map
+from data.repositories.advisorkhoj_keys import fetch_holdings_for_scheme
+from data.repositories.holdings import replace_holdings_atomic, slug_to_code_map
 from data.repositories.nav import fetch_single_nav, last_nav_date_by_code, save_nav_df
 from data.repositories.scheme_codes import resolve_codes
 from mutual_funds.display import make_slug, short_scheme_name

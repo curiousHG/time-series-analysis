@@ -14,7 +14,7 @@ import polars as pl
 import pytest
 
 from data.exceptions import SourceNotFound, SourceThrottled
-from data.fetchers import mutual_fund as mf
+from data.fetchers import mfapi as mf
 from data.repositories import nav
 from services import sync_service as sync
 

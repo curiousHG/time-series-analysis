@@ -11,10 +11,11 @@ from sqlmodel import col, func, select
 from core.database import get_session
 from core.models import AmfiScheme, MfAmc, MfCategory, MfMetadata
 from data.exceptions import SourceNotFound
+from data.fetchers.advisorkhoj import fetch_fund_metadata
 from data.fetchers.kuvera import fetch_fund_metadata_kuvera
-from data.fetchers.mutual_fund import fetch_fund_metadata
+from data.repositories.advisorkhoj_keys import resolve_advisorkhoj_slug
 from data.repositories.amfi import find_direct_sibling, get_scheme_details_by_name, upsert_amc, upsert_category
-from data.repositories.holdings import clear_slug_cache, resolve_advisorkhoj_slug
+from data.repositories.holdings import clear_slug_cache
 from data.repositories.scheme_codes import mint_synthetic_codes
 
 logger = logging.getLogger("data.repositories.metadata")

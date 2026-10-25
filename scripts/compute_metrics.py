@@ -30,7 +30,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from core.logging_config import setup_logging  # noqa: E402
-from data.repositories.nav import repair_nav_glitches, repair_nav_scale_breaks  # noqa: E402
+from data.repositories.nav_repair import repair_nav_glitches, repair_nav_scale_breaks  # noqa: E402
 from services.mf_metrics import recompute_metrics, recompute_stale_metrics  # noqa: E402
 
 

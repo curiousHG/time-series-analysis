@@ -124,10 +124,14 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
            analytics.py, tradebook.py, holdings.py, table_schema.py
               ↓
          data/fetchers/                # External API clients (HTTP only, no DB)
-           mutual_fund.py              # MFAPI, AdvisorKhoj, AMFI
+           mfapi.py                    # MFAPI NAV + scheme search
+           advisorkhoj.py              # AdvisorKhoj portfolio, metadata, NAV
+           amfi.py                     # AMFI NAVAll.txt master
            stock.py                    # yfinance + jugaad-data (NSE fallback)
          data/repositories/            # DB CRUD (one file per aggregate)
            nav.py                      # NAV load/save/upsert/fetch
+           nav_repair.py               # NAV glitch + scale-break repair
+           advisorkhoj_keys.py         # AdvisorKhoj portfolio-key resolution
            holdings.py                 # Holdings/sectors/assets CRUD
            metadata.py                 # AdvisorKhoj metadata CRUD
            scheme_metrics.py           # cached MF metrics CRUD

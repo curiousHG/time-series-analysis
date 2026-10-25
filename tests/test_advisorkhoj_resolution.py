@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from data.exceptions import SourceNotFound
-from data.fetchers import mutual_fund as mf
+from data.fetchers import advisorkhoj as mf
 from mutual_funds.advisorkhoj import base_name, base_variants, name_candidates, same_fund, short_option
 
 # ---- pure helpers ------------------------------------------------------------------------
@@ -172,7 +172,7 @@ def _payload(code: str, common: str) -> dict:
 
 
 def test_resolver_rejects_a_different_fund_and_keeps_trying(monkeypatch):
-    from data.repositories import holdings as repo
+    from data.repositories import advisorkhoj_keys as repo
 
     class _Scheme:
         scheme_name, plan, option = "Alpha Fund - Direct Plan - Growth Option", "Direct Plan", "Growth Option"
@@ -224,7 +224,7 @@ def test_resolver_rejects_a_different_fund_and_keeps_trying(monkeypatch):
 
 
 def test_resolver_raises_when_nothing_verifies(monkeypatch):
-    from data.repositories import holdings as repo
+    from data.repositories import advisorkhoj_keys as repo
 
     class _Scheme:
         scheme_name, plan, option = "Gamma Fund - Regular Plan - IDCW", "Regular Plan", "IDCW"
@@ -246,7 +246,7 @@ def test_resolver_raises_when_nothing_verifies(monkeypatch):
 
 
 def _session_for(scheme_code: int, scheme, stored_key: str | None = None, source_url: str | None = None):
-    from data.repositories import holdings as repo
+    from data.repositories import advisorkhoj_keys as repo
 
     class _Reg:
         advisorkhoj_slug = stored_key
@@ -280,7 +280,7 @@ def _session_for(scheme_code: int, scheme, stored_key: str | None = None, source
 def test_resolver_posts_scheme_names_not_slugs(monkeypatch):
     """AdvisorKhoj's portfolio endpoint is keyed by the scheme name — its own page posts the
     name verbatim. Slugifying 'U.S.' or '&' produces a key it cannot map back."""
-    from data.repositories import holdings as repo
+    from data.repositories import advisorkhoj_keys as repo
 
     class _Scheme:
         scheme_name = "Franklin U. S. Opportunities Equity Active Fund of Funds - Direct Plan - Growth"
@@ -311,7 +311,7 @@ def test_resolver_posts_scheme_names_not_slugs(monkeypatch):
 def test_resolver_tries_the_stored_key_first(monkeypatch):
     """Keys verified before AdvisorKhoj's name-keying was understood are slugs; they still
     resolve and must not be re-derived."""
-    from data.repositories import holdings as repo
+    from data.repositories import advisorkhoj_keys as repo
 
     class _Scheme:
         scheme_name, plan, option = "Franklin India ELSS Tax Saver Fund - Direct Plan - Growth", "Direct Plan", "Growth"

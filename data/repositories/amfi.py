@@ -15,7 +15,7 @@ from sqlmodel import col, func, select
 from core.database import get_session
 from core.frames import frame_from_rows
 from core.models import AmfiScheme, MfAmc, MfCategory
-from data.fetchers.mutual_fund import fetch_amfi_master
+from data.fetchers.amfi import fetch_amfi_master
 from data.repositories.holdings import clear_slug_cache
 from mutual_funds.advisorkhoj import base_name
 

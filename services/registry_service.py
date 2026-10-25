@@ -25,8 +25,8 @@ from core.models import (
     MfRegistry,
     MfSectorAllocation,
 )
+from data.repositories.advisorkhoj_keys import fetch_holdings_for_scheme
 from data.repositories.holdings import (
-    fetch_holdings_for_scheme,
     load_holdings,
     save_assets,
     save_holdings,

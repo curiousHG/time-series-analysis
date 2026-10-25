@@ -13,7 +13,7 @@ import datetime
 import pytest
 
 from data.exceptions import UpstreamFormatError
-from data.fetchers.mutual_fund import (
+from data.fetchers.amfi import (
     _classify_amfi_header,
     compose_scheme_name,
     parse_amfi_master,

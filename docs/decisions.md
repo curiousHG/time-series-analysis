@@ -4,12 +4,12 @@ Why behind non-obvious choices. Inline comments stay minimal; the rationale live
 
 ## NAV data quality (`mf_nav`)
 
-- **Glitch repair** (`nav.repair_nav_glitches`, `_GLITCH_RATIO`) — isolated single-day spikes that revert
+- **Glitch repair** (`nav_repair.repair_nav_glitches`, `_GLITCH_RATIO`) — isolated single-day spikes that revert
   (>2× vs *both* neighbours) and zero/negative NAVs are upstream errors. We delete only the
   bad point, never the fund; permanent steps (side-pocketing, bonus) disagree across neighbours and
   are not flagged. Previously one ancient bad day discarded a fund's whole history (~170 funds
   recovered after softening the guard to drop the day, not the fund).
-- **Scale-break repair** (`nav.repair_nav_scale_breaks`) — some liquid/debt funds carry early
+- **Scale-break repair** (`nav_repair.repair_nav_scale_breaks`) — some liquid/debt funds carry early
   history at a 1/10 or 1/100 scale spliced onto the real NAV (an **UP power-of-10 break**;
   MFAPI itself serves it). We rescale every earlier segment up to the latest scale, then skip the
   fund if the corrected whole-history CAGR is implausible (`_PLAUSIBLE_CAGR_MIN/MAX`, -10%/+60%).
@@ -38,7 +38,7 @@ Why behind non-obvious choices. Inline comments stay minimal; the rationale live
 
 ## MF data sources (AMFI, MFAPI, AdvisorKhoj, Kuvera)
 
-- **AMFI layout change** (`fetchers.mutual_fund`, NAVAll.txt) — in 2025 AMFI went from 6 to 8
+- **AMFI layout change** (`fetchers.amfi`, NAVAll.txt) — in 2025 AMFI went from 6 to 8
   columns, moving the plan/option suffix out of the scheme name into `Plan`/`Option` columns. The
   layout is read from the file's own header; `_POSITIONAL_LAYOUTS` is the fallback. The old parser
   kept "succeeding" while nulling every NAV (shifted one place) and collapsing 14K names onto 3.7K,
@@ -71,7 +71,7 @@ Why behind non-obvious choices. Inline comments stay minimal; the rationale live
   pre-2025 AMFI name (`<base> - Direct Plan - Growth`), and AMFI's new option text varies, so
   candidate spellings are tried in measured hit-rate order: `<base> - <plan> - <short option>`
   (most funds), then the plan-without-"Plan" form, then AMFI's verbatim option text; previously
-  resolved spellings go first. `holdings.resolve_and_fetch_portfolio` verifies every hit
+  resolved spellings go first. `advisorkhoj_keys.resolve_and_fetch_portfolio` verifies every hit
   (`_returned_same_fund`) because AdvisorKhoj fuzzy-matches unknown keys onto other funds.
 - **AdvisorKhoj metadata parsing** (`fetch_fund_metadata`, `_EXIT_LOAD_FIELD_RE`) — capital-E
   "Exit Load:" is the structured field; lowercase "exit load:" appears inline in schedule text and
@@ -108,7 +108,7 @@ such a fund arrives with one identical name (Motilal Oswal Midcap Fund: four cod
 name-keyed path then mixes variants — the NAV refresh once stored the IDCW series under the
 Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep 2026).
 
-- **Names are made unique at ingest** (`data.fetchers.mutual_fund.disambiguate_scheme_names`):
+- **Names are made unique at ingest** (`data.fetchers.amfi.disambiguate_scheme_names`):
   option inferred from the ISIN columns (a reinvestment ISIN ⇒ IDCW) and stored in `option`;
   a remaining tie gets the scheme code appended, e.g. "Motilal Oswal Midcap Fund - Growth (127042)".
   `base_name` strips the suffix again so AdvisorKhoj candidates are unaffected. The parser
