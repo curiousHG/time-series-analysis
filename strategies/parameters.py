@@ -1,8 +1,6 @@
 """Declared strategy parameters.
 
-A parameter is a descriptor: on the class it is the declaration (bounds, default, whether the
-optimiser may tune it); on an instance it is the current value. `BasketStrategy.parameter_space`
-collects the declarations so the run form and the optimiser can read them without introspection.
+On the class a parameter is the declaration (bounds, default, tunable flag); on an instance it is the current value.
 """
 
 from __future__ import annotations

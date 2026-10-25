@@ -1,10 +1,7 @@
-"""AdvisorKhoj scheme-name resolution — pure helpers, no I/O.
+"""AdvisorKhoj scheme-name resolution: pure helpers, no I/O.
 
-AdvisorKhoj keys every fund by the name AMFI published *before* its 2025 feed change
-("<base> - Direct Plan - Growth"). AMFI now emits the plan/option in separate columns with
-looser text ("Growth Option", "GROWTH", "IDCW-Re-investment"), so no single string derived
-from today's feed reliably matches. These helpers generate the candidate spellings a resolver
-tries in order, and the base-fund comparison used to accept or reject what comes back.
+Generates the candidate spellings a resolver tries in order, and the base-fund comparison used to accept what
+comes back.
 """
 
 from __future__ import annotations
@@ -27,11 +24,7 @@ _CODE_SUFFIX_RE = re.compile(r"\s*\(\d+\)$")
 
 
 def base_name(scheme_name: str, plan: str | None, option: str | None) -> str:
-    """The fund's name without its plan/option suffix — what every variant of a fund shares.
-
-    Inverse of `compose_scheme_name`: strips " - <plan> - <option>", " - <plan>" or
-    " - <option>" from the end, whichever was appended.
-    """
+    """The fund's name without its plan/option suffix. Inverse of `compose_scheme_name`."""
     scheme_name = _CODE_SUFFIX_RE.sub("", scheme_name)
     for suffix in (
         f" - {plan} - {option}" if plan and option else None,
@@ -66,11 +59,7 @@ def base_variants(base: str) -> list[str]:
 def name_candidates(base: str, plan: str | None, option: str | None, *, known: list[str] | None = None) -> list[str]:
     """Candidate AdvisorKhoj scheme names, most likely first, deduplicated.
 
-    `known` are spellings that resolved before (a stored slug's name, the URL an earlier
-    metadata scrape used) and are tried first. Order of the generated forms follows the
-    measured hit rate on live funds: "<base> - <plan> - <short option>" resolves the large
-    majority, the plan-without-"Plan" form next, AMFI's verbatim option text after that.
-    Each form is generated for every `base_variants` spelling.
+    `known` spellings that resolved before are tried first; each form is generated for every `base_variants` spelling.
     """
     out: list[str] = list(known or [])
     plan_short = re.sub(r"\s+Plan$", "", plan, flags=re.I) if plan else None
@@ -137,10 +126,7 @@ _SHARE_CLASS_WORDS = frozenset(
 
 
 def same_fund(base_a: str, base_b: str) -> bool:
-    """Whether two base names denote the same fund, tolerant of punctuation and case
-    ("Axis ELSS- Tax Saver Fund" vs "Axis ELSS Tax Saver Fund") and of trailing share-class
-    qualifiers AMFI embeds twice in some names ("JM Liquid Fund - Bonus Option",
-    "Franklin India Liquid Fund- Institution")."""
+    """Whether two base names denote the same fund, ignoring punctuation, case and trailing share-class qualifiers."""
     return _tokens(_strip_share_class(base_a)) == _tokens(_strip_share_class(base_b))
 
 

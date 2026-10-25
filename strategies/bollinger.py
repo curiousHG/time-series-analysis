@@ -27,7 +27,7 @@ class BollingerStrategy(Strategy):
         self.rsi_guard = rsi_guard
 
     def indicators(self, price):
-        import vectorbt as vbt  # noqa: PLC0415 — heavy dep; deferred to the backtest call
+        import vectorbt as vbt  # noqa: PLC0415
 
         bb = vbt.BBANDS.run(price, window=self.bb_period, alpha=self.bb_std)
         rsi = vbt.RSI.run(price, window=14)
@@ -43,14 +43,11 @@ class BollingerStrategy(Strategy):
         bb_upper = indicators["BB_upper"]
         rsi = indicators["RSI"]
 
-        # Guard: RSI must be in oversold zone
         guard = rsi < self.rsi_guard
 
-        # Entry trigger: price crosses below lower band
         trigger_entry = (price < bb_lower) & (price.shift(1) >= bb_lower.shift(1))
         entries = guard & trigger_entry
 
-        # Exit trigger: price crosses above upper band
         exits = (price > bb_upper) & (price.shift(1) <= bb_upper.shift(1))
 
         return (entries.fillna(False), exits.fillna(False))

@@ -7,7 +7,6 @@ def register_strategy(cls):
     return cls
 
 
-# Auto-register all strategies on import
 import strategies.markov_strategy  # noqa: E402
 import strategies.ml  # noqa: E402
 import strategies.ported  # noqa: E402

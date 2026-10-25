@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-# Nifty 50 (bare NSE symbols) — the seed batch we populate so the screener has data without
-# scraping all ~2,372 listed names. The full universe lives in stock_registry (NSE master).
 NIFTY_50 = (
     "ADANIENT",
     "ADANIPORTS",
@@ -57,14 +55,10 @@ NIFTY_50 = (
     "ADANIGREEN",
 )
 
-# Alpha-categorisation thresholds (annualised Jensen alpha %, CAPM beta).
 ALPHA_POSITIVE = 0.0
 BETA_MARKET = 1.0
 
 
-# Exchange codes that mean "Indian market" for symbol routing: bare NSE symbols get a `.NS`
-# yfinance suffix and screener.in fundamentals; anything else (NASDAQ/NYSE/XETRA/…) is an
-# international ticker — fetched as-is, fundamentals via yfinance, CAPM benchmarked vs S&P 500.
 NSE_EXCHANGES = frozenset({"NSE", "NSI", "BSE", "BO"})
 
 
@@ -74,18 +68,12 @@ def is_nse_exchange(exchange: str | None) -> bool:
     return (exchange or "NSE").upper() in NSE_EXCHANGES
 
 
-# Index tickers that aren't caught by the `^…` / space / `=` rules — MSCI ETF proxies used as
-# benchmark indices. Kept here (not imported from services) to avoid a domain→services dependency.
 _EXTRA_INDEX_SYMBOLS = frozenset({"URTH", "ACWI"})
 
 
 def is_index_symbol(symbol: str) -> bool:
-    """True for non-equity series that live in index_ohlcv — market indices (^NSEI), NSE
-    index-bhavcopy names ("Nifty Midcap 150" — any symbol containing a space, since NSE equity
-    symbols never do), FX rates (INR=X), and the MSCI ETF benchmark proxies.
-
-    These have no ISIN and are never `.NS`-suffixed; equities live in stock_ohlcv.
-    """
+    """True for symbols that live in index_ohlcv: market indices, NSE index names (they contain a space), FX
+    rates and the MSCI ETF proxies. Equities live in stock_ohlcv."""
     return symbol.startswith("^") or " " in symbol or "=" in symbol or symbol in _EXTRA_INDEX_SYMBOLS
 
 

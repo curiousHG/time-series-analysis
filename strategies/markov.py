@@ -1,19 +1,6 @@
-"""Bucketed daily returns and the transition matrix estimated from them.
+"""Bucketed daily returns and the causal rolling transition matrix estimated from them.
 
-Each day's percentage move is placed in a bucket: a central band around zero, then symmetric bands
-of `width` on either side, with everything past the outermost band clipped into it. Counting how
-often bucket *i* on one day is followed by bucket *j* on the next gives a matrix of
-P(tomorrow's bucket | today's bucket), and the row for a symbol's current bucket is a forecast
-distribution for its next move.
-
-Estimation is causal by construction. The count matrix in force on bar *t* sums only transitions
-whose second leg landed on or before *t*, so the row read on bar *t* uses nothing the market had
-not printed. The engine then acts at the open of *t+1*, adding the usual one-bar gap.
-
-Counts are accumulated per bar and rolled with a cumulative sum, so every bar gets its own matrix
-for the price of one pass. Alongside the counts the same structure accumulates the realised next
-return, which turns the row into a conditional expected return rather than a bucket-centre
-approximation.
+The count matrix in force on bar t sums only transitions completed on or before t.
 """
 
 from __future__ import annotations
@@ -87,11 +74,7 @@ def scaled_returns(returns: pd.DataFrame, scheme: BucketScheme) -> pd.DataFrame:
 
 
 def bucket_states(scaled: np.ndarray, scheme: BucketScheme) -> np.ndarray:
-    """Bucket index per observation, or -1 where the move is unknown.
-
-    A move of exactly `k * width` sits at the centre of bucket `k`, so the flat bucket spans
-    ±width/2 around zero and the outermost buckets absorb every tail move.
-    """
+    """Bucket index per observation, or -1 where the move is unknown. Bucket k is centred on k * width."""
     out = np.full(scaled.shape, -1, dtype=np.int16)
     finite = np.isfinite(scaled)
     if not finite.any():
@@ -106,11 +89,7 @@ def bucket_states(scaled: np.ndarray, scheme: BucketScheme) -> np.ndarray:
 class StateStats:
     """Per bar and per current bucket, what the matrix in force on that bar predicts.
 
-    `p_up` and `p_down` are the raw shares of the row landing above and below the flat band, so
-    they never sum to one: the flat band holds the rest, and on NSE daily bars with a 0.75% width
-    that is roughly a fifth of every row. `directional` renormalises them against each other and is
-    what the strategies gate on, because it is the quantity a confidence threshold reads naturally
-    — 0.5 is genuinely neutral and 0.6 is genuinely a strong call.
+    `directional` is P(up) renormalised against P(down) and is what the strategies gate on.
     """
 
     p_up: np.ndarray
@@ -180,9 +159,8 @@ def estimate(
 ) -> StateStats:
     """Roll a transition matrix across the calendar and read every row of every bar's matrix.
 
-    `states` and `moves` are (symbols x bars); `moves` holds the realised fractional return of the
-    bar it sits on. `window` is a trailing bar count, or 0 for an expanding window. `alpha` is the
-    Laplace prior that keeps an unseen transition from reading as certainty.
+    `states` and `moves` are (symbols x bars); `window` is a trailing bar count (0 = expanding);
+    `alpha` is the Laplace prior.
     """
     n_states = scheme.n_states
     n_bars = states.shape[1]

@@ -42,8 +42,7 @@ def short_scheme_names(names: list[str]) -> list[str]:
 def unique_short_names(names: Iterable[str]) -> dict[str, str]:
     """name -> short label, guaranteed unique across `names`.
 
-    Sibling variants (Growth vs IDCW, Direct vs Regular) shorten to the same label; a clashing
-    label gets its option, then its plan, appended, and the full name as a last resort.
+    A clashing label gets its option, then its plan, appended, and the full name as a last resort.
     """
     names = list(dict.fromkeys(names))
     labels = {n: short_scheme_name(n) for n in names}
@@ -77,14 +76,9 @@ def detect_plan(name: str) -> Plan | None:
 
 
 def detect_option(name: str) -> FundOption:
-    """Return 'Growth'/'IDCW'/'Bonus'/'ETF'/'Other'. Never None — every fund gets a category.
+    """Return 'Growth'/'IDCW'/'Bonus'/'ETF'/'Other'; never None.
 
-    Priority (order matters):
-      1. IDCW first — names with both IDCW and Growth: IDCW is the meaningful payout flavour.
-      2. Growth — "Growth Option/Plan" anywhere, "- Growth -" mid-string, end-anchored
-         "growth", and the legacy "Cumulative" term.
-      3. Bonus (legacy bonus-units payout). 4. ETF (no Growth/IDCW, trades on exchange).
-      5. Other (debt funds with non-standard naming, FoFs, etc.).
+    Checked in that order, so a name with both IDCW and Growth is IDCW.
     """
     if not name:
         return "Other"

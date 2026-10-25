@@ -19,7 +19,7 @@ class MACDStrategy(Strategy):
         self.signal_period = signal_period
 
     def indicators(self, price):
-        import vectorbt as vbt  # noqa: PLC0415 — heavy dep; deferred to the backtest call
+        import vectorbt as vbt  # noqa: PLC0415
 
         macd = vbt.MACD.run(
             price,
@@ -31,7 +31,6 @@ class MACDStrategy(Strategy):
 
     def signals(self, price, indicators):
         hist = indicators["Histogram"]
-        # Enter when histogram crosses above zero, exit when crosses below
         entries = (hist > 0) & (hist.shift(1) <= 0)
         exits = (hist < 0) & (hist.shift(1) >= 0)
         return (entries, exits)

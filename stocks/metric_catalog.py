@@ -1,13 +1,9 @@
-"""Display catalog for the stock screener — column renames, groups, alpha categorisation.
-
-Parallels mutual_funds/metric_catalog.py.
-"""
+"""Display catalog for the stock screener: column renames, groups, alpha categorisation."""
 
 from __future__ import annotations
 
 from stocks.constants import ALPHA_POSITIVE, BETA_MARKET
 
-# db column → display name.
 STOCK_METRIC_RENAME: dict[str, str] = {
     "symbol": "Symbol",
     "stock_name": "Name",
@@ -56,7 +52,6 @@ DEFAULT_VISIBLE_COLS: tuple[str, ...] = (
     "Alpha Category",
 )
 
-# Scatter axis choices (display label → db column).
 SCATTER_AXES: dict[str, str] = {
     "Alpha %": "alpha_1y",
     "Beta": "beta_1y",
@@ -76,7 +71,6 @@ def alpha_category(alpha: float | None, beta: float | None) -> str:
     return f"{perf} ({risk})"
 
 
-# Stable colour per category for the scatter.
 CATEGORY_COLORS: dict[str, str] = {
     "Outperformer (defensive)": "#10b981",
     "Outperformer (aggressive)": "#6366f1",

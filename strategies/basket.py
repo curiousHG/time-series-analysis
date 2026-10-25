@@ -1,13 +1,8 @@
 """Basket strategy contract.
 
-A strategy sees one Date-indexed OHLCV frame per symbol (with warm-up rows), may look at the whole
-basket once in `prepare_basket`, and writes boolean entry/exit columns or a score column. It never
-sees fills: a signal or score on row T is acted on by the engine at row T+1's open.
-
-Risk attributes follow freqtrade: `stoploss` is a negative fraction, `minimal_roi` is keyed by
-bars held, trailing stops arm after `trailing_stop_positive_offset`. Basket attributes drive the
-engine's two modes: `signal` (per-symbol entries with `max_open_trades` slots) and `rank`
-(top-`top_k` by score on rebalance days, with `exit_rank` hysteresis).
+A strategy sees one Date-indexed OHLCV frame per symbol, may inspect the basket once in `prepare_basket`,
+and writes boolean entry/exit columns or a score column. A signal on row T is acted on at row T+1's open.
+Risk attributes follow freqtrade; `signal` and `rank` are the two engine modes.
 """
 
 from __future__ import annotations
@@ -172,11 +167,7 @@ class BasketStrategy:
     def custom_exit(self, trade: TradeSnapshot, ctx: MarketContext) -> str | bool | None:
         """Return an exit reason (or True) to close `trade` at the next open.
 
-        Called once per open trade at each bar's close, after that bar's stop and ROI ladder has
-        been evaluated, and the resulting order fills at the next bar's open. It therefore beats
-        the *next* bar's stop, the same way an exit signal does. The engine skips the call entirely
-        unless a subclass overrides it, and does not gate it behind `use_exit_signal`, so a
-        bars-held exit still fires with the signal exit switched off.
+        Called for each open trade at every bar's close, independent of `use_exit_signal`.
         """
         return None
 

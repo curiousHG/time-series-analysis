@@ -1,13 +1,8 @@
 """File-based strategy discovery, in the shape freqtrade uses.
 
-Built-in strategies register themselves on import. User strategies are plain `.py` files dropped
-into `user_data/strategies/`: the resolver imports each one, picks up every `BasketStrategy`
-subclass defined in it, and makes it selectable in the Backtest Lab without a restart. A file that
-fails to import is recorded as a load error rather than breaking discovery for the rest.
-
-The directory is re-scanned whenever a file's size or modification time changes, so editing a
-strategy and re-running is enough to pick up the edit. A user strategy whose name collides with a
-built-in wins, as in freqtrade, and the shadowing is recorded as a warning.
+Built-in strategies register on import; user strategies are `.py` files in `user_data/strategies/`, rescanned when
+a file's size or mtime changes. A user strategy that shadows a built-in wins and records a warning; a file that
+fails to import is recorded as a load error.
 """
 
 from __future__ import annotations

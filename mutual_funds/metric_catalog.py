@@ -1,16 +1,9 @@
-"""Single source of truth for mutual-fund metric column metadata.
-
-Keeps renames, groupings, and formatting rules from drifting across views that surface
-these metrics (primarily the MF Screener).
-"""
+"""Single source of truth for mutual-fund metric column metadata."""
 
 from __future__ import annotations
 
-# Always-shown identifying columns (display names). AMC/Plan/Option are excluded — they're
-# driven by the screener's sidebar/inline filters, so columns would waste horizontal space.
 IDENTITY_COLS: tuple[str, ...] = ("Scheme", "Category", "Sub-category")
 
-# DB column name → display column name; downstream code only deals with display names.
 METRIC_RENAME: dict[str, str] = {
     "scheme_name": "Scheme",
     "fund_house": "AMC",
@@ -61,7 +54,6 @@ METRIC_RENAME: dict[str, str] = {
     "r2_1y": "R² (1Y)",
     "tracking_error_1y": "Tracking Error %",
     "inception_date": "Inception",
-    # Rolling annualised-CAGR distribution (1/3/5Y windows), stored as decimal fractions.
     "rolling_1y_min": "Roll 1Y Min %",
     "rolling_1y_median": "Roll 1Y Median %",
     "rolling_1y_mean": "Roll 1Y Mean %",
@@ -76,7 +68,6 @@ METRIC_RENAME: dict[str, str] = {
     "rolling_5y_max": "Roll 5Y Max %",
 }
 
-# Logical groupings (display names). List order = column order in the table.
 METRIC_GROUPS: dict[str, tuple[str, ...]] = {
     "Fund metadata": ("AUM (₹ Cr)", "TER %", "Benchmark", "Inception"),
     "Returns": (
@@ -122,7 +113,6 @@ METRIC_GROUPS: dict[str, tuple[str, ...]] = {
     "Tracking status": ("NAV", "Holdings", "Metadata"),
 }
 
-# Columns whose stored values are decimal fractions and need x100 for display.
 METRIC_PCT_COLS: tuple[str, ...] = (
     "1Y CAGR %",
     "3Y CAGR %",
@@ -167,7 +157,6 @@ METRIC_PCT_COLS: tuple[str, ...] = (
     "% Top 10",
 )
 
-# Columns that should use AgGrid's numeric filter.
 METRIC_NUMERIC_COLS: frozenset[str] = frozenset(
     {
         *METRIC_PCT_COLS,
@@ -186,18 +175,14 @@ METRIC_NUMERIC_COLS: frozenset[str] = frozenset(
     }
 )
 
-# Columns that should use AgGrid's text filter.
 METRIC_TEXT_COLS: frozenset[str] = frozenset(
     {"Scheme", "AMC", "Category", "Sub-category", "Benchmark", "Plan", "Option", "NAV", "Holdings", "Metadata"}
 )
 
-# Left-to-right column order for the screener table: identity first, then by group.
 DISPLAY_COL_ORDER: tuple[str, ...] = IDENTITY_COLS + tuple(c for cols in METRIC_GROUPS.values() for c in cols)
 
-# Flat ordered list of every non-identity metric column — feeds the sidebar multiselect.
 ALL_METRIC_COLS: tuple[str, ...] = tuple(c for cols in METRIC_GROUPS.values() for c in cols)
 
-# Lean default metric set shown on first load; user adds more from the sidebar multiselect.
 DEFAULT_VISIBLE_METRICS: tuple[str, ...] = (
     "AUM (₹ Cr)",
     "TER %",
@@ -207,9 +192,6 @@ DEFAULT_VISIBLE_METRICS: tuple[str, ...] = (
     "Max DD 1Y %",
 )
 
-# --- Risk-vs-Return chart axis catalog --------------------------------------------------
-# X-axis risk measures. Each entry is (db_column, display label, take_abs?); take_abs flips
-# sign so a negative-stored stat (Max DD, CVaR) reads as a positive magnitude.
 RISK_AXIS_OPTIONS: dict[str, tuple[str, str, bool]] = {
     "vol_1y": ("vol_1y", "Annualised Realised Volatility", False),
     "downside_vol_1y": ("downside_vol_1y", "Downside Deviation", False),
@@ -217,27 +199,19 @@ RISK_AXIS_OPTIONS: dict[str, tuple[str, str, bool]] = {
     "max_dd_1y": ("max_dd_1y", "Max Drawdown", True),
 }
 
-# Y-axis return measures; some are derived (see services.screener_service.resolve_return_axis).
-# alpha_1y is the CAPM intercept vs each fund's category benchmark (services.benchmarks.
-# SUBCATEGORY_BENCHMARK), not a single index; only ir_numerator_1y is still vs Nifty 50.
 RETURN_AXIS_OPTIONS: dict[str, str] = {
     "excess_return_1y": "Annualised Geometric Excess Return (vs RF)",
     "alpha_1y": "Jensen's Alpha (vs category benchmark)",
     "ir_numerator_1y": "Information Ratio numerator (active return vs Nifty 50)",
 }
 
-# Benchmark-relative measures; the screener shows a caveat caption when any is picked. All but
-# ir_numerator_1y use each fund's category benchmark; ir_numerator_1y still uses Nifty 50.
 BENCHMARK_DEPENDENT: frozenset[str] = frozenset(
     {"alpha_1y", "beta_1y", "tracking_error_1y", "r2_1y", "ir_numerator_1y"}
 )
 
-# Risk-free rate for the "Annualised Geometric Excess Return" axis. Mirrors
-# services.mf_metrics.RISK_FREE_ANNUAL so it lines up with Sharpe-rf assumptions.
 RISK_FREE_RATE_FOR_EXCESS_RETURN: float = 0.06
 
 
-# DB column names for metric placeholders when the cache is empty; mirror data.constants.METRIC_FIELDS.
 EMPTY_METRIC_DB_COLS: tuple[str, ...] = (
     "cagr_1y",
     "cagr_3y",

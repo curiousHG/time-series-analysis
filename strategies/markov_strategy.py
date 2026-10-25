@@ -1,25 +1,8 @@
 """Strategies that trade the bucketed-return transition matrix.
 
-Both read the same forecast. Each symbol's latest daily move is placed in a bucket; the row of the
-rolling transition matrix for that bucket gives P(next move lands in a positive bucket) and the
-conditional expected next return. `TransitionMatrixStrategy` buys the names whose row clears a
-confidence bar and holds them for a few bars; `TransitionEdgeRankStrategy` ranks the whole basket by
-that expected return and holds the top slice.
-
-Confidence is P(up given the move leaves the flat band). Renormalising against the down side rather
-than reading the raw share of positive buckets matters: with an eleven-bucket scheme the flat band
-holds about a fifth of every row, so a raw P(up) tops out near 0.48 and a 0.55 threshold could never
-be met. On the directional reading 0.5 is genuinely neutral.
-
-That confidence can be read two ways. In `absolute` mode the bar is the probability itself. In
-`lift` mode it is the probability minus the same day's base rate across the basket, which is the
-honest question: does knowing today's bucket tell you anything beyond the market's own drift?
-`min_lift_z` adds a sample-size guard, so a row with three observations cannot pass on a lucky
-proportion.
-
-The forecast is for the close-to-close move of the next bar, while the engine fills at that bar's
-open. The overnight gap between the two is not captured, which is the usual cost of trading a daily
-signal and is why these run with a short hold rather than a same-bar exit.
+`TransitionMatrixStrategy` buys names whose transition row clears a confidence bar and holds them a few bars;
+`TransitionEdgeRankStrategy` ranks the basket by expected next return and holds the top slice.
+Confidence is P(up | move leaves the flat band), read as `absolute` or as `lift` over the day's basket base rate.
 """
 
 from __future__ import annotations
@@ -152,12 +135,7 @@ class TransitionMatrixBase(BasketStrategy):
         return tuple(out)
 
     def _build_diagnostics(self, states, moves, scheme, confidence, samples, closes, opens) -> TransitionDiagnostics:
-        """Grade the forecast twice: against what it predicts, and against what a trade can keep.
-
-        The matrix forecasts the next bar's close-to-close move, but the engine buys at that bar's
-        open. Whatever the market has already repriced overnight is gone before the fill, so the
-        two numbers can differ a lot, and only the second one has to clear the cost of trading.
-        """
+        """Grade the forecast against what it predicts and against what a trade can keep (next-open fill)."""
         usable = np.isfinite(confidence) & (samples >= int(self.min_samples))
         called = usable & (confidence >= self._entry_bar())
         predicted = _shift_back(moves)
@@ -239,13 +217,7 @@ class TransitionMatrixStrategy(TransitionMatrixBase):
         return df
 
     def populate_exit(self, df: pd.DataFrame, symbol: str, ctx: MarketContext) -> pd.DataFrame:
-        """Sell once confidence has fallen a margin below the bar that bought it.
-
-        The threshold is a band under `entry_confidence` rather than a level of its own, so it
-        stays on whatever scale the confidence mode is using. An absolute threshold here would be
-        met by every bar in `lift` mode, where confidence sits around zero, and the engine drops an
-        entry whose bar also carries an exit — which is a book that never opens a position.
-        """
+        """Sell once confidence falls a margin below the entry bar."""
         weak = df[CONFIDENCE] <= float(self.entry_confidence) - float(self.exit_margin)
         df[EXIT] = (weak | df[CONFIDENCE].isna()).fillna(False).astype(bool)
         return df
@@ -255,12 +227,7 @@ class TransitionMatrixStrategy(TransitionMatrixBase):
         return df
 
     def custom_exit(self, trade: TradeSnapshot, ctx: MarketContext) -> str | None:
-        """Close a position that has run out its forecast horizon.
-
-        The engine checks this outside `use_exit_signal`, so turning the exit signal off shortens
-        the book to this hold rather than letting positions run indefinitely. The check is a bar
-        early because the exit fills at the next open.
-        """
+        """Close a position that has run out its forecast horizon."""
         return "hold_expired" if trade.bars_held + 1 >= int(self.max_hold) else None
 
 

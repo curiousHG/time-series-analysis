@@ -1,8 +1,6 @@
-"""Future-aware training labels, prefixed `&-`.
+"""Future-aware training labels, prefixed `&-`, looking `horizon` bars ahead.
 
-Labels look `horizon` bars ahead and exist only to train models: the walk-forward purges them from
-the training window and entry/exit code reads `&-pred` alone. The last `horizon` rows of every
-label are NaN because their future is unknown.
+Used only to train models; entry/exit code reads `&-pred` alone. The last `horizon` rows of every label are NaN.
 """
 
 from __future__ import annotations

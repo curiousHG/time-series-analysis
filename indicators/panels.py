@@ -128,9 +128,6 @@ def ultimate_osc(df: pd.DataFrame) -> dict[str, pd.Series]:
     return {"UO": pd.Series(talib.ULTOSC(df["High"], df["Low"], df["Close"]), index=df.index)}
 
 
-# ---- Hilbert Transform (panel) ----
-
-
 @register("HT DC Phase", "Hilbert Transform Dominant Cycle Phase", overlay=False)
 def ht_dcphase(df: pd.DataFrame) -> dict[str, pd.Series]:
     return {"DC Phase": pd.Series(talib.HT_DCPHASE(df["Close"]), index=df.index)}

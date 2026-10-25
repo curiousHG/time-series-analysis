@@ -1,20 +1,5 @@
-"""Rules ported from the freq_strategies research repo onto NSE daily equity bars.
-
-Each one is a reimplementation of a rule that repo tested, not a copy of its framework, and each
-carries the caveats that repo recorded about it. Two of those caveats shaped the defaults here:
-
-- The reversion book is destroyed by a stop. That repo measured a 15% stop taking a window from
-  +34.98% to -0.13%, because the stop fires at the low, which is where the reversion is. The two
-  reversion strategies below ship with the stop parked far out of the way and exit on time instead.
-- Cross-sectional momentum needs a wide exit band. Rank oscillation across the top-K boundary was
-  the single largest source of churn there; every band at least twice the position count beat a
-  narrow one in every window they tested, while a band only slightly wider than top-K was worse
-  than none.
-
-Constants calibrated on 1h crypto bars are re-expressed for daily equities and their ranges opened
-up, because a threshold like "30% below the 50-day average" is common in alt-coins and close to
-absent in NSE large caps.
-"""
+"""Rules ported from the freq_strategies research repo onto NSE daily equity bars, with ranges re-opened for
+daily equities."""
 
 from __future__ import annotations
 
@@ -44,11 +29,7 @@ REGIME_COLUMN = "regime_ok"
 
 
 def _regime_ok(ctx: MarketContext, index: pd.Index, window: int) -> pd.Series:
-    """True on bars where the benchmark closes above its own moving average.
-
-    Missing benchmark data fails open, so a run without an index still trades rather than sitting
-    in cash for reasons the user cannot see.
-    """
+    """True on bars where the benchmark closes above its own moving average; missing benchmark data fails open."""
     if ctx is None or ctx.benchmark is None or "Close" not in getattr(ctx.benchmark, "columns", []):
         return pd.Series(True, index=index)
     close = ctx.benchmark["Close"].reindex(index).ffill()
@@ -58,15 +39,9 @@ def _regime_ok(ctx: MarketContext, index: pd.Index, window: int) -> pd.Series:
 
 @register_basket_strategy
 class OversoldReversionStrategy(BasketStrategy):
-    """Buy a deeply dislocated name as its RSI cuts below the oversold line, then exit on time.
+    """Buy a deeply dislocated name as its RSI cuts below the oversold line while it sits far under its 50-day average.
 
-    The entry needs both legs: a genuine RSI cross down through the threshold, and a price a long
-    way under its own 50-day average. The source repo found the dislocation depth, not the RSI
-    depth, does the work, and that entering on the RSI crossing back *up* was worse in two of three
-    windows. The exit is a bar count and nothing else.
-
-    Their -30% dislocation was calibrated on alt-coins and is close to unreachable for NSE large
-    caps, so the default here is -10% with the range left open for recalibration.
+    Exit is a bar count only.
     """
 
     name = "Oversold Reversion"
@@ -117,8 +92,7 @@ class OversoldReversionStrategy(BasketStrategy):
 class CapitulationBounceStrategy(BasketStrategy):
     """Buy the first green bar after a run of red ones that gave up enough ground.
 
-    The simplest capitulation entry in the source repo and a useful null hypothesis to run the
-    other reversion rule against. The exit is the ROI ladder and the time cap, not a signal.
+    Exit is the ROI ladder and the time cap.
     """
 
     name = "Capitulation Bounce"
@@ -167,17 +141,9 @@ class CapitulationBounceStrategy(BasketStrategy):
 
 @register_basket_strategy
 class MomentumRegimeStrategy(BasketStrategy):
-    """Hold the strongest trailing performers, but only while the index and each name are trending.
+    """Hold the strongest trailing performers while the index and each name are above their moving averages.
 
-    Four mechanisms the source repo validated across regimes, all of them daily-computable:
-    the cross-sectional momentum rank; a wide exit band so a name that slips a few places is not
-    sold and rebought; a hard per-name filter that drops anything below its own moving average;
-    and an index regime gate that moves the book to cash when the benchmark is below its own.
-
-    Their evidence on the gate is one-sided. Loosening it degraded every window monotonically, and
-    the gate and the exit band are complements: with both on a window returned +38.8%, with either
-    one off it lost money. The exit band is `exit_rank`, which the engine reads directly, and it
-    should stay well above `top_k` rather than a place or two above it.
+    The book moves to cash when the benchmark is below its own average; `exit_rank` sets the exit band.
     """
 
     name = "Momentum Regime Basket"
@@ -223,15 +189,7 @@ class MomentumRegimeStrategy(BasketStrategy):
 
 @register_basket_strategy
 class DonchianBreakoutStrategy(BasketStrategy):
-    """Buy a new N-bar high while the trend is strong enough to be worth following.
-
-    The cleanest single-indicator trend rule in the source repo's collection. The ADX floor is
-    their "not ranging" gate: a breakout inside a range is the setup that whipsaws.
-
-    The channel is shifted a bar before it is compared. The source compares the close against a
-    rolling maximum that includes the current bar, which can only be met by a bar closing exactly on
-    its own high, so on daily equity bars it almost never fires.
-    """
+    """Buy a new N-bar high (channel shifted one bar) while ADX shows the trend is strong enough."""
 
     name = "Donchian Breakout"
     mode = "signal"
@@ -272,12 +230,9 @@ class DonchianBreakoutStrategy(BasketStrategy):
 
 @register_basket_strategy
 class DipInUptrendStrategy(BasketStrategy):
-    """Buy a name bouncing off its lower Bollinger band, but only inside a standing uptrend.
+    """Buy the close crossing back up through the lower Bollinger band inside an uptrend.
 
-    The source repo's reversion gate, which is worth more than the trigger it guards: price above
-    its long moving average, the trend not strong enough to be a genuine downtrend, and rate of
-    change negative but already turning. The trigger is then the close crossing back up through the
-    lower band, rather than merely sitting under it.
+    Trend gate: price above its long average, trend not strongly down, rate of change negative but turning.
     """
 
     name = "Dip In Uptrend"
@@ -335,13 +290,7 @@ class DipInUptrendStrategy(BasketStrategy):
 
 @register_basket_strategy
 class PullbackTrendStrategy(BasketStrategy):
-    """Buy the pull-back inside a confirmed uptrend, sell when the trend breaks.
-
-    The twist that makes this worth porting is the second leg of the entry: the fast average must
-    be above the slow one *and* the close must be below the fast one. That buys a pause in an
-    uptrend rather than chasing the crossover bar, which is where a naive moving-average cross
-    spends most of its cost.
-    """
+    """Buy a pause in a confirmed uptrend (fast average above slow, close below fast); sell when the trend breaks."""
 
     name = "Pullback Trend"
     mode = "signal"

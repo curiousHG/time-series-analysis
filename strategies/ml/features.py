@@ -1,9 +1,6 @@
-"""Symbol-agnostic feature registry built on the TA-Lib indicator registry.
+"""Symbol-agnostic, causal feature registry built on the TA-Lib indicator registry.
 
-Every feature is a ratio to Close, a bounded oscillator, a log return or a rolling z-score, so a
-frame with prices x10 and volume x7 yields identical features. Cumulative indicators (OBV, A/D)
-enter only as volume-scaled differences; VWAP is excluded because its anchor is the frame start.
-Features are causal: no back-fill, and truncating future bars never changes earlier rows.
+Every feature is scale-free: a ratio to Close, a bounded oscillator, a log return or a rolling z-score.
 """
 
 from __future__ import annotations
@@ -80,10 +77,7 @@ def rolling_zscore(s: pd.Series, window: int) -> pd.Series:
 def build_features(df: pd.DataFrame, names: list[str] | tuple[str, ...]) -> pd.DataFrame:
     """Feature columns for one symbol, indexed like `df`.
 
-    Indicators are computed on the symbol's traded bars only. A frame reindexed onto a shared
-    basket calendar carries NaN rows wherever this symbol did not trade, and TA-Lib returns NaN
-    for every bar after the first such gap, which would silently empty the feature matrix. The
-    result is reindexed back, so non-trading rows stay NaN and the walk-forward skips them.
+    Indicators are computed on the symbol's traded bars only, then reindexed back so non-trading rows stay NaN.
     """
     specs = [FEATURE_REGISTRY[name] for name in names]
     needed = list(dict.fromkeys(ind for spec in specs for ind in spec.indicators))

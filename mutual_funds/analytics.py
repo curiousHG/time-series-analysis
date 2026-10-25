@@ -5,8 +5,7 @@ import polars as pl
 def overlap_matrix(holdings_df: pl.DataFrame, fund_slugs: list[str]) -> pd.DataFrame:
     """NxN heatmap of pairwise holdings overlap (% of weight in common).
 
-    Expects the latest-snapshot deduped view from `load_holdings`. Cells capped at 100 —
-    arbitrage funds report gross long+short >100, which would blow up the colour scale.
+    Expects the latest-snapshot deduped view from `load_holdings`; cells are capped at 100.
     """
     n = len(fund_slugs)
 
@@ -33,7 +32,6 @@ def overlap_matrix(holdings_df: pl.DataFrame, fund_slugs: list[str]) -> pd.DataF
     return pd.DataFrame(data, index=fund_slugs, columns=fund_slugs).round(2)
 
 
-# sector overlap
 def sector_exposure(sector_df: pl.DataFrame, fund_slugs: list[str]) -> pl.DataFrame:
     return (
         sector_df.filter(pl.col("schemeSlug").is_in(fund_slugs))
@@ -65,7 +63,6 @@ def missing_sectors(sector_df: pl.DataFrame, base_fund: str, compare_fund: str):
     return compare.join(base, on="sector", how="anti").sort("weight", descending=True)
 
 
-## rolling returns related
 def rolling_return_summary(rr_df: pd.DataFrame):
     return pd.DataFrame(
         {

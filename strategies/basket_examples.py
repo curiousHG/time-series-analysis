@@ -1,9 +1,5 @@
-"""Two reference basket strategies, one per engine mode.
-
-`RsiBasketStrategy` (signal mode) enters on the RSI crossing up through the oversold level and
-exits on it crossing down through the overbought level. `MomentumRankStrategy` (rank mode)
-scores each symbol by its trailing return and lets the engine hold the top-K with hysteresis.
-"""
+"""Two reference basket strategies, one per engine mode: `RsiBasketStrategy` (signal) and `MomentumRankStrategy`
+(rank)."""
 
 from __future__ import annotations
 

@@ -18,7 +18,7 @@ def _norm_to_pct(values: list[float]) -> list[float]:
     total = sum(values)
     if total <= 0:
         return values
-    if total <= 1.5:  # weights stored as fractions
+    if total <= 1.5:
         return [v / total * 100.0 for v in values]
     return [v / total * 100.0 for v in values]
 
@@ -41,8 +41,6 @@ def asset_breakdown(slug: str) -> dict[str, float]:
         ).all()
     if not rows:
         return {}
-    # Latest snapshot can still have row-level duplicates from legacy refreshes; collapse
-    # by asset_class taking max weight (duplicates hold identical values).
     by_class: dict[str, float] = {}
     for cls, wt in rows:
         key = cls or "Other"
@@ -69,8 +67,6 @@ def holdings_for_slug(slug: str) -> pl.DataFrame:
     if code is None:
         return pl.DataFrame(schema=_HOLDING_SCHEMA)
     with get_session() as session:
-        # Restrict to the latest portfolio_date — `mf_holdings` carries multiple snapshots
-        # per scheme, and would otherwise inflate counts and weights.
         latest_date_subq = (
             select(func.max(MfHolding.portfolio_date)).where(MfHolding.scheme_code == code).scalar_subquery()
         )
@@ -147,7 +143,6 @@ def quick_stats(slug: str) -> dict:
     mcap = market_cap_breakdown(holdings)
     credit = credit_breakdown(holdings)
 
-    # Convenience aggregates
     pct_equity = sum(v for k, v in asset.items() if k and "equity" in k.lower())
     pct_debt = sum(v for k, v in asset.items() if k and ("debt" in k.lower() or "bond" in k.lower()))
     pct_cash = sum(
@@ -161,12 +156,11 @@ def quick_stats(slug: str) -> dict:
         v for k, v in mcap.items() if k not in {"Largecap", "Large Cap", "Midcap", "Mid Cap", "Smallcap", "Small Cap"}
     )
 
-    # Sovereign / corporate / "B-rated" / "Poor" rough buckets from credit ratings
     def _sum_matching(d: dict, *keywords: str) -> float:
         return sum(v for k, v in d.items() if k and any(kw.lower() in k.lower() for kw in keywords))
 
     pct_sovereign = _sum_matching(credit, "sovereign", "govt", "g-sec", "tbill", "soverign")
-    pct_corporate = _sum_matching(credit, "aaa", "aa+", "aa", "aa-", "a+", "a", "a-")  # corporate-ish (high-grade)
+    pct_corporate = _sum_matching(credit, "aaa", "aa+", "aa", "aa-", "a+", "a", "a-")
     pct_b_rated = _sum_matching(credit, "bbb", "bb", "b-", "b+", "b ")
     pct_poor = _sum_matching(credit, "below", "unrated", "default", "d ", "ccc", "c-rated")
 

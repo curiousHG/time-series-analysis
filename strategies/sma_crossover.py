@@ -17,7 +17,7 @@ class SMACrossoverStrategy(Strategy):
         self.slow_period = slow_period
 
     def indicators(self, price):
-        import vectorbt as vbt  # noqa: PLC0415 — heavy dep; deferred to the backtest call
+        import vectorbt as vbt  # noqa: PLC0415
 
         fast_ma = vbt.MA.run(price, window=self.fast_period)
         slow_ma = vbt.MA.run(price, window=self.slow_period)
@@ -27,9 +27,7 @@ class SMACrossoverStrategy(Strategy):
         fast = indicators["Fast_SMA"]
         slow = indicators["Slow_SMA"]
 
-        # Entry: fast SMA crosses above slow SMA
         entries = (fast > slow) & (fast.shift(1) <= slow.shift(1))
-        # Exit: fast SMA crosses below slow SMA
         exits = (fast < slow) & (fast.shift(1) >= slow.shift(1))
 
         return (entries.fillna(False), exits.fillna(False))

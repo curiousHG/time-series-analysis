@@ -1,9 +1,7 @@
 """Base class for machine-learned basket strategies.
 
-`populate_indicators` builds the feature set and the training label per symbol; `prepare_basket`
-runs the purged walk-forward once over the basket and writes `&-pred` and `do_predict` back onto
-every frame. Subclasses turn the prediction into entries, exits or a rank score and must read
-`&-pred` only, never the label column.
+`prepare_basket` runs the purged walk-forward once and writes `&-pred` and `do_predict` onto every frame;
+subclasses read `&-pred` only, never the label column.
 """
 
 from __future__ import annotations

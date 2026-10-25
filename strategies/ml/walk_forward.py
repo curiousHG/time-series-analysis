@@ -1,10 +1,7 @@
 """Purged walk-forward training and prediction over a basket of frames.
 
-Windows are laid out on the union calendar of feature-complete rows: each test block of `test_days` bars is
-predicted by a model trained on the `train_days` bars ending `horizon + 1` bars before it, so no
-training label overlaps the test period. Scaler and PCA are fit on the training window only.
-Predictions are stored on the bar they were made on; the engine applies the one-bar shift.
-Importance is native when the model exposes it (and no PCA is in the way), otherwise permutation.
+Each `test_days` block is predicted by a model trained on the `train_days` bars ending `horizon + 1` bars earlier;
+scaler and PCA are fit on the training window only. Predictions are stored on the bar they were made on.
 """
 
 from __future__ import annotations
@@ -78,11 +75,7 @@ def trading_calendar(frames: dict[str, pd.DataFrame]) -> pd.DatetimeIndex:
 
 
 def feature_calendar(frames: dict[str, pd.DataFrame], feature_cols: list[str]) -> pd.DatetimeIndex:
-    """Union of the dates on which at least one symbol has a complete feature row.
-
-    Laying the windows on this calendar (rather than the raw one) means the first window trains on
-    `train_days` usable bars and the first prediction lands at `startup_bars + train_days + horizon`.
-    """
+    """Union of the dates on which at least one symbol has a complete feature row."""
     return trading_calendar({sym: df[_valid_rows(df, feature_cols, None)] for sym, df in frames.items()})
 
 

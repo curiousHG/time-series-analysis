@@ -1,7 +1,6 @@
 """Model zoo behind one `Predictor` interface.
 
-Classifiers return P(y == 1); regressors return the point estimate. Every model is seeded and
-LightGBM runs deterministically on a fixed thread count so a rerun reproduces a backtest.
+Classifiers return P(y == 1); regressors return the point estimate. Models are seeded for reproducible reruns.
 """
 
 from __future__ import annotations
