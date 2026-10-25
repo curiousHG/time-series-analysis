@@ -12,7 +12,7 @@ from services.constants import BACKTEST_RF_DAILY
 
 @dataclass
 class BacktestResult:
-    portfolio: object  # vbt.Portfolio
+    portfolio: object
     indicators: dict
     entries: pd.Series
     exits: pd.Series

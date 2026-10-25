@@ -1,15 +1,6 @@
-"""Split / unit-subdivision adjustment for price and NAV series — pure, no I/O.
+"""Split / unit-subdivision adjustment for price and NAV series; pure, no I/O.
 
-Stored NAV and OHLCV are kept as the source publishes them. AMFI NAVs are never adjusted for
-ETF unit splits (a 1:10 sub-division prints as a −90% day), and yfinance's adjusted history
-still carries unadjusted splits and bonus issues from before ~2010 and for events Yahoo never
-recorded (MOTILALOFS / GPIL 2024-01-01). Left alone those days become −90% "returns" and
-−99% drawdowns in every metric, so metric computation runs its series through
-`adjust_splits` first.
-
-A split is a single-day ratio close to a conventional factor (or its inverse) that *persists*:
-the level after the day stays at the new scale. A one-day blip that reverts is not a split
-and is left to the glitch filters.
+A split is a single-day ratio near a conventional factor (or its inverse) whose new scale persists.
 """
 
 from __future__ import annotations
@@ -20,14 +11,7 @@ import numpy as np
 import pandas as pd
 
 SPLIT_FACTORS = (2.0, 2.5, 3.0, 4.0, 5.0, 10.0, 20.0, 50.0, 100.0)
-# Tolerance on |ratio/factor - 1|. Prices move on the split day too, so exact matches are rare,
-# but 8% keeps a genuine ~−55% crash (ratio 0.44, Yes Bank 2020) outside both the 2× and 2.5× bands. A
-# demerger that lands on a clean factor (Vedanta 2026, ratio 0.35 ≈ 1/3) IS adjusted: for a
-# price-only series that is closer to what a holder experienced than a −65% return.
 SPLIT_TOL = 0.08
-# Days after the break the new scale must hold for. Guards against blips and thin data. The
-# persistence check compares medians on either side, so it is about scale, not precision: the
-# stock can rally or slide 20% in the following week and still count as having re-based.
 PERSIST_DAYS = 5
 PERSIST_TOL = 0.25
 
@@ -65,7 +49,7 @@ def detect_splits(series: pd.Series) -> list[tuple[pd.Timestamp, float]]:
         after = np.median(after_window)
         persisted = _nearest_factor(after / before, tol=PERSIST_TOL)
         if persisted is None or (persisted > 1) != (factor > 1):
-            continue  # the level did not stay at the new scale — a blip, not a split
+            continue
         out.append((idx[i], factor))
     return out
 

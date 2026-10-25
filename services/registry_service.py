@@ -42,9 +42,6 @@ from services.constants import DORMANT_AFTER_DAYS, BackfillSource, SourceStatus
 logger = logging.getLogger(__name__)
 
 
-# ---- Read ----
-
-
 def list_tracked() -> pl.DataFrame:
     """All rows from mf_registry as a polars DataFrame, with scheme_name JOINed in."""
     with get_session() as session:
@@ -100,9 +97,6 @@ def list_active() -> pl.DataFrame:
     return df if df.is_empty() else df.filter(~pl.col("dormant"))
 
 
-# ---- Status helpers ----
-
-
 def _resolve_scheme_code(scheme_name: str) -> int | None:
     """Look up scheme_code in amfi_schemes by exact name match."""
     with get_session() as session:
@@ -147,9 +141,6 @@ def _upsert_registry(scheme_name: str, scheme_code: int | None = None) -> int:
     return code
 
 
-# ---- Fetchers wired to status updates ----
-
-
 def _fetch_nav(scheme_name: str) -> SourceStatus:
     try:
         df = fetch_single_nav(scheme_name)
@@ -188,9 +179,6 @@ def _fetch_metadata(scheme_name: str) -> SourceStatus:
     except Exception as e:
         logger.warning("Metadata fetch failed for %s: %s", scheme_name, e)
         return "unavailable"
-
-
-# ---- Public API ----
 
 
 def mark_nav_unavailable(scheme_name: str) -> None:
@@ -236,12 +224,7 @@ def backfill_missing(
     max_workers: int = 8,
     progress_cb: Callable[[int, int, str, str], None] | None = None,
 ) -> dict[str, list[str]]:
-    """Fetch missing data for tracked funds with rate limiting.
-
-    Concurrency tuned from empirical probes: MFAPI peaks at 16 but capped at 8 (mixed with
-    metadata); AdvisorKhoj overview queues at 8+ workers. 8 workers + 50ms submit delay is the
-    safe blend for the screener "Fetch top N" button.
-    """
+    """Fetch missing nav/metadata/holdings for tracked funds, rate limited; returns {fetched, failed, skipped}."""
     if scheme_names is not None:
         for name in scheme_names:
             _upsert_registry(name)
@@ -342,9 +325,6 @@ def remove_fund(scheme_name: str) -> None:
     logger.info("Removed fund: %s (code %d)", scheme_name, code)
 
 
-# ---- Compatibility shim while UI is being migrated ----
-
-
 def load_registry() -> pl.DataFrame:
     """Old-shape (schemeName, schemeSlug, shortName) view — retained until UI migrates."""
     df = list_tracked()
@@ -380,16 +360,12 @@ def list_unavailable_funds() -> pl.DataFrame:
     )
 
 
-# ---- Status backfill from data presence ----
-
-
 def reconcile_statuses() -> int:
     """Set nav/holdings/metadata statuses based on actual data presence."""
     with get_session() as session:
         regs = session.exec(select(MfRegistry)).all()
         nav_codes = set(session.exec(select(MfNav.scheme_code).distinct()).all())
         meta_codes = set(session.exec(select(MfMetadata.scheme_code)).all())
-        # Phase 3: holdings are keyed on scheme_code now (no slug column).
         codes_with_holdings = set(session.exec(select(MfHolding.scheme_code).distinct()).all())
 
         updated = 0
@@ -407,7 +383,6 @@ def reconcile_statuses() -> int:
     return updated
 
 
-# Re-exports so callers can `from services.registry_service import load_holdings`
 __all__ = [
     "backfill_missing",
     "list_tracked",

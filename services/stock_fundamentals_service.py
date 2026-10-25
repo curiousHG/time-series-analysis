@@ -15,9 +15,8 @@ from data.repositories.stock import ensure_stock_data
 from data.repositories.stock_fundamentals import load_quarterly
 from stocks.constants import to_yf_symbol
 
-# Metric columns ranked by fundamentals_percentiles; True = higher is better.
 PERCENTILE_COLS: dict[str, bool] = {
-    "stock_pe": False,  # cheaper is "better" for a value lens
+    "stock_pe": False,
     "roe": True,
     "roce": True,
     "yoy_profit_growth": True,

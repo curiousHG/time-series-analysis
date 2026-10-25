@@ -53,7 +53,6 @@ def build_portfolio_value_series(mapped: pl.DataFrame, nav_df: pl.DataFrame) -> 
 
     all_units = pl.concat(unit_frames)
 
-    # Forward-fill NAV for each scheme so weekends/holidays use the last known NAV
     nav_filled_frames = []
     for scheme in daily_units.select("schemeName").unique().to_series().to_list():
         scheme_nav = portfolio_nav.filter(pl.col("schemeName") == scheme)
@@ -112,7 +111,6 @@ def build_portfolio_returns_series(
     )
     trades["trade_date"] = pd.to_datetime(trades["trade_date"])
 
-    # Each trade_date → first NAV date >= trade_date (rolls Sat/Sun trades to next NAV day).
     pos = nav_dates.searchsorted(trades["trade_date"].values, side="left")
     in_range = pos < len(nav_dates)
     trades = trades.loc[in_range].copy()
@@ -120,7 +118,6 @@ def build_portfolio_returns_series(
 
     delta_units = trades.groupby(["aligned_date", "schemeName"])["delta_units"].sum().unstack("schemeName").fillna(0.0)
     delta_units = delta_units.reindex(nav_dates).fillna(0.0)
-    # Restrict NAV columns to the schemes the user actually trades.
     schemes = [c for c in delta_units.columns if c in nav_pivot.columns]
     if not schemes:
         return pd.Series(dtype="float64")
@@ -130,7 +127,6 @@ def build_portfolio_returns_series(
 
     flows = trades.groupby("aligned_date")["flow"].sum().reindex(nav_dates).fillna(0.0)
 
-    # Returns only meaningful once V_{t-1} > 0.
     valid = pv > 0
     pv_v = pv.where(valid)
     v_prev = pv_v.shift(1)

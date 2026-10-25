@@ -1,8 +1,6 @@
-"""Insights service — alert rules, market pulse, and movers for the Overview page.
+"""Alert rules, market pulse and movers for the Overview page.
 
-Each alert rule is a pure function over preloaded frames (unit-testable with synthetic
-data); `build_alerts()` orchestrates the loading and runs every rule. Thresholds live as
-module constants so they are tweakable in one place.
+Each alert rule is a pure function over preloaded frames; `build_alerts()` loads them and runs every rule.
 """
 
 from __future__ import annotations
@@ -33,18 +31,16 @@ if TYPE_CHECKING:
 
 Severity = Literal["info", "warn", "critical"]
 
-# ---- Alert thresholds ------------------------------------------------------------------
-UNDERPERF_6M_PP = 3.0  # warn when a fund trails its benchmark by > 3 pp over 6M
-UNDERPERF_1Y_PP = 5.0  # critical when trailing by > 5 pp over 1Y
+UNDERPERF_6M_PP = 3.0
+UNDERPERF_1Y_PP = 5.0
 PORTFOLIO_DD_WARN = 0.10
 PORTFOLIO_DD_CRIT = 0.20
-STOCK_CONC_WARN_PCT = 8.0  # look-through single-instrument share of portfolio
+STOCK_CONC_WARN_PCT = 8.0
 STOCK_CONC_CRIT_PCT = 12.0
 AMC_CONC_WARN_PCT = 40.0
 FUND_CONC_WARN_PCT = 30.0
 
-# Instruments that represent cash parking, not a concentration risk.
-_CASH_LIKE = ("treps", "repo", "net current assets", "cash", "t-bill", "treasury bill")
+_CASH_PARKING_INSTRUMENTS = ("treps", "repo", "net current assets", "cash", "t-bill", "treasury bill")
 
 _SEVERITY_ORDER = {"critical": 0, "warn": 1, "info": 2}
 
@@ -52,7 +48,7 @@ _SEVERITY_ORDER = {"critical": 0, "warn": 1, "info": 2}
 @dataclass(frozen=True)
 class Alert:
     severity: Severity
-    kind: str  # "underperformance" | "alpha_decay" | "drawdown" | "concentration" | "staleness"
+    kind: str
     message: str
     scheme_name: str | None = None
     value: float | None = None
@@ -61,9 +57,6 @@ class Alert:
 
 def sort_alerts(alerts: list[Alert]) -> list[Alert]:
     return sorted(alerts, key=lambda a: (_SEVERITY_ORDER[a.severity], a.kind))
-
-
-# ---- Pure rules ------------------------------------------------------------------------
 
 
 def underperformance_alerts(
@@ -125,9 +118,7 @@ def alpha_decay_alerts(
     subcat_by_scheme: dict[str, str | None],
     held: list[str],
 ) -> list[Alert]:
-    """Held funds with negative 1Y alpha despite a top-half long-run record in their
-    sub-category — the long-run consistency made them a pick; the recent alpha says the
-    edge may be decaying."""
+    """Held funds with negative 1Y alpha despite a top-half long-run record in their sub-category."""
     alerts: list[Alert] = []
     if metrics_df.is_empty() or "rolling_3y_median" not in metrics_df.columns:
         return alerts
@@ -182,7 +173,9 @@ def concentration_alerts(
     alerts: list[Alert] = []
 
     if not exposure_df.is_empty():
-        eq = exposure_df.filter(~pl.col("instrument_name").str.to_lowercase().str.contains_any(list(_CASH_LIKE)))
+        eq = exposure_df.filter(
+            ~pl.col("instrument_name").str.to_lowercase().str.contains_any(list(_CASH_PARKING_INSTRUMENTS))
+        )
         for row in eq.filter(pl.col("exposure_pct") > STOCK_CONC_WARN_PCT).iter_rows(named=True):
             sev: Severity = "critical" if row["exposure_pct"] > STOCK_CONC_CRIT_PCT else "warn"
             alerts.append(
@@ -245,8 +238,6 @@ def staleness_alerts(nav_report: FreshnessReport, holdings_report: FreshnessRepo
     return alerts
 
 
-# ---- Benchmark window returns ----------------------------------------------------------
-
 _WINDOW_TRADING_DAYS = {"6m": 126, "1y": 252}
 
 
@@ -275,9 +266,6 @@ def benchmark_window_returns(symbols: set[str]) -> dict[str, dict[str, float | N
         close = df.select(["Date", "Close"]).to_pandas().set_index("Date").sort_index()["Close"]
         out[symbol] = {w: trailing_return(close, n) for w, n in _WINDOW_TRADING_DAYS.items()}
     return out
-
-
-# ---- Orchestrator ----------------------------------------------------------------------
 
 
 @timeit("insights.build_alerts")
@@ -309,7 +297,7 @@ def build_alerts() -> list[Alert]:
         if amc:
             amc_weights[amc] = amc_weights.get(amc, 0.0) + w
 
-    metrics_df = load_metrics(None)  # full frame — alpha-decay ranks need the sub-category universe
+    metrics_df = load_metrics(None)
     symbols = {
         SUBCATEGORY_BENCHMARK[sc]
         for sc in (subcat_by_scheme.get(n) for n in held)
@@ -333,8 +321,6 @@ def build_alerts() -> list[Alert]:
     return sort_alerts(alerts)
 
 
-# ---- Market pulse + movers -------------------------------------------------------------
-
 MARKET_PULSE_SYMBOLS: dict[str, str] = {
     "^NSEI": "Nifty 50",
     "^BSESN": "Sensex",
@@ -342,7 +328,6 @@ MARKET_PULSE_SYMBOLS: dict[str, str] = {
     "Nifty Next 50": "Nifty Next 50",
 }
 
-# Broad + sectoral indices for the Overview sector board (all yfinance-fetchable). (symbol, label, group)
 SECTOR_INDEX_SYMBOLS: list[tuple[str, str, str]] = [
     ("^NSEI", "Nifty 50", "Broad"),
     ("Nifty Next 50", "Nifty Next 50", "Broad"),
@@ -360,7 +345,6 @@ SECTOR_INDEX_SYMBOLS: list[tuple[str, str, str]] = [
     ("Nifty PSU Bank", "PSU Bank", "Sector"),
 ]
 
-# International indices (yfinance) for the Overview Indexes tab. (symbol, label, region)
 INTERNATIONAL_INDEX_SYMBOLS: list[tuple[str, str, str]] = [
     ("^GSPC", "S&P 500", "US"),
     ("^NDX", "Nasdaq 100", "US"),
@@ -377,14 +361,13 @@ _SECTOR_WINDOWS = {"1D": 1, "1W": 5, "1M": 21, "3M": 63}
 
 @timeit("insights.index_performance")
 def index_performance() -> pl.DataFrame:
-    """Trailing 1D/1W/1M/3M returns for broad + sectoral indices (DB-first via ensure_index_data).
-    Powers the Overview 'what's leading/lagging by sector' board."""
+    """Trailing 1D/1W/1M/3M returns for broad + sectoral indices (DB-first via ensure_index_data)."""
     start = datetime.now() - timedelta(days=160)
     end = datetime.now()
     rows: list[dict] = []
     for symbol, label, group in SECTOR_INDEX_SYMBOLS:
         try:
-            df = ensure_stock_data(symbol, start, end)  # delegates indices → index_ohlcv
+            df = ensure_stock_data(symbol, start, end)
         except Exception:
             continue
         if df.is_empty():
@@ -434,11 +417,7 @@ def market_pulse(symbols: dict[str, str] | None = None) -> pl.DataFrame:
 
 @timeit("insights.fund_movers")
 def fund_movers() -> pl.DataFrame:
-    """1W / 1M NAV moves of the user's held funds, weighted context via portfolio share.
-
-    Fund-level (not look-through stock-level) because OHLCV coverage for underlying
-    holdings is thin; the panel labels this honestly.
-    """
+    """1W / 1M NAV moves of the user's held funds, with their portfolio share."""
     tradebook = load_tradebook_from_db()
     if tradebook.is_empty():
         return pl.DataFrame()

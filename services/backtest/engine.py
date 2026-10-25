@@ -141,9 +141,6 @@ class _Signals:
     last_close_pos: np.ndarray
 
 
-# ---------------------------------------------------------------- pure helpers
-
-
 def roi_threshold(minimal_roi: dict[int, float], bars_held: int) -> float | None:
     """The ROI target in force after `bars_held` bars: the value at the largest key not above it."""
     eligible = [k for k in minimal_roi if k <= bars_held]
@@ -226,9 +223,6 @@ def track_bar(position: _Position, high: float, low: float, strategy: BasketStra
             position.trailing = True
 
 
-# ---------------------------------------------------------------- signals
-
-
 def _compute_signals(strategy, inputs: BasketInputs, ctx: MarketContext, progress_cb) -> _Signals:
     symbols = list(inputs.frames)
     total = len(symbols)
@@ -276,9 +270,6 @@ def _compute_signals(strategy, inputs: BasketInputs, ctx: MarketContext, progres
         exit_tag=exit_tag,
         last_close_pos=last_close_pos,
     )
-
-
-# ---------------------------------------------------------------- the loop
 
 
 class _Book:
@@ -540,9 +531,6 @@ def _rank_weights(strategy, scores: np.ndarray, top: list[int], portfolio_value:
     if total <= 0:
         return dict.fromkeys(top, equal)
     return {i: portfolio_value * positive[i] / total for i in top}
-
-
-# ---------------------------------------------------------------- result assembly
 
 
 def _trades_frame(records: list[dict]) -> pd.DataFrame:

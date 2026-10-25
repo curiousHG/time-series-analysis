@@ -110,7 +110,6 @@ def compute_nav_freshness(scheme_names: list[str], scheme_slugs: list[str]) -> F
     last_by_name: dict[str, date] = {}
 
     if scheme_names:
-        # Phase 2: MfNav is keyed on scheme_code; JOIN to amfi_schemes for the name.
         with get_session() as session:
             stmt = (
                 select(AmfiScheme.scheme_name, func.max(MfNav.date))
@@ -138,8 +137,6 @@ def compute_holdings_freshness(scheme_names: list[str], scheme_slugs: list[str])
     last_by_slug: dict[str, date] = {}
 
     if scheme_slugs:
-        # Phase 3: holdings is keyed on scheme_code; resolve slug → code, query, then
-        # remap back to slug for the report.
         slug_to_code = _slug_to_code_map_cached()
         code_to_slug = {slug_to_code[s]: s for s in scheme_slugs if s in slug_to_code}
         codes = list(code_to_slug.keys())
@@ -163,10 +160,6 @@ def compute_holdings_freshness(scheme_names: list[str], scheme_slugs: list[str])
         threshold_days=HOLDINGS_STALE_DAYS,
         use_business_days=False,
     )
-
-
-# ---- Settings-page status table builders --------------------------------------------------
-# Shape the Refresh section's status table. Pure data — no Streamlit — so the UI stays rendering-only.
 
 
 def build_nav_status_rows(

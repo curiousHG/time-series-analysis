@@ -1,6 +1,4 @@
-"""Market-data queries for the UI — thin service seam over data/ so views and cache loaders don't
-reach into repositories/fetchers directly (the ui → services → data contract). Callable by a bot/CLI
-too, and testable without Streamlit."""
+"""Market-data queries for the UI: a thin service seam over data/ for views and cache loaders."""
 
 from __future__ import annotations
 
@@ -8,9 +6,7 @@ import re
 
 from data.fetchers.screener_in import fetch_index_constituents
 
-# NSE index name → screener.in slug (its /company/<slug>/ page lists constituents). Sectoral/broad
-# ones are known; factor indices fall back to a squashed-uppercase heuristic (best-effort).
-_INDEX_NAME_SLUG = {
+_SCREENER_SLUG_BY_INDEX_NAME = {
     "nifty 50": "NIFTY",
     "nifty bank": "BANKNIFTY",
     "nifty next 50": "NIFTYNEXT50",
@@ -29,9 +25,8 @@ _INDEX_NAME_SLUG = {
 
 
 def analysis_catalog() -> list[dict]:
-    """The unified Stock-Analysis picker universe: every equity + ETF (from stock_registry) and every
-    index (NSE bhavcopy names + international), each tagged with its kind so the UI can badge it and
-    route to the right view. Entry: {id, kind: 'stock'|'etf'|'index', name}."""
+    """The Stock-Analysis picker universe: equities, ETFs and indices as {id, kind: 'stock'|'etf'|'index', name,
+    exchange}."""
     from data.repositories.stock import list_bhavcopy_index_names, load_registry_catalog  # noqa: PLC0415
     from services.insights_service import INTERNATIONAL_INDEX_SYMBOLS  # noqa: PLC0415
 
@@ -69,21 +64,20 @@ def global_fundamentals(symbol: str) -> dict | None:
 
 
 def etf_metadata() -> dict[str, dict]:
-    """Live NSE ETF metadata keyed by symbol (underlying, NAV, last price, 52-week range, 30d/1Y
-    performance) — one call to the NSE ETF API. Empty dict on failure."""
+    """Live NSE ETF metadata keyed by symbol, from one NSE ETF API call. Empty dict on failure."""
     from data.fetchers.stock import fetch_nse_etf_list  # noqa: PLC0415 — defer heavy import off boot
 
     return {e["symbol"]: e for e in fetch_nse_etf_list()}
 
 
 def index_constituents(index_name: str) -> list[str]:
-    """Constituent NSE symbols of an index. Prefers NSE's official `ind_<name>list.csv` (full lists
-    for broad/sectoral indices), then falls back to screener.in (sectoral + Nifty 50). Returns [] for
-    indices neither source lists (many factor/strategy indices)."""
+    """Constituent NSE symbols of an index: NSE's official list, else screener.in. [] when neither lists it."""
     from data.fetchers.stock import fetch_nse_index_constituents  # noqa: PLC0415 — defer off boot
 
     nse = fetch_nse_index_constituents(index_name)
     if nse:
         return nse
-    slug = _INDEX_NAME_SLUG.get(index_name.strip().lower()) or re.sub(r"[^A-Za-z0-9]", "", index_name).upper()
+    slug = (
+        _SCREENER_SLUG_BY_INDEX_NAME.get(index_name.strip().lower()) or re.sub(r"[^A-Za-z0-9]", "", index_name).upper()
+    )
     return fetch_index_constituents(slug)

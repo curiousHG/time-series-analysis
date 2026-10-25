@@ -15,8 +15,7 @@ from scipy.optimize import brentq
 if TYPE_CHECKING:
     from datetime import date
 
-# brentq bracket for the annual rate: -99.99% … +1000%.
-_XIRR_LO, _XIRR_HI = -0.9999, 10.0
+_XIRR_MIN_RATE, _XIRR_MAX_RATE = -0.9999, 10.0
 
 
 def compute_xirr(flows: pd.DataFrame, terminal_value: float, terminal_date: date) -> float | None:
@@ -33,23 +32,17 @@ def compute_xirr(flows: pd.DataFrame, terminal_value: float, terminal_date: date
 
     dates = pd.to_datetime(flows["date"]).dt.normalize()
     t_end = pd.Timestamp(terminal_date)
-    # Flows dated after the valuation date happen when NAV is stale: their units are in
-    # `terminal_value` at the last known NAV, so treat them as invested at t_end (no
-    # growth attributed) rather than excluding them or compounding negatively.
-    years = ((t_end - dates).dt.days / 365.25).clip(lower=0.0)
+    years_to_valuation = ((t_end - dates).dt.days / 365.25).clip(lower=0.0)
 
-    # Investor-perspective cashflows: buys are outflows (-), terminal value an inflow (+).
-    # `years` measures flow date → valuation date, so flows are compounded forward to the
-    # valuation date (future-value form of the XIRR equation).
     amounts = -flows["amount"].astype(float)
 
     def npv(rate: float) -> float:
-        return float((amounts * (1 + rate) ** years).sum()) + terminal_value
+        return float((amounts * (1 + rate) ** years_to_valuation).sum()) + terminal_value
 
-    lo, hi = npv(_XIRR_LO), npv(_XIRR_HI)
-    if lo * hi > 0:  # no sign change → no root in the bracket
+    lo, hi = npv(_XIRR_MIN_RATE), npv(_XIRR_MAX_RATE)
+    if lo * hi > 0:
         return None
-    return float(brentq(npv, _XIRR_LO, _XIRR_HI))
+    return float(brentq(npv, _XIRR_MIN_RATE, _XIRR_MAX_RATE))
 
 
 def fund_values_from_nav(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame) -> dict[str, float]:
@@ -95,7 +88,6 @@ def lookthrough_exposure(holdings_df: pl.DataFrame, fund_values: dict[str, float
         .join(weights, on="schemeName", how="inner")
         .with_columns(
             (pl.col("weight") * pl.col("fund_weight")).alias("contrib_pct"),
-            # Group key: ISIN when present, else the trimmed lowercase instrument name.
             pl.when(pl.col("isin").is_not_null() & (pl.col("isin") != ""))
             .then(pl.col("isin"))
             .otherwise(pl.col("instrumentName").str.to_lowercase().str.strip_chars())

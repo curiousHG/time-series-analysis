@@ -1,8 +1,5 @@
-"""Indian-market benchmark catalogue and name→symbol resolution.
-
-Single source of truth for both the single-fund Risk tab (mutual_fund.py) and the
-portfolio Risk-vs-Return scatter — keeps the symbol map from drifting between callers.
-"""
+"""Indian-market benchmark catalogue and name-to-symbol resolution, shared by the fund Risk tab and the portfolio
+scatter."""
 
 from __future__ import annotations
 
@@ -14,11 +11,6 @@ import pandas as pd
 if TYPE_CHECKING:
     import polars as pl
 
-# Map common Indian benchmark names → index_ohlcv symbols. NSE indices use their bhavcopy names
-# (maintained daily in bulk, carry P/E & valuation, a day fresher than Yahoo); Yahoo '^' tickers
-# remain only for Nifty 50 / Sensex and non-Indian indices. The old '^CNX…' Yahoo aliases were
-# retired after they were found holding other instruments' bars.
-# Keys are matched after normalisation (lowercase, strip "TRI"/"Index"/"PRI"/"Total Return"/punctuation).
 BENCHMARK_SYMBOL_MAP: dict[str, str] = {
     "nifty 50": "^NSEI",
     "nifty50": "^NSEI",
@@ -27,9 +19,6 @@ BENCHMARK_SYMBOL_MAP: dict[str, str] = {
     "nifty 500": "Nifty 500",
     "nifty next 50": "Nifty Next 50",
     "nifty midcap 50": "Nifty Midcap 50",
-    # The midcap/smallcap families aren't reliably on yfinance (the .NS index tickers got delisted)
-    # and niftyindices.com is dead — they resolve to the NSE index-bhavcopy names, which the daily
-    # bulk refresh maintains in index_ohlcv. NOTE: values are the EXACT (inconsistent) NSE spellings.
     "nifty midcap 100": "NIFTY Midcap 100",
     "nifty midcap 150": "Nifty Midcap 150",
     "nifty smallcap 100": "NIFTY Smallcap 100",
@@ -45,8 +34,6 @@ BENCHMARK_SYMBOL_MAP: dict[str, str] = {
     "nifty auto": "Nifty Auto",
     "nifty metal": "Nifty Metal",
     "nifty energy": "Nifty Energy",
-    # US / global benchmarks — for overseas FoFs (e.g. Franklin U.S. Opportunities → Russell
-    # 3000 Growth). All resolve on yfinance and route to index_ohlcv via the '^' convention.
     "s&p 500": "^GSPC",
     "s&p500": "^GSPC",
     "nasdaq 100": "^NDX",
@@ -65,7 +52,6 @@ BENCHMARK_SYMBOL_MAP: dict[str, str] = {
     "msci all country world": "ACWI",
 }
 
-# Curated dropdown options for UI selectors (index picker, risk-vs-return). Order = display.
 BENCHMARK_CHOICES: dict[str, str] = {
     "Nifty 50": "^NSEI",
     "Nifty 100": "Nifty 100",
@@ -78,7 +64,6 @@ BENCHMARK_CHOICES: dict[str, str] = {
     "BSE Sensex": "^BSESN",
     "Nifty Bank": "Nifty Bank",
     "Nifty IT": "Nifty IT",
-    # US / global (yfinance)
     "S&P 500 (US)": "^GSPC",
     "Nasdaq 100 (US)": "^NDX",
     "Nasdaq Composite (US)": "^IXIC",
@@ -91,7 +76,6 @@ BENCHMARK_CHOICES: dict[str, str] = {
 
 DEFAULT_BENCHMARK_LABEL = "Nifty 50"
 
-# symbol → friendly label, for index selectors that only know the raw symbol.
 INDEX_DISPLAY_NAMES: dict[str, str] = {
     "^NSEI": "Nifty 50",
     "Nifty 100": "Nifty 100",
@@ -138,25 +122,19 @@ def index_display_name(symbol: str) -> str:
     return INDEX_DISPLAY_NAMES.get(symbol, symbol)
 
 
-# SEBI sub-category → benchmark index symbol (fetchable via yfinance "^…" or niftyindices
-# "NIFTY …"). Sub-categories absent here (all Debt, Arbitrage, Index/ETF/FoF, Conservative
-# Hybrid) have no meaningful equity benchmark → CAPM alpha/beta is left NaN rather than
-# computed against an equity index it has near-zero correlation with.
 SUBCATEGORY_BENCHMARK: dict[str, str] = {
-    # Equity — each maps to its SEBI benchmark (or the closest fetchable proxy).
-    "Large Cap Fund": "Nifty 100",  # Nifty 100
-    "Large & Mid Cap Fund": "Nifty 200",  # Nifty 200 (proxy for LargeMidcap 250)
-    "Mid Cap Fund": "Nifty Midcap 150",  # NSE index bhavcopy (yfinance lacks it)
-    "Small Cap Fund": "Nifty Smallcap 250",  # NSE index bhavcopy
-    "Multi Cap Fund": "Nifty 500",  # Nifty 500
+    "Large Cap Fund": "Nifty 100",
+    "Large & Mid Cap Fund": "Nifty 200",
+    "Mid Cap Fund": "Nifty Midcap 150",
+    "Small Cap Fund": "Nifty Smallcap 250",
+    "Multi Cap Fund": "Nifty 500",
     "Flexi Cap Fund": "Nifty 500",
     "ELSS": "Nifty 500",
     "Focused Fund": "Nifty 500",
     "Value Fund": "Nifty 500",
     "Contra Fund": "Nifty 500",
     "Dividend Yield Fund": "Nifty 500",
-    "Sectoral/ Thematic": "Nifty 500",  # broad fallback (sector index needs name parsing)
-    # Hybrid / solution-oriented with material equity exposure — Nifty 500 is a rough lens.
+    "Sectoral/ Thematic": "Nifty 500",
     "Aggressive Hybrid Fund": "Nifty 500",
     "Dynamic Asset Allocation or Balanced Advantage": "Nifty 500",
     "Multi Asset Allocation": "Nifty 500",
@@ -174,7 +152,6 @@ def subcategory_benchmark(sub_category: str | None) -> str | None:
     return SUBCATEGORY_BENCHMARK.get(sub_category)
 
 
-# Fixed-income / non-directional sub-categories where an equity CAPM benchmark is meaningless.
 _DEBT_LIKE_KEYWORDS = (
     "liquid",
     "overnight",
@@ -198,11 +175,9 @@ def _is_debt_like(sub_category: str | None) -> bool:
 
 
 def benchmark_for_fund(sub_category: str | None, metadata_benchmark: str | None = None) -> str | None:
-    """Resolve a fund's benchmark index symbol for CAPM alpha/beta.
+    """Benchmark symbol for CAPM: mappable metadata benchmark, else sub-category benchmark, else Nifty 50.
 
-    Priority: (1) the fund's named metadata benchmark if mappable (e.g. "Russell 3000 Growth
-    TRI" → ^RAG), (2) its SEBI sub-category benchmark, (3) Nifty 50 as the default for any
-    non-debt fund. Debt / arbitrage / liquid schemes return None (equity CAPM is meaningless).
+    Debt-like funds with no mapped benchmark return None.
     """
     sym = resolve_benchmark_symbol(metadata_benchmark)
     if sym:
@@ -223,9 +198,6 @@ def _normalise_benchmark(name: str) -> str:
     return s
 
 
-# Nifty strategy/factor indices (Quality / Value / Momentum / Alpha / Low-Vol …) aren't on
-# yfinance and niftyindices no longer serves them cleanly — fall back to the closest fetchable
-# PARENT universe. Longest tokens first so "500" doesn't match inside "50".
 _PARENT_UNIVERSE = (
     ("smallcap", "Nifty Smallcap 250"),
     ("midcap", "Nifty Midcap 150"),
@@ -248,8 +220,7 @@ def _parent_universe_fallback(normalised: str) -> str | None:
 
 
 def resolve_benchmark_symbol(benchmark_name: str | None) -> str | None:
-    """Map a metadata-benchmark string (e.g. 'NIFTY 500 TRI') to a fetchable symbol. Nifty
-    factor/strategy indices with no exact match fall back to their parent universe (a proxy)."""
+    """Map a metadata-benchmark string (e.g. 'NIFTY 500 TRI') to a fetchable symbol, or None."""
     if not benchmark_name:
         return None
     normalised = _normalise_benchmark(benchmark_name)

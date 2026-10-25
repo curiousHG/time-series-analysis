@@ -15,8 +15,7 @@ from mutual_funds.display import detect_option, detect_plan
 
 logger = logging.getLogger(__name__)
 
-
-# ---- Status cell -----------------------------------------------------------------------
+_TER_NO_LIMIT_AT = 5.0
 
 
 def status_cell(status: str | None) -> str:
@@ -28,15 +27,10 @@ def status_cell(status: str | None) -> str:
     return "✗"
 
 
-# ---- Screener DataFrame assembly -------------------------------------------------------
-
-
 def build_screener_df() -> pl.DataFrame:
     """Full screener DataFrame: the DB JOIN from `load_screener_view` plus resolved `plan`/`option`.
 
-    AMFI's own `Plan`/`Option` columns win where present; the name-derived fallback covers the
-    ~40% of rows AMFI leaves blank (closed-ended FMPs, most ETFs), where the suffix — when there
-    is one — still lives in the scheme name.
+    AMFI's own `Plan`/`Option` columns win; the name-derived value is the fallback.
     """
     df = load_screener_view()
     if df.is_empty():
@@ -51,9 +45,6 @@ def build_screener_df() -> pl.DataFrame:
             pl.col("scheme_name").map_elements(detect_option, return_dtype=pl.Utf8),
         ).alias("option"),
     )
-
-
-# ---- Filter application ----------------------------------------------------------------
 
 
 def apply_name_filter(df: pl.DataFrame, name_query: str, *, column: str = "scheme_name") -> pl.DataFrame:
@@ -109,12 +100,11 @@ def apply_filters(
         out = out.filter(pl.col("option").is_in(options))
     if aum_min > 0:
         out = out.filter(pl.col("aum_crores").fill_null(0) >= aum_min)
-    if 0 < ter_max < 5.0:  # 0 = no limit (a cleared number_input lands on 0)
+    if 0 < ter_max < _TER_NO_LIMIT_AT:
         out = out.filter(pl.col("expense_ratio").fill_null(0) <= ter_max)
     if only_tracked:
         out = out.filter(pl.col("nav_status").is_not_null())
     if only_untracked:
-        # Untracked = absent from `mf_registry` → left join leaves nav_status null.
         out = out.filter(pl.col("nav_status").is_null())
     if has_nav:
         out = out.filter(pl.col("cagr_1y").is_not_null())
@@ -125,9 +115,6 @@ def apply_filters(
         if dd_min is not None:
             out = out.filter(pl.col("max_dd_1y") * 100 >= dd_min)
     return out
-
-
-# ---- Benchmark helpers (used by the chart's IR-numerator axis) -------------------------
 
 
 def nifty_1y_cagr() -> float | None:

@@ -1,11 +1,4 @@
-"""Price-derived stock metrics — 1Y return / volatility / CAPM alpha-beta.
-
-Computed from our cached OHLCV (no extra scraping). Stored into stock_metrics alongside the
-screener.in fundamentals so the screener can categorise stocks by alpha. The CAPM benchmark is
-routed by listing market: NSE stocks vs Nifty 50, international stocks vs the S&P 500 (a US
-stock's alpha vs an INR index would mix currencies and market regimes). Mirrors the MF
-metrics-compute pattern; reuses services.mf_metrics.compute_alpha_beta.
-"""
+"""Price-derived stock metrics (1Y return, volatility, CAPM alpha/beta) from cached OHLCV, stored in stock_metrics."""
 
 from __future__ import annotations
 
@@ -46,15 +39,14 @@ def _daily_returns(symbol: str, *, lookback_days: int = 800) -> pd.Series:
     if df.is_empty():
         return pd.Series(dtype="float64")
     pdf = df.select(["Date", "Close"]).to_pandas().set_index("Date").sort_index()
-    close = adjust_splits(pdf["Close"])  # yfinance history still carries unrecorded splits/bonuses
+    close = adjust_splits(pdf["Close"])
     return close.pct_change().dropna()
 
 
 def compute_price_metrics(symbol: str, benchmark_returns: pd.Series) -> dict | None:
     """Return {symbol, return_1y, vol_1y, beta_1y, alpha_1y, r2_1y} (percentages), or None.
 
-    `symbol` is the bare registry key (RELIANCE, AAPL); ensure_stock_data suffixes it per its
-    registry exchange. `benchmark_returns` must already be the exchange-appropriate index.
+    `symbol` is the bare registry key; `benchmark_returns` must already be the exchange-appropriate index.
     """
     returns = _daily_returns(symbol)
     if returns.empty:
@@ -67,7 +59,7 @@ def compute_price_metrics(symbol: str, benchmark_returns: pd.Series) -> dict | N
         out["return_1y"] = (cum - 1.0) * 100
     ab = compute_alpha_beta(returns, benchmark_returns)
     if ab:
-        out["alpha_1y"] = ab["alpha"] * 100  # annualised Jensen alpha → %
+        out["alpha_1y"] = ab["alpha"] * 100
         out["beta_1y"] = ab["beta"]
         out["r2_1y"] = ab["r2"]
     return out
@@ -105,7 +97,7 @@ def recompute_price_metrics(symbols: list[str], *, max_workers: int = 8) -> int:
     if not rows:
         return 0
     with get_session() as session:
-        for row in rows:  # rows have heterogeneous keys (some metrics may be missing) → upsert per row
+        for row in rows:
             stmt = pg_insert(StockMetrics).values(row)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["symbol"],

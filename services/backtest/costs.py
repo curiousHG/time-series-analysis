@@ -3,9 +3,6 @@
 Rates follow zerodha.com/charges (checked 2026-09-09). Percentages are fractions of turnover.
 GST applies to brokerage, exchange transaction charges and the SEBI fee. The DP charge is levied
 per scrip per sell day, which equals per sell order for a daily-bar engine.
-
-NSE_TXN_PCT: the charges page shows 0.00307%; earlier notes in this repo said 0.00297%. The page
-value is the default until confirmed against a contract note.
 """
 
 from __future__ import annotations

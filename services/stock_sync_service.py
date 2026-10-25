@@ -1,8 +1,4 @@
-"""Populate stock fundamentals (screener.in) + price metrics (CAPM) for a set of symbols.
-
-Off-boot orchestration for the Settings / screener "populate" action. Scraping is polite by
-construction — DB-first `ensure_stock_fundamentals` skips already-fresh symbols.
-"""
+"""Populate stock fundamentals (screener.in) and price metrics (CAPM), refresh and repair OHLCV for background tasks."""
 
 from __future__ import annotations
 
@@ -30,9 +26,8 @@ def sync_stocks(symbols: list[str], *, scrape_fundamentals: bool = True) -> int:
 
 
 def seed_nifty500(*, force_fundamentals: bool = False) -> int:
-    """Populate the Nifty 500 constituents not yet in the universe. DB-first + resumable:
-    only symbols without computed price metrics are synced. Fundamentals-off by default (just
-    OHLCV + CAPM alpha/beta) so it's fast and polite for a background run. Returns #synced."""
+    """Sync Nifty 500 constituents that have no price metrics yet (resumable); fundamentals only when forced.
+    Returns #synced."""
     from data.fetchers.stock import fetch_nifty500_symbols  # noqa: PLC0415 — defer off boot
     from data.repositories.stock_fundamentals import load_stock_metrics  # noqa: PLC0415
 
@@ -67,11 +62,8 @@ def _report(progress_cb: Callable[..., None] | None, **fields: object) -> None:
 def refresh_stocks_via_yfinance(
     *, window_days: int = 7, chunk: int = 200, progress_cb: Callable[..., None] | None = None
 ) -> int:
-    """Daily forward-fill for every tracked equity (NSE + international) via batched yfinance
-    downloads — the SAME adjusted source as full-history fetches, so daily rows can never drift
-    from stored history (raw bhavcopy appends diverged after every split/dividend). Re-writes the
-    trailing `window_days` too, absorbing any late corporate-action adjustments and evening out
-    ragged per-symbol tails. Returns rows upserted."""
+    """Daily forward-fill for every tracked equity via batched yfinance downloads, re-writing the trailing
+    `window_days`. Returns rows upserted."""
     from data.repositories.stock import (  # noqa: PLC0415
         fill_stock_gaps,
         last_nse_stock_ohlcv_date,
@@ -82,7 +74,7 @@ def refresh_stocks_via_yfinance(
 
     last = last_nse_stock_ohlcv_date() or last_stock_ohlcv_date()
     if last is None:
-        return 0  # nothing tracked yet — the seed/backfill paths populate first
+        return 0
     today = _date.today()
     start = min(last - _timedelta(days=2), today - _timedelta(days=window_days))
     symbols = list_stock_symbols()
@@ -101,8 +93,7 @@ def refresh_stocks_via_yfinance(
 
 
 def refresh_indices_via_bhavcopy(*, max_days: int = 120, progress_cb: Callable[..., None] | None = None) -> int:
-    """Backfill every NSE index bhavcopy day from the last stored index date up to today — 160+
-    indices (incl. factor/strategy indices yfinance lacks) into index_ohlcv. Returns rows upserted."""
+    """Backfill NSE index bhavcopy days from the last stored date to today into index_ohlcv. Returns rows upserted."""
     from data.repositories.stock import last_index_bhavcopy_date, save_index_bhavcopy_day  # noqa: PLC0415
 
     today = _date.today()
@@ -123,9 +114,8 @@ def refresh_indices_via_bhavcopy(*, max_days: int = 120, progress_cb: Callable[.
 
 
 def backfill_indices_history(*, years: int = 12, progress_cb: Callable[..., None] | None = None) -> int:
-    """Backfill index bhavcopy history as far back as ~`years` — fills the backward gap (below the
-    earliest stored day) and the forward gap (last→today), skipping the already-stored range.
-    Long-running; run it on a background task. Returns rows upserted."""
+    """Backfill index bhavcopy history ~`years` back, filling the backward and forward gaps. Long-running.
+    Returns rows upserted."""
     from data.repositories.stock import (  # noqa: PLC0415
         first_index_bhavcopy_date,
         last_index_bhavcopy_date,
@@ -147,15 +137,13 @@ def backfill_indices_history(*, years: int = 12, progress_cb: Callable[..., None
 
 
 def refresh_all_stock_data(*, progress_cb: Callable[..., None] | None = None) -> dict:
-    """Full stock + index data refresh for the background task: batched-yfinance stocks (adjusted,
-    single source of truth) + bhavcopy indices (the only source with factor indices + valuation),
-    then recompute stock metrics. Reports live phase/progress. Returns per-step counts."""
+    """Full stock + index refresh for the background task, then recompute stock metrics. Returns per-step counts."""
     from data.repositories.stock import sync_nse_etf_universe  # noqa: PLC0415 — defer off boot
 
     stock_rows = refresh_stocks_via_yfinance(progress_cb=progress_cb)
     index_rows = refresh_indices_via_bhavcopy(progress_cb=progress_cb)
     _report(progress_cb, phase="ETF list", done=0, total=1)
-    etfs = sync_nse_etf_universe()  # keep the ETF classification current for the analysis picker
+    etfs = sync_nse_etf_universe()
     _report(progress_cb, phase="ETF list", done=1, total=1)
     _report(progress_cb, phase="Metrics", done=0, total=1)
     metrics = recompute_all_stock_metrics()
@@ -205,11 +193,7 @@ def stock_data_health() -> dict:
 
 
 def find_corrupt_ohlcv_symbols(*, jump: float = 5.0) -> list[str]:
-    """Symbols whose stored OHLCV has an implausible ADJACENT-DAY close jump (> `jump`x or < 1/jump)
-    - a scale discontinuity from a bad historical fetch (a stale yfinance-adjusted series spliced
-    onto raw bhavcopy rows). A ~600x splice corrupts return/CAPM metrics (PAGEIND showed return_1y
-    ~ 26,775%). Adjacent-jump detection avoids flagging legit long-history growth (a real 20x over
-    years has no single-day 5x gap)."""
+    """Symbols whose stored OHLCV has an adjacent-day close jump above `jump`x or below 1/`jump`."""
     from sqlmodel import text  # noqa: PLC0415
 
     from core.database import get_session  # noqa: PLC0415
@@ -229,9 +213,8 @@ def find_corrupt_ohlcv_symbols(*, jump: float = 5.0) -> list[str]:
 
 
 def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] | None = None) -> dict:
-    """Re-fetch full history for stocks whose OHLCV has a corrupt scale discontinuity, overwriting the
-    bad rows in place (UPSERT, no delete — safe to interrupt), then recompute their metrics. Returns
-    {'repaired': [...], 'failed': [...]}."""
+    """Re-fetch full history for `find_corrupt_ohlcv_symbols` hits (UPSERT, no delete), then recompute their
+    metrics. Returns {'repaired': [...], 'failed': [...]}."""
     from data.repositories.stock import clear_stock_ohlcv_status, refetch_stock_full  # noqa: PLC0415
     from services.stock_metrics import recompute_price_metrics  # noqa: PLC0415
 
@@ -240,8 +223,8 @@ def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] 
     failed: list[str] = []
     for i, sym in enumerate(symbols, 1):
         try:
-            clear_stock_ohlcv_status(sym)  # reset the watermark (floor/streak) before the re-fetch
-            refetch_stock_full(sym)  # fetch + upsert full history over the corrupt rows (no delete)
+            clear_stock_ohlcv_status(sym)
+            refetch_stock_full(sym)
             repaired.append(sym)
         except Exception as e:
             failed.append(sym)
@@ -256,10 +239,7 @@ def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] 
 
 
 def refetch_all_stocks(*, progress_cb: Callable[..., None] | None = None) -> int:
-    """Replace EVERY stock's OHLCV with a fresh yfinance pull (the single reliable source), then
-    recompute metrics. Cleans source-mixing corruption (jugaad IST-offset dates / spikes) across the
-    whole universe. Each stock is an atomic fetch-then-replace, so it's safe to interrupt. Returns
-    the number of stocks re-fetched."""
+    """Replace every stock's OHLCV with a fresh yfinance pull, then recompute metrics. Returns #stocks re-fetched."""
     from data.repositories.stock import (  # noqa: PLC0415
         clear_stock_ohlcv_status,
         list_stock_symbols,
@@ -287,9 +267,8 @@ def refetch_all_stocks(*, progress_cb: Callable[..., None] | None = None) -> int
 
 
 def sync_missing_fundamentals(*, progress_cb: Callable[..., None] | None = None) -> int:
-    """Scrape screener.in fundamentals for universe stocks that don't have them yet (the Nifty 500
-    seed loads price metrics only). Polite per-symbol scrape, then one metrics recompute. Returns
-    the number of symbols attempted."""
+    """Scrape screener.in fundamentals for NSE-listed universe stocks that lack them, then recompute metrics.
+    Returns #symbols attempted."""
     from sqlmodel import text  # noqa: PLC0415
 
     from core.database import get_session  # noqa: PLC0415
@@ -301,8 +280,6 @@ def sync_missing_fundamentals(*, progress_cb: Callable[..., None] | None = None)
             r[0]
             for r in session.exec(
                 text(
-                    # NSE listings only — international stocks aren't on screener.in (their
-                    # fundamentals come live from yfinance in the analysis view instead).
                     "SELECT m.symbol FROM stock_metrics m LEFT JOIN stock_registry r ON r.symbol = m.symbol "
                     "WHERE coalesce(r.fundamentals_status, '') <> 'available' "
                     "AND upper(coalesce(r.exchange, 'NSE')) IN ('NSE','NSI','BSE','BO') ORDER BY m.symbol"

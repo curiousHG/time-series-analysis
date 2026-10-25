@@ -26,18 +26,15 @@ from services.registry_service import mark_nav_unavailable
 logger = logging.getLogger(__name__)
 
 
-# ---- progress / result types ------------------------------------------------------------
-
-
 @dataclass
 class FetchEvent:
     """Per-fund completion event emitted to the progress callback."""
 
-    done: int  # 1-indexed completed count across the run
+    done: int
     total: int
     scheme_name: str
     outcome: FetchOutcome
-    detail: str  # human-readable one-liner (new rows / up-to-date / error)
+    detail: str
 
 
 ProgressCb = Callable[[FetchEvent], None]
@@ -84,20 +81,13 @@ def _record_failure(result, kind: str, name: str, error: Exception) -> tuple[Fet
     return "failed", reason
 
 
-# ---- NAV ---------------------------------------------------------------------------------
-
-
 def update_nav_incremental(
     scheme_names: list[str],
     *,
     name_to_code: dict[str, int] | None = None,
     progress_cb: ProgressCb | None = None,
 ) -> NavUpdateResult:
-    """Fetch latest NAV per name; save only rows newer than what's in DB.
-
-    Fetches run on a worker pool (network-bound); DB saves stay on the main thread to keep
-    Postgres writes serialised. Callback fires once per fund.
-    """
+    """Fetch latest NAV per name; save only rows newer than what's in DB. Callback fires once per fund."""
     if not scheme_names:
         return NavUpdateResult()
 
@@ -131,7 +121,7 @@ def update_nav_incremental(
                     else:
                         outcome, detail = "skipped", f"up to date ({api_max})"
                 else:
-                    save_nav_df(df)  # serialised on main thread
+                    save_nav_df(df)
                     dates = df.select("date").to_series()
                     result.new_rows_total += df.height
                     result.updated_count += 1
@@ -147,9 +137,6 @@ def update_nav_incremental(
             _emit(progress_cb, FetchEvent(done, total, name, outcome, detail))
 
     return result
-
-
-# ---- Holdings ----------------------------------------------------------------------------
 
 
 def _fetch_normalize_holdings(scheme_code: int) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
@@ -199,9 +186,6 @@ def refresh_holdings_for_schemes(
     return result
 
 
-# ---- Background full-refresh orchestrator ------------------------------------------------
-
-
 def refresh_all_fund_data(
     scheme_names: list[str],
     *,
@@ -223,8 +207,7 @@ def refresh_all_fund_data(
         )
 
     def _log_event(phase: str, ev: FetchEvent) -> None:
-        """Forward one fund's outcome to the UI log. Up-to-date funds are counted but not
-        logged — they are the overwhelming majority of a run and would bury the real activity."""
+        """Forward one fund's outcome to the UI log; up-to-date (skipped) funds are not logged."""
         if progress_cb is None or ev.outcome == "skipped":
             return
         icon = "✓" if ev.outcome == "updated" else "✗"
