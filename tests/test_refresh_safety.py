@@ -31,7 +31,7 @@ def test_holdings_refresh_keeps_existing_rows_when_a_fetch_fails(monkeypatch, ca
         result = sync_service.refresh_holdings_for_schemes(["Good Fund", "Bad Fund"])
 
     assert result.success_count == 1
-    assert result.failures == [("Bad Fund", "upstream failed")]
+    assert result.failures == [("Bad Fund", "RuntimeError: upstream failed")]
     assert replaced == [make_slug("Good Fund")]
     failure_logs = [r for r in caplog.records if r.levelname == "WARNING"]
     assert len(failure_logs) == 1

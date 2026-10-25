@@ -7,6 +7,9 @@ finishes. Orchestration lives in services.sync_service / data_freshness / regist
 
 from __future__ import annotations
 
+import time
+from collections import Counter
+
 import pandas as pd
 import polars as pl
 import streamlit as st
@@ -71,9 +74,12 @@ def _fund_summary(r: object) -> str:
     parts = []
     if isinstance(r, dict):
         if "nav_updated" in r:
-            parts.append(f"NAV {r['nav_updated']} updated (+{r.get('nav_new_rows', 0):,} rows)")
+            parts.append(f"NAV {r['nav_updated']:,} updated (+{r.get('nav_new_rows', 0):,} rows)")
         if "holdings_updated" in r:
-            parts.append(f"holdings {r['holdings_updated']} updated")
+            parts.append(f"holdings {r['holdings_updated']:,} updated")
+        failed = r.get("nav_failed", 0) + r.get("holdings_failed", 0)
+        if failed:
+            parts.append(f"{failed:,} failed, see Last refresh")
     return ", ".join(parts) if parts else "no changes"
 
 
@@ -125,6 +131,8 @@ def render_status() -> None:
             _REFRESH.start_button("Update holdings", _run("holdings"), meta={"scope": "holdings"})
     if _REFRESH.is_running():
         _REFRESH.poll()
+    else:
+        _render_last_run()
 
     st.markdown(_nav_line(fr["nav"]))
     holdings_latest = _latest(fr["holdings"])
@@ -134,6 +142,68 @@ def render_status() -> None:
         st.markdown(f"Holdings as of {fmt_date(holdings_latest)}, the latest portfolio AdvisorKhoj has published.")
     st.caption(f"{plural(len(names), 'active fund')} tracked, {plural(dormant, 'dormant scheme')} skipped.")
     _render_unresolved()
+
+
+def _phase_lines(result: dict) -> list[tuple[str, str, list[tuple[str, str]]]]:
+    """(phase, one-line outcome, failures) for each phase the run covered."""
+    lines = []
+    if "nav_updated" in result:
+        lines.append(
+            (
+                "NAV",
+                f"{plural(result['nav_updated'], 'fund')} updated (+{result.get('nav_new_rows', 0):,} rows), "
+                f"{result.get('nav_skipped', 0):,} already current, {result.get('nav_failed', 0):,} failed.",
+                result.get("nav_failures", []),
+            )
+        )
+    if "holdings_updated" in result:
+        lines.append(
+            (
+                "Holdings",
+                f"{plural(result['holdings_updated'], 'fund')} updated ({result.get('holdings_rows', 0):,} rows), "
+                f"{result.get('holdings_failed', 0):,} failed.",
+                result.get("holdings_failures", []),
+            )
+        )
+    return lines
+
+
+def _render_last_run() -> None:
+    """What the previous refresh did, kept on screen until the next one finishes: counts per phase
+    and every failure, grouped by reason."""
+    last = _REFRESH.last()
+    if last is None or last.finished_at is None:
+        return
+    finished = time.strftime("%H:%M", time.localtime(last.finished_at))
+    took = round(last.finished_at - (last.started_at or last.finished_at))
+    with st.container(border=True):
+        st.markdown(f"**Last refresh** · finished {finished}, took {took // 60}m {took % 60:02d}s")
+        if last.status == "failed":
+            st.error(f"The refresh stopped with an error: {last.error}")
+            return
+        for phase, line, failures in _phase_lines(last.result if isinstance(last.result, dict) else {}):
+            st.markdown(f"{phase}: {line}")
+            if failures:
+                _render_failures(phase, failures)
+
+
+def _render_failures(phase: str, failures: list[tuple[str, str]]) -> None:
+    by_reason = Counter(reason for _, reason in failures)
+    st.dataframe(
+        pd.DataFrame(by_reason.most_common(), columns=["Reason", "Funds"]),
+        use_container_width=True,
+        hide_index=True,
+    )
+    short_by_name = get_short_names(tuple(name for name, _ in failures))
+    with st.expander(f"{plural(len(failures), f'{phase} failure')} by fund"):
+        st.dataframe(
+            pd.DataFrame(
+                sorted((short_by_name.get(name, name), reason) for name, reason in failures),
+                columns=["Fund", "Reason"],
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 def _render_unresolved() -> None:

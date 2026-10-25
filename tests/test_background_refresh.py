@@ -29,3 +29,17 @@ def test_poll_compact_renders_single_caption(monkeypatch):
     group.poll(compact=True)
     assert captured["captions"] == ["1 running · Run A [1/4]"]
     assert "info" not in captured and "progress" not in captured
+
+
+def test_last_run_survives_consume(monkeypatch):
+    from core import background
+
+    monkeypatch.setattr(background, "_TASKS", {"k": background.TaskState(status="done", result={"nav_updated": 3})})
+    monkeypatch.setattr(background, "_LAST", {})
+
+    assert br.BackgroundRefresh("k", "Run").last() is None
+    consumed = background.consume_if_finished("k")
+
+    assert consumed is not None and consumed.result == {"nav_updated": 3}
+    assert background.task_state("k").status == "idle"
+    assert br.BackgroundRefresh("k", "Run").last() is consumed

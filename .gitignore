@@ -3,6 +3,7 @@ data/*
 !data/
 !data/__init__.py
 !data/constants.py
+!data/exceptions.py
 !data/sources.py
 !data/fetchers/
 !data/repositories/

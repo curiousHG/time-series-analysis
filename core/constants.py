@@ -42,11 +42,13 @@ def _env_flag(name: str, *, default: bool) -> bool:
 #   LOG_LEVEL=DEBUG   raise the file-log level (default INFO)
 #   PERF_LOG=1        write logs/perf.log and time the blocks core.timing wraps (default off)
 #   DEBUG_LOG=1       shorthand for LOG_LEVEL=DEBUG
+#   LOG_CONSOLE=1     also echo WARNING+ to the terminal running Streamlit (default off: logs/ only)
 # perf timing is off by default: it logged every wrapped call on every Streamlit rerun, which
 # filled 5 MB of perf.log per session while only ever being read when chasing a slow page.
 DEBUG_LOG = _env_flag("DEBUG_LOG", default=False)
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "DEBUG" if DEBUG_LOG else "INFO").upper()
 PERF_LOG_ENABLED = _env_flag("PERF_LOG", default=False)
+LOG_CONSOLE_ENABLED = _env_flag("LOG_CONSOLE", default=False)
 
 # Timing (core.timing): calls slower than this log at INFO, faster ones at DEBUG.
 DEFAULT_SLOW_MS = 100.0

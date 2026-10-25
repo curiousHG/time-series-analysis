@@ -9,6 +9,7 @@ from sqlalchemy.exc import SAWarning
 
 from core.constants import (
     LOG_BACKUP_COUNT,
+    LOG_CONSOLE_ENABLED,
     LOG_DATE_FORMAT,
     LOG_FILES,
     LOG_FORMAT,
@@ -50,7 +51,8 @@ def setup_logging(level: int | None = None, *, perf: bool | None = None):
     on every save (N-fold log duplication).
 
     `level` defaults to the LOG_LEVEL env var (INFO, or DEBUG when DEBUG_LOG=1); `perf` defaults
-    to the PERF_LOG env var (off). Explicit arguments win, so a script can force either.
+    to the PERF_LOG env var (off). Explicit arguments win, so a script can force either. Nothing
+    reaches the terminal unless LOG_CONSOLE=1.
     """
     level = logging.getLevelName(LOG_LEVEL) if level is None else level
     if not isinstance(level, int):  # unknown LOG_LEVEL string
@@ -61,15 +63,16 @@ def setup_logging(level: int | None = None, *, perf: bool | None = None):
     if _has_marked_handler(root):
         return
     root.setLevel(level)
+    logging.captureWarnings(True)
 
     LOGS_DIR.mkdir(exist_ok=True)
     formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
 
-    # Console handler (WARNING+ only to avoid cluttering Streamlit)
-    console = logging.StreamHandler(sys.stderr)
-    console.setLevel(logging.WARNING)
-    console.setFormatter(formatter)
-    root.addHandler(_mark(console))
+    if LOG_CONSOLE_ENABLED:
+        console = logging.StreamHandler(sys.stderr)
+        console.setLevel(logging.WARNING)
+        console.setFormatter(formatter)
+        root.addHandler(_mark(console))
 
     # app.log — catches everything
     app_handler = RotatingFileHandler(LOGS_DIR / LOG_FILES["app"], maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT)

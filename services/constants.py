@@ -29,9 +29,10 @@ HOLDINGS_STALE_DAYS = 35
 # series): no source can have holdings or AUM for it, so every fetch/refresh path skips it.
 DORMANT_AFTER_DAYS = 90
 
-# Parallel fetch pool sizes (services.sync_service). Empirically tuned: MFAPI handles
-# 16-way concurrency cleanly (~55 schemes/s, p95 ~325ms); AdvisorKhoj ~78 rps p95 ~190ms.
-NAV_FETCH_WORKERS = 16
+# Parallel fetch pool sizes (services.sync_service). MFAPI handled 16-way cleanly until Oct 2026,
+# when it began answering bulk refreshes with 429s; 4 workers plus the shared cooldown in
+# data.fetchers.mutual_fund keeps a full refresh inside its limit. AdvisorKhoj ~78 rps p95 ~190ms.
+NAV_FETCH_WORKERS = 4
 HOLDINGS_FETCH_WORKERS = 16
 
 # PostgreSQL stats queries (services.db_stats).

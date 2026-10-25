@@ -35,6 +35,9 @@ class TaskState:
 
 
 _TASKS: dict[str, TaskState] = {}
+# The most recent finished run per key, kept after consume_if_finished resets the task so a view
+# can keep showing what that run did (counts, failures) until the next one finishes.
+_LAST: dict[str, TaskState] = {}
 
 
 def start_task(key: str, fn: Callable[[], Any], *, meta: dict | None = None) -> bool:
@@ -111,5 +114,12 @@ def consume_if_finished(key: str) -> TaskState | None:
         state = _TASKS.get(key)
         if state and state.status in ("done", "failed"):
             _TASKS[key] = TaskState()
+            _LAST[key] = state
             return state
     return None
+
+
+def last_finished(key: str) -> TaskState | None:
+    """The most recent consumed run for `key` (done or failed), or None if none has finished."""
+    with _LOCK:
+        return _LAST.get(key)

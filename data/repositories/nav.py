@@ -20,6 +20,7 @@ from core.database import get_session
 from core.frames import frame_from_rows
 from core.models import AmfiScheme, MfNav
 from core.timing import timeit
+from data.exceptions import SourceThrottled
 from data.fetchers.mutual_fund import (
     fetch_nav_from_advisorkhoj,
     fetch_nav_from_mfapi,
@@ -136,12 +137,14 @@ def load_nav_df(scheme_names: list[str] | None = None) -> pl.DataFrame:
 
 
 def fetch_single_nav(scheme_name: str, scheme_code: int | None = None) -> pl.DataFrame:
-    """Fetch NAV for a single scheme. Tries MFAPI first, falls back to AdvisorKhoj.
+    """Fetch NAV for a single scheme. Tries MFAPI first, falls back to AdvisorKhoj — except when
+    MFAPI is rate-limiting: that `SourceThrottled` propagates, since AdvisorKhoj not knowing the
+    fund would otherwise mask a transient throttle as a definitive miss.
 
     Pass `scheme_code` whenever the caller knows it: several AMFI variants share one name, so
     resolving by name can land on a sibling plan. Rows come back tagged with the code used."""
     known = scheme_code if scheme_code is not None else lookup_scheme_code_by_exact_name(scheme_name)
-    tag = int(known) if known is not None else None
+    tag: int | None = int(known) if known is not None else None
     if known is not None and int(known) <= 0:
         mfapi_code = None
     else:
@@ -150,8 +153,10 @@ def fetch_single_nav(scheme_name: str, scheme_code: int | None = None) -> pl.Dat
         try:
             df = fetch_nav_from_mfapi(mfapi_code, scheme_name)
             return df.with_columns(pl.lit(tag, dtype=pl.Int64).alias("scheme_code"))
+        except SourceThrottled:
+            raise
         except Exception as e:
-            logger.debug("MFAPI failed for %s (code=%s): %s", scheme_name, mfapi_code, e)
+            logger.info("MFAPI failed for %s (code=%s): %s", scheme_name, mfapi_code, e)
 
     logger.debug("Falling back to AdvisorKhoj for NAV: %s", scheme_name)
     data = fetch_nav_from_advisorkhoj(scheme_name)

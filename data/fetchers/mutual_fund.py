@@ -2,6 +2,8 @@ import contextlib
 import datetime
 import logging
 import re
+import threading
+import time
 from datetime import datetime as dt
 from urllib.parse import quote
 
@@ -10,7 +12,7 @@ import polars as pl
 from bs4 import BeautifulSoup
 
 from data.constants import AMFI_NAV_ALL_URL, BASE_OVERVIEW_URL, HEADERS, MFAPI_BASE_URL, NAV_URL
-from data.exceptions import SourceNotFound, UpstreamFormatError
+from data.exceptions import SourceNotFound, SourceThrottled, UpstreamFormatError
 
 logger = logging.getLogger("data.fetchers.mutual_fund")
 
@@ -24,12 +26,53 @@ def _shape_of(payload: object) -> str:
     return type(payload).__name__
 
 
+# MFAPI rate-limits bulk refreshes with HTTP 429 and sends no Retry-After (measured Oct 2026:
+# 114 of 200 requests throttled at 16 workers, some even at 4). Each successive 429 waits longer.
+_MFAPI_BACKOFF_SECONDS = (2.0, 5.0, 10.0, 20.0, 30.0)
+
+
+class _Cooldown:
+    """A pause shared by every thread calling one source: a single 429 holds the whole worker
+    pool, so it backs off together instead of spending the quota it just ran out of."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._resume_at = 0.0
+
+    def wait(self) -> None:
+        with self._lock:
+            delay = self._resume_at - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+
+    def hold(self, seconds: float) -> None:
+        with self._lock:
+            self._resume_at = max(self._resume_at, time.monotonic() + seconds)
+
+
+_MFAPI_COOLDOWN = _Cooldown()
+
+
+def _get_mfapi(url: str) -> httpx.Response:
+    """GET from MFAPI, waiting out 429s; raises `SourceThrottled` once the backoff is exhausted."""
+    for backoff in (*_MFAPI_BACKOFF_SECONDS, None):
+        _MFAPI_COOLDOWN.wait()
+        resp = httpx.get(url, timeout=30)
+        if resp.status_code != 429:
+            return resp
+        if backoff is None:
+            break
+        logger.info("MFAPI returned 429 for %s — pausing all MFAPI requests %.0fs", url, backoff)
+        _MFAPI_COOLDOWN.hold(backoff)
+    raise SourceThrottled("MFAPI", len(_MFAPI_BACKOFF_SECONDS) + 1)
+
+
 def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
     """Fetch historical NAV from MFAPI → (date, nav, schemeName) DataFrame."""
     url = f"{MFAPI_BASE_URL}/{scheme_code}"
     logger.debug("Fetching NAV from MFAPI: code=%s name=%s", scheme_code, scheme_name)
 
-    resp = httpx.get(url, timeout=30)
+    resp = _get_mfapi(url)
     resp.raise_for_status()
 
     raw = resp.json()

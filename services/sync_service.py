@@ -12,9 +12,10 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
+import httpx
 import polars as pl
 
-from data.exceptions import SourceNotFound
+from data.exceptions import SourceNotFound, SourceThrottled
 from data.repositories.holdings import fetch_holdings_for_scheme, replace_holdings_atomic, slug_to_code_map
 from data.repositories.nav import fetch_single_nav, last_nav_date_by_code, save_nav_df
 from data.repositories.scheme_codes import resolve_codes
@@ -66,10 +67,21 @@ def _emit(progress_cb: ProgressCb | None, event: FetchEvent) -> None:
         logger.exception("progress_cb raised; continuing")
 
 
+def failure_reason(error: Exception, name: str) -> str:
+    """The cause of a failed fetch with the fund's own name taken out, so a run's failures group
+    by why they failed rather than splitting into one row per fund."""
+    if isinstance(error, httpx.HTTPStatusError):
+        return f"HTTP {error.response.status_code} from {error.request.url.host}"
+    if isinstance(error, (SourceNotFound, SourceThrottled)):
+        return str(error).replace(f" for {name!r}", "")
+    return f"{type(error).__name__}: {str(error).replace(repr(name), 'the fund')}"
+
+
 def _record_failure(result, kind: str, name: str, error: Exception) -> tuple[FetchOutcome, str]:
     logger.warning("%s refresh failed for %s: %s", kind, name, error)
-    result.failures.append((name, str(error)))
-    return "failed", str(error)
+    reason = failure_reason(error, name)
+    result.failures.append((name, reason))
+    return "failed", reason
 
 
 # ---- NAV ---------------------------------------------------------------------------------
@@ -200,7 +212,8 @@ def refresh_all_fund_data(
     """Run NAV and/or holdings updates for a set of tracked funds, suitable for a background task.
 
     `scope` is 'nav', 'holdings', or 'all'. `progress_cb(**fields)` receives live phase/done/total
-    (e.g. phase='NAV', done=12, total=99) so a polling UI can show progress. Returns a summary dict.
+    (e.g. phase='NAV', done=12, total=99) so a polling UI can show progress. Returns a summary dict:
+    per-phase counts plus `nav_failures` / `holdings_failures` as (scheme name, reason) pairs.
     """
     out: dict = {}
     phases = [p for p in ("NAV", "Holdings") if scope in ("all", p.lower())]
@@ -225,7 +238,13 @@ def refresh_all_fund_data(
             _log_event("NAV", ev)
 
         nav = update_nav_incremental(scheme_names, name_to_code=name_to_code, progress_cb=_nav_cb)
-        out |= {"nav_updated": nav.updated_count, "nav_new_rows": nav.new_rows_total, "nav_failed": len(nav.failures)}
+        out |= {
+            "nav_updated": nav.updated_count,
+            "nav_skipped": nav.skipped_count,
+            "nav_new_rows": nav.new_rows_total,
+            "nav_failed": len(nav.failures),
+            "nav_failures": nav.failures,
+        }
         if progress_cb:
             progress_cb(
                 message=f"NAV done — {nav.updated_count:,} updated (+{nav.new_rows_total:,} rows), "
@@ -240,12 +259,19 @@ def refresh_all_fund_data(
             _log_event("Holdings", ev)
 
         holdings = refresh_holdings_for_schemes(scheme_names, progress_cb=_hold_cb)
-        out |= {"holdings_updated": holdings.success_count, "holdings_failed": len(holdings.failures)}
+        out |= {
+            "holdings_updated": holdings.success_count,
+            "holdings_rows": holdings.total_holdings,
+            "holdings_failed": len(holdings.failures),
+            "holdings_failures": holdings.failures,
+        }
         if progress_cb:
             progress_cb(
                 message=f"Holdings done — {holdings.success_count:,} updated "
                 f"({holdings.total_holdings:,} rows), {len(holdings.failures):,} failed."
             )
 
-    logger.info("refresh_all_fund_data(scope=%s): %s", scope, out)
+    logger.info(
+        "refresh_all_fund_data(scope=%s): %s", scope, {k: v for k, v in out.items() if not k.endswith("_failures")}
+    )
     return out

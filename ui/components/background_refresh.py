@@ -32,6 +32,7 @@ from core.background import (
     append_task_log,
     consume_if_finished,
     is_running,
+    last_finished,
     set_task_progress,
     start_task,
     task_log,
@@ -40,6 +41,8 @@ from core.background import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from core.background import TaskState
 
 # Rows of the running log shown at once; the rest stays scrollable in the same box.
 _LOG_VIEW_HEIGHT_PX = 220
@@ -109,6 +112,10 @@ class BackgroundRefresh:
 
     def is_running(self) -> bool:
         return is_running(self.key)
+
+    def last(self) -> TaskState | None:
+        """The previous finished run (kept after `consume`), for a "last run" summary."""
+        return last_finished(self.key)
 
     def start(self, fn: Callable[[], Any], *, meta: dict | None = None) -> bool:
         """Start the task if not already running (no-op if it is). Returns whether it started."""
