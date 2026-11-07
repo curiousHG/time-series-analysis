@@ -1,6 +1,6 @@
 """Unit tests for the OHLCV availability watermark state machine (data.repositories.ohlcv_watermark).
 
-_ensure_ohlcv is dependency-injected (model / fill_fn / get_wm / set_wm), so the branchy logic —
+ensure_ohlcv is dependency-injected (model / fill_fn / get_wm / set_wm), so the branchy logic —
 empty-streak → unavailable, negative-cache re-hammer guard, backward-gap floor lock — is tested here
 with in-memory fakes + monkeypatched DB helpers, no database required.
 """
@@ -40,19 +40,19 @@ def _clean(monkeypatch):
     """Isolate each test: empty the negative cache and silence notices."""
     wm._empty_fetch_cache.clear()
     monkeypatch.setattr(wm, "push_notice", lambda *a, **k: None)
-    monkeypatch.setattr(wm, "_load_ohlcv", lambda *a: "DF")  # return value is irrelevant to the state machine
+    monkeypatch.setattr(wm, "load_ohlcv", lambda *a: "DF")  # return value is irrelevant to the state machine
     yield
     wm._empty_fetch_cache.clear()
 
 
 def _ranges(monkeypatch, values):
-    """Feed successive _date_range(...) return values from `values`."""
+    """Feed successive get_date_range(...) return values from `values`."""
     it = iter(values)
-    monkeypatch.setattr(wm, "_date_range", lambda *a: next(it))
+    monkeypatch.setattr(wm, "get_date_range", lambda *a: next(it))
 
 
 def _run(fake: FakeWm, fill_fn, *, flag_unavailable=True):
-    return wm._ensure_ohlcv(
+    return wm.ensure_ohlcv(
         "SYM",
         START,
         END,
@@ -66,7 +66,7 @@ def _run(fake: FakeWm, fill_fn, *, flag_unavailable=True):
 
 def test_unavailable_short_circuits(monkeypatch):
     """An 'unavailable' watermark returns empty without touching the DB or fetching."""
-    monkeypatch.setattr(wm, "_date_range", lambda *a: pytest.fail("must not query when unavailable"))
+    monkeypatch.setattr(wm, "get_date_range", lambda *a: pytest.fail("must not query when unavailable"))
     fetched = []
     out = _run(FakeWm(status="unavailable"), lambda *a: fetched.append(1))
     assert fetched == []
@@ -101,7 +101,7 @@ def test_empty_fetch_increments_streak_then_unavailable(monkeypatch):
 def test_negative_cache_skips_refetch(monkeypatch):
     """After an empty fetch, a second call within the TTL must NOT re-fetch (anti-hammer)."""
     fetches = []
-    monkeypatch.setattr(wm, "_date_range", lambda *a: None)  # always empty
+    monkeypatch.setattr(wm, "get_date_range", lambda *a: None)  # always empty
     _run(FakeWm(), lambda *a: fetches.append(1))
     assert len(fetches) == 1
     _run(FakeWm(), lambda *a: fetches.append(1))  # negative-cached → no fetch

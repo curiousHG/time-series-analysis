@@ -15,13 +15,13 @@ from core.database import get_session
 from core.frames import frame_from_rows
 from core.models import StockOhlcv, StockRegistry
 from data.fetchers.stock import fetch_nse_equity_list, fetch_symbol_data
-from data.repositories._ohlcv_io import _to_date, _upsert_ohlcv
+from data.repositories._ohlcv_io import to_date, upsert_ohlcv
 from data.repositories.index_ohlcv import ensure_index_data, refresh_index_to_today
 from data.repositories.ohlcv_watermark import (
-    _ensure_ohlcv,
-    _get_stock_wm,
-    _refresh_to_today,
-    _set_stock_wm,
+    ensure_ohlcv,
+    get_stock_watermark,
+    refresh_ohlcv_to_today,
+    set_stock_watermark,
 )
 from stocks.constants import NSE_EXCHANGES as _NSE_EXCHANGES
 from stocks.constants import is_index_symbol, to_bare_symbol
@@ -116,7 +116,7 @@ def _fill_stock_range(symbol: str, start: date, end: date) -> None:
     """Fetch an equity from yfinance and upsert it into stock_ohlcv."""
     data = fetch_symbol_data(_yf_fetch_symbol(symbol), start=start, end=end)
     if data is not None and not data.empty:
-        _upsert_ohlcv(StockOhlcv, symbol, pl.from_pandas(data.reset_index()))
+        upsert_ohlcv(StockOhlcv, symbol, pl.from_pandas(data.reset_index()))
 
 
 def register_stock(
@@ -163,26 +163,26 @@ def refresh_stocks_batch(symbols: list[str], start: date, end_exclusive: date) -
         if bare is None:
             continue
         frame = pl.from_pandas(df.reset_index())
-        _upsert_ohlcv(StockOhlcv, bare, frame)
+        upsert_ohlcv(StockOhlcv, bare, frame)
         total += frame.height
     return total
 
 
 def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
     """DB-first OHLCV loader for one symbol; fetches only missing gaps, index symbols go to ensure_index_data."""
-    start = _to_date(start_date)
-    end = _to_date(end_date)
+    start = to_date(start_date)
+    end = to_date(end_date)
     if is_index_symbol(symbol):
         return ensure_index_data(symbol, start, end)
     sym = to_bare_symbol(symbol)
-    return _ensure_ohlcv(
+    return ensure_ohlcv(
         sym,
         start,
         end,
         model=StockOhlcv,
         fill_fn=_fill_stock_range,
-        get_wm=_get_stock_wm,
-        set_wm=_set_stock_wm,
+        get_wm=get_stock_watermark,
+        set_wm=set_stock_watermark,
         flag_unavailable=True,
     )
 
@@ -195,7 +195,7 @@ def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
     if is_index_symbol(symbol):
         return refresh_index_to_today(symbol)
     sym = to_bare_symbol(symbol)
-    return _refresh_to_today(sym, model=StockOhlcv, fill_fn=_fill_stock_range)
+    return refresh_ohlcv_to_today(sym, model=StockOhlcv, fill_fn=_fill_stock_range)
 
 
 def _despike(rows: list[dict]) -> list[dict]:

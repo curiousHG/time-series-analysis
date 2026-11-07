@@ -14,13 +14,16 @@ from core.database import get_session
 from core.models import IndexRegistry, StockRegistry
 from core.notifications import push_notice
 from data.constants import EMPTY_OHLCV, MIN_FETCH_DAYS
-from data.repositories._ohlcv_io import _EMPTY_FETCH_TTL, _date_range, _empty_fetch_cache, _load_ohlcv
+from data.repositories._ohlcv_io import get_date_range, load_ohlcv
 from stocks.constants import to_bare_symbol
 
 if TYPE_CHECKING:
     import polars as pl
 
 logger = logging.getLogger(__name__)
+
+_EMPTY_FETCH_TTL = timedelta(hours=1)
+_empty_fetch_cache: dict[str, datetime] = {}
 
 _UNSET = object()
 _UNAVAILABLE_EMPTY_STREAK = 2
@@ -34,7 +37,7 @@ class _Wm:
     streak: int = 0
 
 
-def _get_stock_wm(symbol: str) -> _Wm:
+def get_stock_watermark(symbol: str) -> _Wm:
     with get_session() as session:
         row = session.get(StockRegistry, symbol)
         if row is None:
@@ -42,7 +45,9 @@ def _get_stock_wm(symbol: str) -> _Wm:
         return _Wm(row.ohlcv_status, row.ohlcv_earliest, row.ohlcv_empty_streak or 0)
 
 
-def _set_stock_wm(symbol: str, *, status: str | None = None, earliest=_UNSET, empty_streak: int | None = None) -> None:
+def set_stock_watermark(
+    symbol: str, *, status: str | None = None, earliest=_UNSET, empty_streak: int | None = None
+) -> None:
     with get_session() as session:
         row = session.get(StockRegistry, symbol)
         if row is None:
@@ -58,7 +63,7 @@ def _set_stock_wm(symbol: str, *, status: str | None = None, earliest=_UNSET, em
         session.commit()
 
 
-def _get_index_wm(symbol: str) -> _Wm:
+def get_index_watermark(symbol: str) -> _Wm:
     with get_session() as session:
         row = session.get(IndexRegistry, symbol)
         if row is None:
@@ -66,7 +71,9 @@ def _get_index_wm(symbol: str) -> _Wm:
         return _Wm(row.status, row.earliest, 0)
 
 
-def _set_index_wm(symbol: str, *, status: str | None = None, earliest=_UNSET, empty_streak: int | None = None) -> None:
+def set_index_watermark(
+    symbol: str, *, status: str | None = None, earliest=_UNSET, empty_streak: int | None = None
+) -> None:
     with get_session() as session:
         row = session.get(IndexRegistry, symbol)
         if row is None:
@@ -80,19 +87,19 @@ def _set_index_wm(symbol: str, *, status: str | None = None, earliest=_UNSET, em
         session.commit()
 
 
-def _ensure_ohlcv(symbol, start, end, *, model, fill_fn, get_wm, set_wm, flag_unavailable) -> pl.DataFrame:
+def ensure_ohlcv(symbol, start, end, *, model, fill_fn, get_wm, set_wm, flag_unavailable) -> pl.DataFrame:
     """DB-first gap-fetch for `symbol` over [start, end] using the given table, fetcher and watermark accessors."""
     wm = get_wm(symbol)
     if wm.status == "unavailable":
         return EMPTY_OHLCV.clone()
 
-    existing = _date_range(model, symbol)
+    existing = get_date_range(model, symbol)
     if existing is None:
         last_empty = _empty_fetch_cache.get(symbol)
         if last_empty is not None and datetime.now() - last_empty < _EMPTY_FETCH_TTL:
             return EMPTY_OHLCV.clone()
         fill_fn(symbol, start, end)
-        rng = _date_range(model, symbol)
+        rng = get_date_range(model, symbol)
         if rng is None:
             _empty_fetch_cache[symbol] = datetime.now()
             streak = wm.streak + 1
@@ -109,7 +116,7 @@ def _ensure_ohlcv(symbol, start, end, *, model, fill_fn, get_wm, set_wm, flag_un
         db_min, db_max = existing
         if start < db_min and (db_min - start).days >= MIN_FETCH_DAYS and wm.earliest != db_min:
             fill_fn(symbol, start, db_min)
-            new_min = _date_range(model, symbol)[0]
+            new_min = get_date_range(model, symbol)[0]
             floor = db_min if new_min >= db_min else None
             set_wm(symbol, status="available", earliest=floor, empty_streak=0)
         elif wm.status != "available":
@@ -117,12 +124,12 @@ def _ensure_ohlcv(symbol, start, end, *, model, fill_fn, get_wm, set_wm, flag_un
         if end > db_max and (end - db_max).days >= MIN_FETCH_DAYS:
             fill_fn(symbol, db_max, end)
 
-    return _load_ohlcv(model, symbol, start, end)
+    return load_ohlcv(model, symbol, start, end)
 
 
-def _refresh_to_today(symbol, *, model, fill_fn) -> tuple[date, date | None]:
+def refresh_ohlcv_to_today(symbol, *, model, fill_fn) -> tuple[date, date | None]:
     today = date.today()
-    existing = _date_range(model, symbol)
+    existing = get_date_range(model, symbol)
     if existing is None:
         start = today - timedelta(days=_COLD_BACKFILL_DAYS)
         fill_fn(symbol, start, today + timedelta(days=1))
@@ -131,7 +138,7 @@ def _refresh_to_today(symbol, *, model, fill_fn) -> tuple[date, date | None]:
         if db_max >= today:
             return today, db_max
         fill_fn(symbol, db_max, today + timedelta(days=1))
-    new_range = _date_range(model, symbol)
+    new_range = get_date_range(model, symbol)
     return today, (new_range[1] if new_range else None)
 
 

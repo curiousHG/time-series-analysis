@@ -8,7 +8,7 @@ from sqlmodel import func, select
 from core.database import get_session
 from core.frames import frame_from_rows
 from core.models import MfAssetAllocation, MfHolding
-from data.repositories.holdings import _resolve_slug
+from data.repositories.holdings import get_scheme_code_for_slug
 
 
 def _norm_to_pct(values: list[float]) -> list[float]:
@@ -25,7 +25,7 @@ def _norm_to_pct(values: list[float]) -> list[float]:
 
 def asset_breakdown(slug: str) -> dict[str, float]:
     """Return {asset_class -> %} for a fund. Always normalised to 100%."""
-    code = _resolve_slug(slug)
+    code = get_scheme_code_for_slug(slug)
     if code is None:
         return {}
     with get_session() as session:
@@ -63,7 +63,7 @@ _HOLDING_SCHEMA = {
 
 def holdings_for_slug(slug: str) -> pl.DataFrame:
     """Load all `mf_holdings` rows for one slug as polars (used by helpers below)."""
-    code = _resolve_slug(slug)
+    code = get_scheme_code_for_slug(slug)
     if code is None:
         return pl.DataFrame(schema=_HOLDING_SCHEMA)
     with get_session() as session:

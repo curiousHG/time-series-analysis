@@ -1,10 +1,9 @@
-"""Low-level OHLCV table I/O (upsert / load / date-range) shared by stock_ohlcv and index_ohlcv, plus the
-negative-fetch cache."""
+"""Low-level OHLCV table I/O (upsert / load / date-range) shared by stock_ohlcv and index_ohlcv."""
 
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from functools import lru_cache
 
 import polars as pl
@@ -17,11 +16,8 @@ from data.constants import EMPTY_OHLCV
 
 logger = logging.getLogger(__name__)
 
-_EMPTY_FETCH_TTL = timedelta(hours=1)
-_empty_fetch_cache: dict[str, datetime] = {}
 
-
-def _to_date(d: datetime | date) -> date:
+def to_date(d: datetime | date) -> date:
     return d.date() if isinstance(d, datetime) else d
 
 
@@ -54,7 +50,7 @@ def _as_date(d) -> date:
     return d.date() if isinstance(d, datetime) else d
 
 
-def _upsert_ohlcv(model: type, symbol: str, df: pl.DataFrame) -> None:
+def upsert_ohlcv(model: type, symbol: str, df: pl.DataFrame) -> None:
     """Upsert OHLCV rows into `model`'s table, dropping rows without a positive close and phantom weekend bars."""
     if df.height == 0:
         return
@@ -91,7 +87,7 @@ def _upsert_ohlcv(model: type, symbol: str, df: pl.DataFrame) -> None:
     logger.info("Saved %d OHLCV rows for %s", df.height, symbol)
 
 
-def _load_ohlcv(model: type, symbol: str, start_date: date, end_date: date) -> pl.DataFrame:
+def load_ohlcv(model: type, symbol: str, start_date: date, end_date: date) -> pl.DataFrame:
     """Load OHLCV rows for `symbol` from `model`'s table within a date range."""
     with get_session() as session:
         rows = session.exec(
@@ -119,7 +115,7 @@ def _load_ohlcv(model: type, symbol: str, start_date: date, end_date: date) -> p
     )
 
 
-def _date_range(model: type, symbol: str) -> tuple[date, date] | None:
+def get_date_range(model: type, symbol: str) -> tuple[date, date] | None:
     """Min/max dates for `symbol` in `model`'s table, or None if no data."""
     with get_session() as session:
         row = session.exec(

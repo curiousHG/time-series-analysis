@@ -89,27 +89,22 @@ def test_domain_packages_stay_leaf():
     _ratchet(
         "domain→services/data",
         violations,
-        allowlist={"mutual_funds/holdings_stats.py"},  # imports _resolve_slug — Wave 0 fix
+        allowlist={"mutual_funds/holdings_stats.py"},  # imports holdings.get_scheme_code_for_slug
     )
 
 
-def test_no_private_imports_across_packages():
-    """`_name` symbols are module-internal; other top-level packages must not import them."""
-    violations = set()
-    for rel, tree in FILES.items():
-        pkg = rel.split("/")[0]
-        for mod, names in _imports(tree):
-            src = mod.split(".")[0]
-            if src in APP_PACKAGES and src != pkg and any(n.startswith("_") for n in names):
-                violations.add(f"{rel} ← {mod}")
-    _ratchet(
-        "cross-package private imports",
-        violations,
-        allowlist={
-            "mutual_funds/holdings_stats.py ← data.repositories.holdings",  # _resolve_slug
-            "services/mf/freshness.py ← data.repositories.holdings",  # _slug_to_code_map_cached
-        },
+def test_no_private_imports():
+    """`_name` symbols are module-internal; no other module imports them. A helper shared between
+    modules drops the underscore (the module itself may stay private, e.g. `_ohlcv_io`)."""
+    bad = sorted(
+        f"{rel} ← {mod}.{name}"
+        for rel, tree in FILES.items()
+        for mod, names in _imports(tree)
+        if mod.split(".")[0] in APP_PACKAGES
+        for name in names
+        if name.startswith("_") and not name.startswith("__")
     )
+    assert not bad, "private names imported from another module:\n  " + "\n  ".join(bad)
 
 
 _PURE_DATA_MODULES = {"data.constants", "data.sources"}

@@ -149,7 +149,7 @@ Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep
 - **Despike** (`stock_ohlcv._despike`, `_DESPIKE_RATIO = 5`) — Yahoo's early-2000s `.NS` history has days
   that spike (or swap between tickers) and recover next session (CIPLA 2003-04-14: 49.3 → 3.9 → 49.5).
   Real splits are persistent level shifts and never match the both-neighbours pattern.
-- **Non-positive closes dropped** (`_ohlcv_io._upsert_ohlcv`) — Yahoo's early `.NS` zero/null-close days
+- **Non-positive closes dropped** (`_ohlcv_io.upsert_ohlcv`) — Yahoo's early `.NS` zero/null-close days
   poison returns.
 - **Phantom weekend bars** (`_ohlcv_io._drop_phantom_weekend_bars`) — yfinance answers a delisted/renamed
   ticker (TATAMOTORS after the demerger) with dates shifted a day earlier, i.e. a bar every Sunday.
@@ -164,12 +164,12 @@ Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep
   daily. `_empty_fetch_cache` (`_EMPTY_FETCH_TTL`, 1h) is an in-process negative cache so a symbol
   yfinance can never serve does not re-run a slow doomed fetch on every rerun; the TTL is short so
   transient outages retry.
-- **Watermark rules** (`ohlcv_watermark._ensure_ohlcv`) — `_UNAVAILABLE_EMPTY_STREAK = 2` consecutive
+- **Watermark rules** (`ohlcv_watermark.ensure_ohlcv`) — `_UNAVAILABLE_EMPTY_STREAK = 2` consecutive
   empty fetches flips a stock to `unavailable`, which short-circuits until a Settings retry clears it
   (indices never flip: `flag_unavailable=False`). The backward gap is fetched only while the floor is
   unconfirmed (`wm.earliest != db_min`) and locked only when nothing earlier arrived. Cold start pulls
   `_COLD_BACKFILL_DAYS` (10y) so all rolling-CAGR windows have data; ranges under `MIN_FETCH_DAYS` (5)
-  are skipped as holiday/weekend noise, except `_refresh_to_today`.
+  are skipped as holiday/weekend noise, except `refresh_ohlcv_to_today`.
 - **Last NSE date uses the median** (`last_nse_stock_ohlcv_date`) — the plain max is dragged forward
   by a few international tickers while NSE symbols sit weeks behind, which once opened a 40-day hole
   via a forward-only refresh window.

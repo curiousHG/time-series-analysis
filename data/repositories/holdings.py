@@ -49,7 +49,7 @@ def clear_slug_cache() -> None:
     _slug_to_code_map_cached.cache_clear()
 
 
-def _resolve_slug(slug: str) -> int | None:
+def get_scheme_code_for_slug(slug: str) -> int | None:
     return _slug_to_code_map_cached().get(slug)
 
 
@@ -81,7 +81,7 @@ def _asset_row(row: dict, code: int) -> MfAssetAllocation:
 def _stage_rows(session, df: pl.DataFrame, build, scheme_code: int | None = None) -> None:
     """Stage one ORM row per frame row on `session` without committing; rows with an unresolvable slug are skipped."""
     for row in df.iter_rows(named=True):
-        code = scheme_code if scheme_code is not None else _resolve_slug(row.get("schemeSlug") or "")
+        code = scheme_code if scheme_code is not None else get_scheme_code_for_slug(row.get("schemeSlug") or "")
         if code is None:
             logger.warning("%s: no scheme_code for slug %r — skipping", build.__name__, row.get("schemeSlug"))
             continue

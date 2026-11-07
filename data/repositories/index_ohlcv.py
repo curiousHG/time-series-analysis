@@ -14,12 +14,12 @@ from sqlmodel import col, select
 from core.database import get_session
 from core.models import IndexOhlcv
 from data.fetchers.stock import fetch_symbol_data
-from data.repositories._ohlcv_io import _load_ohlcv, _to_date, _upsert_ohlcv
+from data.repositories._ohlcv_io import load_ohlcv, to_date, upsert_ohlcv
 from data.repositories.ohlcv_watermark import (
-    _ensure_ohlcv,
-    _get_index_wm,
-    _refresh_to_today,
-    _set_index_wm,
+    ensure_ohlcv,
+    get_index_watermark,
+    refresh_ohlcv_to_today,
+    set_index_watermark,
 )
 
 if TYPE_CHECKING:
@@ -96,7 +96,7 @@ def _fill_index_range(symbol: str, start: date, end: date) -> None:
         return
     frame = _reject_implausible_index_bars(symbol, pl.from_pandas(data.reset_index()))
     if frame.height:
-        _upsert_ohlcv(IndexOhlcv, symbol, frame)
+        upsert_ohlcv(IndexOhlcv, symbol, frame)
 
 
 _MAX_INDEX_DAY_MOVE = 0.5
@@ -106,7 +106,7 @@ _LIVE_INDEX_WINDOW_DAYS = 45
 def _reject_implausible_index_bars(symbol: str, frame: pl.DataFrame) -> pl.DataFrame:
     if frame.height == 0 or "Close" not in frame.columns:
         return frame
-    first_date = _to_date(frame["Date"].min())
+    first_date = to_date(frame["Date"].min())
     with get_session() as session:
         prev = session.exec(
             select(col(IndexOhlcv.close))
@@ -137,28 +137,28 @@ def _reject_implausible_index_bars(symbol: str, frame: pl.DataFrame) -> pl.DataF
 
 def ensure_index_data(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
     """DB-first OHLCV loader for market indices (index_ohlcv)."""
-    start = _to_date(start_date)
-    end = _to_date(end_date)
-    return _ensure_ohlcv(
+    start = to_date(start_date)
+    end = to_date(end_date)
+    return ensure_ohlcv(
         symbol,
         start,
         end,
         model=IndexOhlcv,
         fill_fn=_fill_index_range,
-        get_wm=_get_index_wm,
-        set_wm=_set_index_wm,
+        get_wm=get_index_watermark,
+        set_wm=set_index_watermark,
         flag_unavailable=False,
     )
 
 
 def refresh_index_to_today(symbol: str) -> tuple[date, date | None]:
     """refresh_stock_to_today for an index (index_ohlcv)."""
-    return _refresh_to_today(symbol, model=IndexOhlcv, fill_fn=_fill_index_range)
+    return refresh_ohlcv_to_today(symbol, model=IndexOhlcv, fill_fn=_fill_index_range)
 
 
 def load_index_ohlcv(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
     """Read index OHLCV from index_ohlcv without fetching, with a Symbol column added."""
-    df = _load_ohlcv(IndexOhlcv, symbol, _to_date(start_date), _to_date(end_date))
+    df = load_ohlcv(IndexOhlcv, symbol, to_date(start_date), to_date(end_date))
     return df if df.is_empty() else df.with_columns(pl.lit(symbol).alias("Symbol"))
 
 

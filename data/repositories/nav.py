@@ -20,17 +20,6 @@ from data.repositories.scheme_codes import resolve_codes_with_synthetic
 logger = logging.getLogger(__name__)
 
 
-def _resolve_names(scheme_codes: list[int]) -> dict[int, str]:
-    """Return scheme_code -> name via amfi_schemes."""
-    if not scheme_codes:
-        return {}
-    with get_session() as session:
-        rows = session.exec(
-            select(AmfiScheme.scheme_code, AmfiScheme.scheme_name).where(col(AmfiScheme.scheme_code).in_(scheme_codes))
-        ).all()
-    return {r[0]: r[1] for r in rows}
-
-
 def nav_json_to_df(nav_json: list[list], scheme_name: str) -> pl.DataFrame:
     """Convert MFAPI raw nav payload to a (date, nav, schemeName) DataFrame."""
     cleaned = [{"ts_ms": int(row[0]), "nav": float(row[1])} for row in nav_json if row and row[1] is not None]

@@ -44,6 +44,9 @@ Never `query_*`, `read_*`, or bare adjectives (`latest_*`); `tests/test_standard
 One exception is allowlisted: `data/repositories/advisorkhoj_keys.py::fetch_holdings_for_scheme`, which wraps
 the DB key lookup around the AdvisorKhoj fetch.
 
+A leading `_` means "used only in this module". A helper another module calls is public, even inside a
+private module such as `data/repositories/_ohlcv_io.py`; `test_no_private_imports` enforces it.
+
 ## 3. Data correctness
 
 - **One source per datatype**, declared in `data/sources.py` — the routing registry is the single

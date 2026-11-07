@@ -9,7 +9,7 @@ from sqlmodel import func, select
 
 from core.database import get_session
 from core.models import AmfiScheme, MfHolding, MfNav
-from data.repositories.holdings import _slug_to_code_map_cached
+from data.repositories.holdings import slug_to_code_map
 from services.constants import HOLDINGS_STALE_DAYS, NAV_STALE_BUSINESS_DAYS, FreshnessStatus
 
 
@@ -137,7 +137,7 @@ def compute_holdings_freshness(scheme_names: list[str], scheme_slugs: list[str])
     last_by_slug: dict[str, date] = {}
 
     if scheme_slugs:
-        slug_to_code = _slug_to_code_map_cached()
+        slug_to_code = slug_to_code_map()
         code_to_slug = {slug_to_code[s]: s for s in scheme_slugs if s in slug_to_code}
         codes = list(code_to_slug.keys())
         if codes:
