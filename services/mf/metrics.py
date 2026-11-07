@@ -17,7 +17,7 @@ from core.models import AmfiScheme, MfHolding, MfMetadata, MfNav
 from core.timing import timed, timeit
 from data.repositories.scheme_codes import resolve_codes
 from data.repositories.scheme_metrics import clear_metrics, find_stale_schemes, load_metrics, upsert_metrics
-from data.repositories.stock import ensure_stock_data, refresh_stock_to_today
+from data.repositories.stock_ohlcv import ensure_stock_data, refresh_stock_to_today
 from services.benchmarks import benchmark_for_fund, daily_returns_from_ohlcv
 from services.constants import RF_DAILY, TRADING_DAYS
 from services.mf.metrics_math import (

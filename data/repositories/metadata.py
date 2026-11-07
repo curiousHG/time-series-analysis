@@ -148,8 +148,9 @@ def _advisorkhoj_metadata(scheme_name: str, scheme_code: int | None) -> tuple[di
     return None, last_error
 
 
-def fetch_and_save(scheme_name: str) -> dict:
-    """Fetch metadata for one scheme (Kuvera, then AdvisorKhoj by slug and by name, then a Direct sibling) and save it.
+def refresh_metadata(scheme_name: str) -> dict:
+    """Fetch metadata for one scheme (Kuvera, then AdvisorKhoj by slug and by name, then a Direct sibling) and save it,
+    replacing any existing row.
 
     Returns the saved dict; raises the last source error when nothing is found.
     """
@@ -218,7 +219,7 @@ def ensure_metadata(scheme_names: list[str]) -> pl.DataFrame:
     if missing:
         logger.info("Fetching metadata for %d missing schemes", len(missing))
         with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {pool.submit(fetch_and_save, n): n for n in missing}
+            futures = {pool.submit(refresh_metadata, n): n for n in missing}
             for future in as_completed(futures):
                 name = futures[future]
                 try:
@@ -227,11 +228,6 @@ def ensure_metadata(scheme_names: list[str]) -> pl.DataFrame:
                     logger.error("Failed to fetch metadata for %s: %s", name, e)
 
     return load_metadata(scheme_names)
-
-
-def refresh_metadata(scheme_name: str) -> dict:
-    """Force re-fetch of one scheme's metadata, replacing the existing row."""
-    return fetch_and_save(scheme_name)
 
 
 def count_metadata() -> int:

@@ -382,7 +382,7 @@ def test_regular_plan_takes_scheme_level_fields_from_direct_sibling(monkeypatch)
     )
     monkeypatch.setattr(repo, "save_metadata", saved.append)
 
-    meta = repo.fetch_and_save("X Fund - Regular Plan - Growth")
+    meta = repo.refresh_metadata("X Fund - Regular Plan - Growth")
 
     assert meta["scheme_name"] == "X Fund - Regular Plan - Growth"
     assert meta["aum_crores"] == 1234.5
@@ -405,7 +405,7 @@ def test_metadata_raises_when_every_tier_misses(monkeypatch):
     )
     monkeypatch.setattr(repo, "find_direct_sibling", lambda code: None)
     with pytest.raises(SourceNotFound):
-        repo.fetch_and_save("Orphan Fund - Regular Plan - Growth")
+        repo.refresh_metadata("Orphan Fund - Regular Plan - Growth")
 
 
 def test_launch_date_miss_names_the_fund_not_the_html():

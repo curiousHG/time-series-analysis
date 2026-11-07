@@ -21,7 +21,7 @@ def test_holdings_refresh_keeps_existing_rows_when_a_fetch_fails(monkeypatch, ca
         )
 
     monkeypatch.setattr(sync_service, "slug_to_code_map", lambda: codes)
-    monkeypatch.setattr(sync_service, "_fetch_normalize_holdings", fake_fetch)
+    monkeypatch.setattr(sync_service, "fetch_holdings_for_scheme", fake_fetch)
     # The atomic replace stands in for delete+save; a failed fetch must never reach it.
     monkeypatch.setattr(
         sync_service, "replace_holdings_atomic", lambda slug, h, s, a, scheme_code=None: replaced.append(slug)

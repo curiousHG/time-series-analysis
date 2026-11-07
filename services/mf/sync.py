@@ -141,11 +141,6 @@ def update_nav_incremental(
     return result
 
 
-def _fetch_normalize_holdings(scheme_code: int) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Resolve the scheme on AdvisorKhoj, pull its portfolio and normalise it into the three frames."""
-    return fetch_holdings_for_scheme(scheme_code)
-
-
 def refresh_holdings_for_schemes(
     scheme_names: list[str],
     *,
@@ -166,7 +161,7 @@ def refresh_holdings_for_schemes(
     done = 0
 
     with ThreadPoolExecutor(max_workers=HOLDINGS_FETCH_WORKERS) as pool:
-        future_to_pair = {pool.submit(_fetch_normalize_holdings, codes[slug]): (name, slug) for name, slug in pairs}
+        future_to_pair = {pool.submit(fetch_holdings_for_scheme, codes[slug]): (name, slug) for name, slug in pairs}
         for future in as_completed(future_to_pair):
             name, _slug = future_to_pair[future]
             done += 1

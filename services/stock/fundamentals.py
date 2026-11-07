@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 
 import polars as pl
 
-from data.repositories.stock import ensure_stock_data
 from data.repositories.stock_fundamentals import load_quarterly
+from data.repositories.stock_ohlcv import ensure_stock_data
 from stocks.constants import to_yf_symbol
 
 PERCENTILE_COLS: dict[str, bool] = {

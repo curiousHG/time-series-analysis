@@ -10,7 +10,7 @@ from datetime import timedelta
 import polars as pl
 
 from data.repositories.screener import load_screener_view
-from data.repositories.stock import ensure_stock_data
+from data.repositories.stock_ohlcv import ensure_stock_data
 from mutual_funds.display import detect_option, detect_plan
 
 logger = logging.getLogger(__name__)

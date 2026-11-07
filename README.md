@@ -104,7 +104,7 @@ data/repositories/                DB-first; ensures fetch only the gap
   scheme_metrics.py               cached MF metric CRUD
   screener.py                     DB-backed screener view
   tradebook.py                    Kite CSV import with dedup
-  stock.py                        OHLCV smart-cache
+  stock_ohlcv.py                  OHLCV smart-cache
 ```
 
 ## Database schema (PostgreSQL)

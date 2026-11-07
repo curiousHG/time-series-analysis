@@ -5,10 +5,10 @@ import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
 
-from data.repositories.stock import ensure_stock_data
+from data.repositories.stock_ohlcv import ensure_stock_data
 from mutual_funds.tradebook import daily_net_invested
+from services.portfolio.value import get_signed_invested
 from ui.charts import theme
-from ui.views.portfolio.helpers import get_signed_invested
 
 
 def render_invested_over_time(mapped: pl.DataFrame):

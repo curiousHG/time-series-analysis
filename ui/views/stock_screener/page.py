@@ -52,7 +52,7 @@ def _add_stocks(picks: list[tuple[str, str, str]]) -> None:
 
     NSE stocks get OHLCV + screener.in fundamentals + CAPM; global stocks get OHLCV only.
     """
-    from data.repositories.stock import ensure_stock_data, register_stock  # noqa: PLC0415 — defer off boot
+    from data.repositories.stock_ohlcv import ensure_stock_data, register_stock  # noqa: PLC0415 — defer off boot
     from services.stock.sync import sync_stocks  # noqa: PLC0415
 
     wide_start = pd.to_datetime("2000-01-01")
@@ -83,7 +83,7 @@ def _add_stocks(picks: list[tuple[str, str, str]]) -> None:
 
 def _add_index(symbol: str, label: str) -> None:
     """Fetch a market index's full history into index_ohlcv so it's chartable in Stock Analysis."""
-    from data.repositories.stock import ensure_index_data  # noqa: PLC0415 — defer heavy import off boot
+    from data.repositories.index_ohlcv import ensure_index_data  # noqa: PLC0415 — defer heavy import off boot
     from ui.state.loaders import load_index_ohlcv  # noqa: PLC0415
 
     with st.spinner(f"Fetching {label}…"):

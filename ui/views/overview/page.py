@@ -25,7 +25,7 @@ def _overview_refresh_task() -> dict:
     """Refresh what the Overview shows: stock prices + all NSE indices (bhavcopy) + the board's
     ^-indices (market pulse + international) to today. Runs on a background task."""
     from core.background import set_task_progress  # noqa: PLC0415 — defer off boot
-    from data.repositories.stock import refresh_index_to_today  # noqa: PLC0415
+    from data.repositories.index_ohlcv import refresh_index_to_today  # noqa: PLC0415
     from services.overview.market import INTERNATIONAL_PULSE_SYMBOLS, MARKET_PULSE_SYMBOLS  # noqa: PLC0415
     from services.stock.sync import refresh_all_stock_data  # noqa: PLC0415
 

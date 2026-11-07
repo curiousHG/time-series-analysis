@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import polars as pl
 
 from core.timing import timeit
-from data.repositories.stock import ensure_stock_data
+from data.repositories.stock_ohlcv import ensure_stock_data
 from data.repositories.tradebook import load_tradebook_from_db
 from mutual_funds.display import unique_short_names
 from mutual_funds.tradebook import normalize_transactions

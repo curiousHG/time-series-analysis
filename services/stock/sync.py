@@ -64,7 +64,7 @@ def refresh_stocks_via_yfinance(
 ) -> int:
     """Daily forward-fill for every tracked equity via batched yfinance downloads, re-writing the trailing
     `window_days`. Returns rows upserted."""
-    from data.repositories.stock import (  # noqa: PLC0415
+    from data.repositories.stock_ohlcv import (  # noqa: PLC0415
         fill_stock_gaps,
         last_nse_stock_ohlcv_date,
         last_stock_ohlcv_date,
@@ -94,7 +94,7 @@ def refresh_stocks_via_yfinance(
 
 def refresh_indices_via_bhavcopy(*, max_days: int = 120, progress_cb: Callable[..., None] | None = None) -> int:
     """Backfill NSE index bhavcopy days from the last stored date to today into index_ohlcv. Returns rows upserted."""
-    from data.repositories.stock import last_index_bhavcopy_date, save_index_bhavcopy_day  # noqa: PLC0415
+    from data.repositories.index_ohlcv import last_index_bhavcopy_date, save_index_bhavcopy_day  # noqa: PLC0415
 
     today = _date.today()
     last = last_index_bhavcopy_date()
@@ -116,7 +116,7 @@ def refresh_indices_via_bhavcopy(*, max_days: int = 120, progress_cb: Callable[.
 def backfill_indices_history(*, years: int = 12, progress_cb: Callable[..., None] | None = None) -> int:
     """Backfill index bhavcopy history ~`years` back, filling the backward and forward gaps. Long-running.
     Returns rows upserted."""
-    from data.repositories.stock import (  # noqa: PLC0415
+    from data.repositories.index_ohlcv import (  # noqa: PLC0415
         first_index_bhavcopy_date,
         last_index_bhavcopy_date,
         save_index_bhavcopy_day,
@@ -138,7 +138,7 @@ def backfill_indices_history(*, years: int = 12, progress_cb: Callable[..., None
 
 def refresh_all_stock_data(*, progress_cb: Callable[..., None] | None = None) -> dict:
     """Full stock + index refresh for the background task, then recompute stock metrics. Returns per-step counts."""
-    from data.repositories.stock import sync_nse_etf_universe  # noqa: PLC0415 — defer off boot
+    from data.repositories.stock_ohlcv import sync_nse_etf_universe  # noqa: PLC0415 — defer off boot
 
     stock_rows = refresh_stocks_via_yfinance(progress_cb=progress_cb)
     index_rows = refresh_indices_via_bhavcopy(progress_cb=progress_cb)
@@ -215,7 +215,8 @@ def find_corrupt_ohlcv_symbols(*, jump: float = 5.0) -> list[str]:
 def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] | None = None) -> dict:
     """Re-fetch full history for `find_corrupt_ohlcv_symbols` hits (UPSERT, no delete), then recompute their
     metrics. Returns {'repaired': [...], 'failed': [...]}."""
-    from data.repositories.stock import clear_stock_ohlcv_status, refetch_stock_full  # noqa: PLC0415
+    from data.repositories.ohlcv_watermark import clear_stock_ohlcv_status  # noqa: PLC0415
+    from data.repositories.stock_ohlcv import refetch_stock_full  # noqa: PLC0415
     from services.stock.metrics import recompute_price_metrics  # noqa: PLC0415
 
     symbols = find_corrupt_ohlcv_symbols(jump=jump)
@@ -240,11 +241,8 @@ def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] 
 
 def refetch_all_stocks(*, progress_cb: Callable[..., None] | None = None) -> int:
     """Replace every stock's OHLCV with a fresh yfinance pull, then recompute metrics. Returns #stocks re-fetched."""
-    from data.repositories.stock import (  # noqa: PLC0415
-        clear_stock_ohlcv_status,
-        list_stock_symbols,
-        refetch_stock_full,
-    )
+    from data.repositories.ohlcv_watermark import clear_stock_ohlcv_status  # noqa: PLC0415
+    from data.repositories.stock_ohlcv import list_stock_symbols, refetch_stock_full  # noqa: PLC0415
     from services.stock.metrics import recompute_price_metrics  # noqa: PLC0415
 
     symbols = list_stock_symbols()
@@ -313,7 +311,7 @@ def recompute_all_stock_metrics() -> int:
 
 def list_unavailable_stocks() -> list[str]:
     """Bare symbols whose price history was confirmed unavailable (for the Settings retry list)."""
-    from data.repositories.stock import list_unavailable_stock_symbols  # noqa: PLC0415 — defer off boot
+    from data.repositories.ohlcv_watermark import list_unavailable_stock_symbols  # noqa: PLC0415 — defer off boot
 
     return list_unavailable_stock_symbols()
 
@@ -323,11 +321,11 @@ def retry_stock_ohlcv(symbol: str) -> str:
     resulting ohlcv_status ('available' if data was recovered, else 'pending'/'unavailable')."""
     import datetime as _dt  # noqa: PLC0415
 
-    from data.repositories.stock import (  # noqa: PLC0415 — defer heavy import off boot
+    from data.repositories.ohlcv_watermark import (  # noqa: PLC0415 — defer heavy import off boot
         clear_stock_ohlcv_status,
-        ensure_stock_data,
         get_stock_ohlcv_statuses,
     )
+    from data.repositories.stock_ohlcv import ensure_stock_data  # noqa: PLC0415 — defer heavy import off boot
 
     clear_stock_ohlcv_status(symbol)
     ensure_stock_data(symbol, _dt.date(2000, 1, 1), _dt.date.today())

@@ -5,6 +5,7 @@ import polars as pl
 import streamlit as st
 
 from core.timing import timeit
+from data.fetchers.stock import query_stocks
 from data.repositories.amfi import search_amfi
 from data.repositories.holdings import (
     ensure_holdings_data,
@@ -13,7 +14,7 @@ from data.repositories.holdings import (
     refresh_holdings_data as _refresh_holdings,
 )
 from data.repositories.metadata import load_metadata
-from data.repositories.stock import ensure_stock_data, search_stock_symbols
+from data.repositories.stock_ohlcv import ensure_stock_data
 from data.repositories.tradebook import load_tradebook_from_db
 from mutual_funds.display import unique_short_names
 from mutual_funds.tradebook import normalize_transactions
@@ -94,7 +95,7 @@ def load_stock_open_close(
 @st.cache_data(show_spinner="Loading index…")
 def load_index_ohlcv(symbol: str, start: datetime | None = None, end: datetime | None = None) -> pl.DataFrame:
     """Single-index OHLCV (index_ohlcv), shaped like load_stock_open_close for the chart."""
-    from data.repositories.stock import ensure_index_data  # noqa: PLC0415 — defer heavy import off boot
+    from data.repositories.index_ohlcv import ensure_index_data  # noqa: PLC0415 — defer heavy import off boot
 
     df = ensure_index_data(symbol, start, end)
     if df.is_empty():
@@ -136,7 +137,7 @@ def load_metrics_cached() -> pl.DataFrame:
 
 @st.cache_data(ttl=TTL_DAILY)
 def cached_search_stock(query: str) -> pd.DataFrame:
-    return search_stock_symbols(query)
+    return query_stocks(query)
 
 
 @st.cache_data(ttl=TTL_FAST, show_spinner=False)
@@ -180,15 +181,15 @@ def load_international_pulse_cached() -> pl.DataFrame:
 @st.cache_data(show_spinner="Loading index…")
 def load_index_chart_ohlcv(symbol: str, start: datetime | None = None, end: datetime | None = None) -> pl.DataFrame:
     """Chart-ready OHLCV for any index straight from index_ohlcv (bhavcopy or yfinance-sourced)."""
-    from data.repositories.stock import read_index_ohlcv  # noqa: PLC0415 — defer off boot
+    from data.repositories import index_ohlcv  # noqa: PLC0415 — defer off boot
 
-    return read_index_ohlcv(symbol, start, end)
+    return index_ohlcv.read_index_ohlcv(symbol, start, end)
 
 
 @st.cache_data(ttl=TTL_INTRADAY, show_spinner=False)
 def load_index_valuation_cached(symbol: str) -> dict | None:
     """Latest P/E, P/B, Div Yield, turnover (₹ cr) for an index (from the bhavcopy)."""
-    from data.repositories.stock import latest_index_valuation  # noqa: PLC0415 — defer off boot
+    from data.repositories.index_ohlcv import latest_index_valuation  # noqa: PLC0415 — defer off boot
 
     return latest_index_valuation(symbol)
 

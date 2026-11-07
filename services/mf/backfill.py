@@ -12,7 +12,7 @@ from core.database import get_session
 from core.models import MfRegistry
 from data.repositories.advisorkhoj_keys import fetch_holdings_for_scheme
 from data.repositories.holdings import save_assets, save_holdings, save_sectors
-from data.repositories.metadata import fetch_and_save as fetch_metadata_and_save
+from data.repositories.metadata import refresh_metadata
 from data.repositories.nav import save_nav_df
 from services.mf.nav_sources import fetch_single_nav
 from services.mf.registry import list_tracked, resolve_scheme_code, set_status, upsert_registry
@@ -56,7 +56,7 @@ def _fetch_holdings(scheme_name: str) -> SourceStatus:
 
 def _fetch_metadata(scheme_name: str) -> SourceStatus:
     try:
-        meta = fetch_metadata_and_save(scheme_name)
+        meta = refresh_metadata(scheme_name)
         if not meta or not any(meta.get(k) for k in ("aum_crores", "expense_ratio", "benchmark", "launch_date")):
             return "unavailable"
         return "available"

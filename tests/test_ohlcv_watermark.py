@@ -53,8 +53,14 @@ def _ranges(monkeypatch, values):
 
 def _run(fake: FakeWm, fetch_fn, *, flag_unavailable=True):
     return wm._ensure_ohlcv(
-        "SYM", START, END, model=object, fetch_fn=fetch_fn,
-        get_wm=fake.get, set_wm=fake.set, flag_unavailable=flag_unavailable,
+        "SYM",
+        START,
+        END,
+        model=object,
+        fetch_fn=fetch_fn,
+        get_wm=fake.get,
+        set_wm=fake.set,
+        flag_unavailable=flag_unavailable,
     )
 
 

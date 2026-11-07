@@ -7,7 +7,7 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
-from data.repositories.stock import list_bhavcopy_index_names
+from data.repositories.index_ohlcv import list_bhavcopy_index_names
 from indicators import INDICATOR_REGISTRY, compute_indicators
 from services.benchmarks import index_display_name
 from services.overview.market import INTERNATIONAL_INDEX_SYMBOLS

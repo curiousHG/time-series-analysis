@@ -154,7 +154,7 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
            scheme_metrics.py           # cached MF metrics CRUD
            screener.py                 # DB view for screener assembly
            amfi.py                     # AMFI master sync + ISIN lookup
-           stock.py                    # Stock OHLCV CRUD + smart caching
+           stock_ohlcv.py              # Stock OHLCV CRUD + smart caching
            tradebook.py                # Tradebook import with dedup
 ```
 
@@ -222,7 +222,7 @@ Connection: `DATABASE_URL` env var (default: `postgresql://harshit@localhost:543
 **Rule**: external data is fetched only for the range or keys that are NOT already in the database. Always check the DB first, compute what's missing, fetch only the missing part, save it back, then return the result from the DB.
 
 This is the project's hard rule for any new data-source integration. Examples already following it:
-- `data/repositories/stock.py:ensure_stock_data` — looks up `(min, max)` date range per symbol in `stock_ohlcv`; fetches only forward and backward gaps. Skips fetches under `MIN_FETCH_DAYS=5` to avoid weekend/holiday noise.
+- `data/repositories/stock_ohlcv.py:ensure_stock_data` — looks up `(min, max)` date range per symbol in `stock_ohlcv`; fetches only forward and backward gaps. Skips fetches under `MIN_FETCH_DAYS=5` to avoid weekend/holiday noise.
 - `services/mf/nav_sources.py:ensure_nav_data` — fetches only schemes not already present in `mf_nav`.
 - `data/repositories/holdings.py:ensure_holdings_data` — fetches only slugs not already in `mf_holdings`.
 

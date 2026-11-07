@@ -81,7 +81,7 @@ Why behind non-obvious choices. Inline comments stay minimal; the rationale live
   A throttle status gets one `_BACKOFF_SECONDS` retry, then surfaces so a bulk run stops instead of
   failing every fund. A name match only proposes; the ISIN must match the AMFI record, else None.
   AUM is in Rs millions (`/10` → crore, verified vs AdvisorKhoj); no SEBI benchmark is exposed.
-- **Metadata source order** (`metadata.fetch_and_save`) — Kuvera (Direct plans, ISIN-verified), then
+- **Metadata source order** (`metadata.refresh_metadata`) — Kuvera (Direct plans, ISIN-verified), then
   AdvisorKhoj by verified slug (Regular plans), then by name, each filling only what the previous left
   empty; last resort is the Direct sibling's record. Only `_SCHEME_LEVEL_FIELDS` (AUM, manager,
   objective, riskometer, category) are copied from a sibling; TER, launch date and minimums differ by

@@ -38,8 +38,8 @@ def _refresh_stock_on_open(ticker: str, frame: pl.DataFrame) -> None:
     """On first open per session: forward-fill OHLCV, ensure price metrics exist, reload if new bars arrived."""
     import contextlib  # noqa: PLC0415
 
-    from data.repositories.stock import refresh_stock_to_today  # noqa: PLC0415 — defer off boot
     from data.repositories.stock_fundamentals import load_stock_metrics  # noqa: PLC0415
+    from data.repositories.stock_ohlcv import refresh_stock_to_today  # noqa: PLC0415 — defer off boot
     from services.stock.metrics import recompute_price_metrics  # noqa: PLC0415
 
     bare = to_bare_symbol(ticker)
@@ -177,7 +177,7 @@ def _render_add_international() -> None:
             key="sa_intl_pick",
         )
         if st.button("Add & open", type="primary", key="sa_intl_add"):
-            from data.repositories.stock import register_stock  # noqa: PLC0415 — defer off boot
+            from data.repositories.stock_ohlcv import register_stock  # noqa: PLC0415 — defer off boot
 
             register_stock(pick["symbol"], name=pick["name"], exchange=pick["exchange"], quote_type=pick["quote_type"])
             load_analysis_catalog_cached.clear()

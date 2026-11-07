@@ -14,10 +14,15 @@ from sqlmodel import col, delete, select
 from core.database import get_session
 from core.frames import frame_from_rows
 from core.models import StockOhlcv, StockRegistry
-from data.fetchers.stock import fetch_nse_equity_list, fetch_symbol_data, query_stocks
+from data.fetchers.stock import fetch_nse_equity_list, fetch_symbol_data
 from data.repositories._ohlcv_io import _to_date, _upsert_ohlcv
 from data.repositories.index_ohlcv import ensure_index_data, refresh_index_to_today
-from data.repositories.ohlcv_watermark import _ensure_ohlcv, _get_stock_wm, _refresh_to_today, _set_stock_wm
+from data.repositories.ohlcv_watermark import (
+    _ensure_ohlcv,
+    _get_stock_wm,
+    _refresh_to_today,
+    _set_stock_wm,
+)
 from stocks.constants import NSE_EXCHANGES as _NSE_EXCHANGES
 from stocks.constants import is_index_symbol, to_bare_symbol
 
@@ -400,11 +405,6 @@ def last_stock_ohlcv_date() -> date | None:
     """Latest date in stock_ohlcv across all symbols, or None if empty."""
     with get_session() as session:
         return session.exec(select(func.max(col(StockOhlcv.date)))).one()
-
-
-def search_stock_symbols(query: str):
-    """Search stock symbols (delegates to the fetcher's `query_stocks`)."""
-    return query_stocks(query)
 
 
 def load_stock_registry() -> pl.DataFrame:

@@ -15,7 +15,12 @@ from core.database import get_session
 from core.models import IndexOhlcv
 from data.fetchers.stock import fetch_symbol_data
 from data.repositories._ohlcv_io import _load_ohlcv, _to_date, _upsert_ohlcv
-from data.repositories.ohlcv_watermark import _ensure_ohlcv, _get_index_wm, _refresh_to_today, _set_index_wm
+from data.repositories.ohlcv_watermark import (
+    _ensure_ohlcv,
+    _get_index_wm,
+    _refresh_to_today,
+    _set_index_wm,
+)
 
 if TYPE_CHECKING:
     from datetime import date, datetime

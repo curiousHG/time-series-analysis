@@ -27,7 +27,8 @@ _SCREENER_SLUG_BY_INDEX_NAME = {
 def analysis_catalog() -> list[dict]:
     """The Stock-Analysis picker universe: equities, ETFs and indices as {id, kind: 'stock'|'etf'|'index', name,
     exchange}."""
-    from data.repositories.stock import list_bhavcopy_index_names, load_registry_catalog  # noqa: PLC0415
+    from data.repositories.index_ohlcv import list_bhavcopy_index_names  # noqa: PLC0415
+    from data.repositories.stock_ohlcv import load_registry_catalog  # noqa: PLC0415
     from services.overview.market import INTERNATIONAL_INDEX_SYMBOLS  # noqa: PLC0415
 
     entries: list[dict] = [

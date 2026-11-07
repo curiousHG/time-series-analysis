@@ -6,12 +6,12 @@ import polars as pl
 import streamlit as st
 
 from services.mf.registry import load_registry
+from services.portfolio.value import build_portfolio_value_series, get_mapped_data
 from ui.components.background_refresh import BackgroundRefresh
 from ui.components.chrome import page_header
 from ui.components.freshness_banner import clear_freshness_cache, is_fund_stale
 from ui.state.loaders import load_holdings_data, load_txn_data
 from ui.views.portfolio import flows_tab, overview_tab, positions_tab, risk_tab
-from ui.views.portfolio.helpers import build_portfolio_value_series, get_mapped_data
 
 _REFRESH_KEY = "portfolio_refresh"
 

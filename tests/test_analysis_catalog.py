@@ -13,7 +13,7 @@ import services.stock.market_data as mds
 
 def test_analysis_catalog_classifies_stock_etf_index(monkeypatch):
     monkeypatch.setattr(
-        "data.repositories.stock.load_registry_catalog",
+        "data.repositories.stock_ohlcv.load_registry_catalog",
         lambda: pl.DataFrame(
             {
                 "symbol": ["RELIANCE", "GOLDBEES", "POWERINDIA", "AAPL"],
@@ -23,7 +23,7 @@ def test_analysis_catalog_classifies_stock_etf_index(monkeypatch):
             }
         ),
     )
-    monkeypatch.setattr("data.repositories.stock.list_bhavcopy_index_names", lambda: ["Nifty 50", "Nifty Bank"])
+    monkeypatch.setattr("data.repositories.index_ohlcv.list_bhavcopy_index_names", lambda: ["Nifty 50", "Nifty Bank"])
     monkeypatch.setattr("services.overview.market.INTERNATIONAL_INDEX_SYMBOLS", [("^GSPC", "S&P 500", "US")])
 
     cat = mds.analysis_catalog()
@@ -42,12 +42,12 @@ def test_analysis_catalog_classifies_stock_etf_index(monkeypatch):
 
 def test_analysis_catalog_carries_display_names(monkeypatch):
     monkeypatch.setattr(
-        "data.repositories.stock.load_registry_catalog",
+        "data.repositories.stock_ohlcv.load_registry_catalog",
         lambda: pl.DataFrame(
             {"symbol": ["GOLDBEES"], "name": ["Gold ETF"], "quote_type": ["ETF"], "exchange": ["NSE"]}
         ),
     )
-    monkeypatch.setattr("data.repositories.stock.list_bhavcopy_index_names", list)
+    monkeypatch.setattr("data.repositories.index_ohlcv.list_bhavcopy_index_names", list)
     monkeypatch.setattr("services.overview.market.INTERNATIONAL_INDEX_SYMBOLS", [("^GSPC", "S&P 500", "US")])
 
     by_id = {c["id"]: c for c in mds.analysis_catalog()}

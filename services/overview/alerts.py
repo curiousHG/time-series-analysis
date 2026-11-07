@@ -15,7 +15,7 @@ from core.timing import timeit
 from data.repositories.amfi import load_amfi_df
 from data.repositories.holdings import load_holdings
 from data.repositories.scheme_metrics import load_metrics
-from data.repositories.stock import ensure_stock_data
+from data.repositories.stock_ohlcv import ensure_stock_data
 from data.repositories.tradebook import load_tradebook_from_db
 from mutual_funds.display import make_slug, short_scheme_name
 from mutual_funds.tradebook import normalize_transactions
