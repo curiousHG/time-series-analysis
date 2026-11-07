@@ -166,6 +166,40 @@ def test_upserts_only_in_repositories():
     )
 
 
+# ---------------------------------------------------------------- naming
+
+
+def _function_names() -> list[tuple[str, str]]:
+    return [
+        (rel, node.name.lstrip("_"))
+        for rel, tree in FILES.items()
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    ]
+
+
+def test_no_banned_verbs():
+    """query_* / read_* / latest_* are not in the verb taxonomy — use search_* / load_* / get_*."""
+    banned = sorted(
+        f"{rel}::{name}" for rel, name in _function_names() if name.startswith(("query_", "read_", "latest_"))
+    )
+    assert not banned, "banned verb prefixes (see docs/standards.md §2):\n  " + "\n  ".join(banned)
+
+
+def test_fetch_only_in_fetchers_and_services():
+    """fetch_* means a network read that never writes the DB: data/fetchers/ or services/ only."""
+    violations = {
+        f"{rel}::{name}"
+        for rel, name in _function_names()
+        if name.startswith("fetch_") and not rel.startswith(("data/fetchers/", "services/"))
+    }
+    _ratchet(
+        "fetch_* defined outside data/fetchers/ and services/",
+        violations,
+        allowlist={"data/repositories/advisorkhoj_keys.py::fetch_holdings_for_scheme"},
+    )
+
+
 # ---------------------------------------------------------------- caching
 
 

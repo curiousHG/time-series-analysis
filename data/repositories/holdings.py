@@ -124,7 +124,7 @@ def save_assets(df: pl.DataFrame, *, scheme_code: int | None = None) -> None:
         session.commit()
 
 
-def _latest_per_scheme(df: pl.DataFrame, dedup_keys: list[str]) -> pl.DataFrame:
+def _keep_latest_per_scheme(df: pl.DataFrame, dedup_keys: list[str]) -> pl.DataFrame:
     """Keep only the latest `portfolioDate` row per scheme, deduped by `dedup_keys`."""
     if df.is_empty() or "portfolioDate" not in df.columns:
         return df
@@ -187,7 +187,7 @@ def load_holdings(slugs: list[str] | None = None) -> pl.DataFrame:
             for h, name in rows
         ]
     )
-    return _latest_per_scheme(df, dedup_keys=["schemeCode", "instrumentName", "isin"])
+    return _keep_latest_per_scheme(df, dedup_keys=["schemeCode", "instrumentName", "isin"])
 
 
 def load_sectors(slugs: list[str] | None = None) -> pl.DataFrame:
@@ -214,7 +214,7 @@ def load_sectors(slugs: list[str] | None = None) -> pl.DataFrame:
             for s, name in rows
         ]
     )
-    return _latest_per_scheme(df, dedup_keys=["schemeCode", "sector"])
+    return _keep_latest_per_scheme(df, dedup_keys=["schemeCode", "sector"])
 
 
 def load_assets(slugs: list[str] | None = None) -> pl.DataFrame:
@@ -241,7 +241,7 @@ def load_assets(slugs: list[str] | None = None) -> pl.DataFrame:
             for a, name in rows
         ]
     )
-    return _latest_per_scheme(df, dedup_keys=["schemeCode", "assetClass"])
+    return _keep_latest_per_scheme(df, dedup_keys=["schemeCode", "assetClass"])
 
 
 def delete_holdings_for_slugs(slugs: list[str]) -> int:

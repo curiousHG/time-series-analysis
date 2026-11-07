@@ -5,7 +5,7 @@ import polars as pl
 import streamlit as st
 
 from core.timing import timeit
-from data.fetchers.stock import query_stocks
+from data.fetchers.stock import search_stocks
 from data.repositories.amfi import search_amfi
 from data.repositories.holdings import (
     ensure_holdings_data,
@@ -137,7 +137,7 @@ def load_metrics_cached() -> pl.DataFrame:
 
 @st.cache_data(ttl=TTL_DAILY)
 def cached_search_stock(query: str) -> pd.DataFrame:
-    return query_stocks(query)
+    return search_stocks(query)
 
 
 @st.cache_data(ttl=TTL_FAST, show_spinner=False)
@@ -183,15 +183,15 @@ def load_index_chart_ohlcv(symbol: str, start: datetime | None = None, end: date
     """Chart-ready OHLCV for any index straight from index_ohlcv (bhavcopy or yfinance-sourced)."""
     from data.repositories import index_ohlcv  # noqa: PLC0415 — defer off boot
 
-    return index_ohlcv.read_index_ohlcv(symbol, start, end)
+    return index_ohlcv.load_index_ohlcv(symbol, start, end)
 
 
 @st.cache_data(ttl=TTL_INTRADAY, show_spinner=False)
 def load_index_valuation_cached(symbol: str) -> dict | None:
     """Latest P/E, P/B, Div Yield, turnover (₹ cr) for an index (from the bhavcopy)."""
-    from data.repositories.index_ohlcv import latest_index_valuation  # noqa: PLC0415 — defer off boot
+    from data.repositories.index_ohlcv import get_latest_index_valuation  # noqa: PLC0415 — defer off boot
 
-    return latest_index_valuation(symbol)
+    return get_latest_index_valuation(symbol)
 
 
 @st.cache_data(ttl=TTL_DAILY, show_spinner=False)

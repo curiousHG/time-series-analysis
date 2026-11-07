@@ -30,7 +30,7 @@ ui/views  →  ui/state/loaders.py  →  services/  →  data/repositories  → 
 
 | Verb | Meaning | Lives in |
 |---|---|---|
-| `fetch_*` | HTTP only, no DB | `data/fetchers/` only |
+| `fetch_*` | network read; never writes the DB | `data/fetchers/` for one raw source; `services/` when it chooses between sources (e.g. `services.mf.nav_sources.fetch_single_nav`) |
 | `load_*` | DB read → DataFrame/rows | repositories, loaders |
 | `get_*` | DB read → scalar/dict | repositories |
 | `ensure_*` | DB-first gap-fetch (check DB → fetch missing → save → return from DB) | `data/repositories/` for one source; `services/` when it chooses between sources (e.g. `services.mf.nav_sources.ensure_nav_data`) |
@@ -40,9 +40,9 @@ ui/views  →  ui/state/loaders.py  →  services/  →  data/repositories  → 
 | `recompute_*` | derive + persist metrics | services |
 | `search_*` | fuzzy lookup | anywhere |
 
-Never `query_*`, `read_*`, or bare adjectives (`latest_*`). Known misfits (`query_stocks`,
-`read_index_ohlcv`, `latest_index_valuation`, `fetch_*` inside repositories) are queued for the
-naming-alignment pass; new code follows the table from day one.
+Never `query_*`, `read_*`, or bare adjectives (`latest_*`); `tests/test_standards.py` enforces both rules.
+One exception is allowlisted: `data/repositories/advisorkhoj_keys.py::fetch_holdings_for_scheme`, which wraps
+the DB key lookup around the AdvisorKhoj fetch.
 
 ## 3. Data correctness
 

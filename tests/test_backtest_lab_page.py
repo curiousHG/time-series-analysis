@@ -214,7 +214,7 @@ def lab(monkeypatch, tmp_path):
     patch("load_optimization_cached", lambda opt_id: state["optimization"])
     patch("clear_backtest_caches", lambda: None)
     monkeypatch.setattr("ui.views.backtest_lab.universe_picker.load_universe_cached", lambda *a, **k: ["TCS", "INFY"])
-    monkeypatch.setattr("services.backtest.runs.latest_optimization", lambda run_id: state["opt_id"])
+    monkeypatch.setattr("services.backtest.runs.get_latest_optimization", lambda run_id: state["opt_id"])
     return state
 
 

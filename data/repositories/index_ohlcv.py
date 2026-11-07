@@ -85,7 +85,7 @@ def first_index_bhavcopy_date() -> date | None:
         return session.exec(select(func.min(col(IndexOhlcv.date))).where(col(IndexOhlcv.symbol) == "Nifty 50")).one()
 
 
-def _fetch_and_save_index(symbol: str, start: date, end: date) -> None:
+def _fill_index_range(symbol: str, start: date, end: date) -> None:
     """Fetch an index by its literal yfinance symbol and upsert; name-keyed NSE indices (containing a space) are
     skipped."""
     if " " in symbol:
@@ -144,7 +144,7 @@ def ensure_index_data(symbol: str, start_date: datetime | date, end_date: dateti
         start,
         end,
         model=IndexOhlcv,
-        fetch_fn=_fetch_and_save_index,
+        fill_fn=_fill_index_range,
         get_wm=_get_index_wm,
         set_wm=_set_index_wm,
         flag_unavailable=False,
@@ -153,16 +153,16 @@ def ensure_index_data(symbol: str, start_date: datetime | date, end_date: dateti
 
 def refresh_index_to_today(symbol: str) -> tuple[date, date | None]:
     """refresh_stock_to_today for an index (index_ohlcv)."""
-    return _refresh_to_today(symbol, model=IndexOhlcv, fetch_fn=_fetch_and_save_index)
+    return _refresh_to_today(symbol, model=IndexOhlcv, fill_fn=_fill_index_range)
 
 
-def read_index_ohlcv(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
+def load_index_ohlcv(symbol: str, start_date: datetime | date, end_date: datetime | date) -> pl.DataFrame:
     """Read index OHLCV from index_ohlcv without fetching, with a Symbol column added."""
     df = _load_ohlcv(IndexOhlcv, symbol, _to_date(start_date), _to_date(end_date))
     return df if df.is_empty() else df.with_columns(pl.lit(symbol).alias("Symbol"))
 
 
-def latest_index_valuation(symbol: str) -> dict | None:
+def get_latest_index_valuation(symbol: str) -> dict | None:
     """Latest P/E, P/B, Div Yield and turnover (₹ cr) for an index, or None if it has no valuation rows."""
     with get_session() as session:
         row = session.exec(

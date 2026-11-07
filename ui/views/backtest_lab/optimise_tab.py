@@ -241,7 +241,7 @@ def _render_results(run_id: int, detail: RunDetail, opt: OptimizationDetail) -> 
 
 
 def render(catalog: dict[str, StrategySpec]) -> None:
-    from services.backtest.runs import latest_optimization  # noqa: PLC0415 — pulls the engine in
+    from services.backtest.runs import get_latest_optimization  # noqa: PLC0415 — pulls the engine in
 
     runs = load_backtest_runs_cached()
     options = [] if runs.is_empty() else [int(v) for v in runs["id"].to_list()]
@@ -270,7 +270,7 @@ def render(catalog: dict[str, StrategySpec]) -> None:
     section_header("Search", "Trials run one at a time against the base run's data, loaded once.")
     _render_form(run_id, detail, spec, handle)
 
-    opt_id = latest_optimization(run_id)
+    opt_id = get_latest_optimization(run_id)
     if opt_id is None:
         st.caption("No optimisation has run for this configuration yet.")
         return

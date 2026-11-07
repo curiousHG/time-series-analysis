@@ -20,7 +20,7 @@ from strategies.markov import (
     bucket_states,
     estimate,
     final_matrix,
-    read_rows,
+    pick_state_rows,
     scaled_returns,
     state_table,
 )
@@ -112,10 +112,10 @@ class TransitionMatrixBase(BasketStrategy):
     def _read(self, states, moves, stats):
         """Per symbol and bar: the confidence to gate on, the expected return, and the guards."""
         if self.pooled:
-            p_up = read_rows(states, stats.directional)
-            expected = read_rows(states, stats.expected)
-            samples = read_rows(states, stats.samples)
-            lift_z = read_rows(states, stats.z_up())
+            p_up = pick_state_rows(states, stats.directional)
+            expected = pick_state_rows(states, stats.expected)
+            samples = pick_state_rows(states, stats.samples)
+            lift_z = pick_state_rows(states, stats.z_up())
             base = np.broadcast_to(stats.base_directional[None, :], p_up.shape)
         else:
             p_up, expected, samples, lift_z, base = self._per_symbol(states, moves)
@@ -130,7 +130,7 @@ class TransitionMatrixBase(BasketStrategy):
             row_states = states[i : i + 1]
             own = estimate(row_states, moves[i : i + 1], scheme, window=int(self.window), alpha=float(self.alpha))
             for target, values in zip(out[:4], (own.directional, own.expected, own.samples, own.z_up()), strict=True):
-                target[i] = read_rows(row_states, values)[0]
+                target[i] = pick_state_rows(row_states, values)[0]
             out[4][i] = own.base_directional
         return tuple(out)
 

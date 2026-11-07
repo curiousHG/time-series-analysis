@@ -12,7 +12,7 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
-from data.repositories.amfi import latest_amfi_nav_date
+from data.repositories.amfi import get_latest_amfi_nav_date
 from data.repositories.holdings import holdings_count_by_scheme
 from data.repositories.nav import nav_record_stats
 from mutual_funds.display import make_slug
@@ -95,7 +95,7 @@ def _nav_line(report: FreshnessReport) -> str:
     latest = _latest(report)
     if latest is None:
         return "No NAV history stored yet."
-    amfi = latest_amfi_nav_date()
+    amfi = get_latest_amfi_nav_date()
     if amfi is None or amfi <= latest:
         return f"NAV as of {fmt_date(latest)}, level with AMFI."
     lag = business_days_between(latest, amfi)

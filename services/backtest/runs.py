@@ -412,7 +412,7 @@ def load_optimization(optimization_id: int) -> OptimizationDetail | None:
     )
 
 
-def latest_optimization(run_id: int) -> int | None:
+def get_latest_optimization(run_id: int) -> int | None:
     rows = repo.load_optimizations(run_id)
     return rows[0]["id"] if rows else None
 

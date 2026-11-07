@@ -192,7 +192,7 @@ def estimate(
     )
 
 
-def read_rows(states: np.ndarray, values: np.ndarray) -> np.ndarray:
+def pick_state_rows(states: np.ndarray, values: np.ndarray) -> np.ndarray:
     """Pick each symbol's own row out of a (bars x states) array; NaN where the state is unknown."""
     bars = np.arange(values.shape[0])[None, :]
     picked = values[bars, np.clip(states, 0, None)]

@@ -112,7 +112,7 @@ def _yf_fetch_symbol(symbol: str) -> str:
     return f"{symbol}.NS"
 
 
-def _fetch_and_save_stock(symbol: str, start: date, end: date) -> None:
+def _fill_stock_range(symbol: str, start: date, end: date) -> None:
     """Fetch an equity from yfinance and upsert it into stock_ohlcv."""
     data = fetch_symbol_data(_yf_fetch_symbol(symbol), start=start, end=end)
     if data is not None and not data.empty:
@@ -180,7 +180,7 @@ def ensure_stock_data(symbol: str, start_date: datetime | date, end_date: dateti
         start,
         end,
         model=StockOhlcv,
-        fetch_fn=_fetch_and_save_stock,
+        fill_fn=_fill_stock_range,
         get_wm=_get_stock_wm,
         set_wm=_set_stock_wm,
         flag_unavailable=True,
@@ -195,7 +195,7 @@ def refresh_stock_to_today(symbol: str) -> tuple[date, date | None]:
     if is_index_symbol(symbol):
         return refresh_index_to_today(symbol)
     sym = to_bare_symbol(symbol)
-    return _refresh_to_today(sym, model=StockOhlcv, fetch_fn=_fetch_and_save_stock)
+    return _refresh_to_today(sym, model=StockOhlcv, fill_fn=_fill_stock_range)
 
 
 def _despike(rows: list[dict]) -> list[dict]:

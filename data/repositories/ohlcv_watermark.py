@@ -80,7 +80,7 @@ def _set_index_wm(symbol: str, *, status: str | None = None, earliest=_UNSET, em
         session.commit()
 
 
-def _ensure_ohlcv(symbol, start, end, *, model, fetch_fn, get_wm, set_wm, flag_unavailable) -> pl.DataFrame:
+def _ensure_ohlcv(symbol, start, end, *, model, fill_fn, get_wm, set_wm, flag_unavailable) -> pl.DataFrame:
     """DB-first gap-fetch for `symbol` over [start, end] using the given table, fetcher and watermark accessors."""
     wm = get_wm(symbol)
     if wm.status == "unavailable":
@@ -91,7 +91,7 @@ def _ensure_ohlcv(symbol, start, end, *, model, fetch_fn, get_wm, set_wm, flag_u
         last_empty = _empty_fetch_cache.get(symbol)
         if last_empty is not None and datetime.now() - last_empty < _EMPTY_FETCH_TTL:
             return EMPTY_OHLCV.clone()
-        fetch_fn(symbol, start, end)
+        fill_fn(symbol, start, end)
         rng = _date_range(model, symbol)
         if rng is None:
             _empty_fetch_cache[symbol] = datetime.now()
@@ -108,29 +108,29 @@ def _ensure_ohlcv(symbol, start, end, *, model, fetch_fn, get_wm, set_wm, flag_u
     else:
         db_min, db_max = existing
         if start < db_min and (db_min - start).days >= MIN_FETCH_DAYS and wm.earliest != db_min:
-            fetch_fn(symbol, start, db_min)
+            fill_fn(symbol, start, db_min)
             new_min = _date_range(model, symbol)[0]
             floor = db_min if new_min >= db_min else None
             set_wm(symbol, status="available", earliest=floor, empty_streak=0)
         elif wm.status != "available":
             set_wm(symbol, status="available", empty_streak=0)
         if end > db_max and (end - db_max).days >= MIN_FETCH_DAYS:
-            fetch_fn(symbol, db_max, end)
+            fill_fn(symbol, db_max, end)
 
     return _load_ohlcv(model, symbol, start, end)
 
 
-def _refresh_to_today(symbol, *, model, fetch_fn) -> tuple[date, date | None]:
+def _refresh_to_today(symbol, *, model, fill_fn) -> tuple[date, date | None]:
     today = date.today()
     existing = _date_range(model, symbol)
     if existing is None:
         start = today - timedelta(days=_COLD_BACKFILL_DAYS)
-        fetch_fn(symbol, start, today + timedelta(days=1))
+        fill_fn(symbol, start, today + timedelta(days=1))
     else:
         _, db_max = existing
         if db_max >= today:
             return today, db_max
-        fetch_fn(symbol, db_max, today + timedelta(days=1))
+        fill_fn(symbol, db_max, today + timedelta(days=1))
     new_range = _date_range(model, symbol)
     return today, (new_range[1] if new_range else None)
 

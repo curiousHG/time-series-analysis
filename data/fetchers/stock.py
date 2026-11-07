@@ -173,7 +173,7 @@ def search_global_tickers(query: str, *, max_results: int = 8) -> list[dict]:
     ]
     if out:
         return out
-    lookup = query_stocks(query)
+    lookup = search_stocks(query)
     return [
         {
             "symbol": str(sym),
@@ -253,7 +253,7 @@ def fetch_global_fundamentals(symbol: str) -> dict | None:
     }
 
 
-def query_stocks(query: str) -> pd.DataFrame:
+def search_stocks(query: str) -> pd.DataFrame:
     """Equity symbols matching the query (any exchange), indexed by symbol; empty frame on no match or failure."""
     empty = pd.DataFrame(columns=["shortName", "exchange", "quoteType"])
     empty.index.name = "symbol"

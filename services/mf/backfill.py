@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _fetch_nav(scheme_name: str) -> SourceStatus:
+def _backfill_nav(scheme_name: str) -> SourceStatus:
     try:
         df = fetch_single_nav(scheme_name)
         if df.height == 0:
@@ -37,7 +37,7 @@ def _fetch_nav(scheme_name: str) -> SourceStatus:
         return "unavailable"
 
 
-def _fetch_holdings(scheme_name: str) -> SourceStatus:
+def _backfill_holdings(scheme_name: str) -> SourceStatus:
     code = resolve_scheme_code(scheme_name)
     if code is None:
         return "unavailable"
@@ -54,7 +54,7 @@ def _fetch_holdings(scheme_name: str) -> SourceStatus:
         return "unavailable"
 
 
-def _fetch_metadata(scheme_name: str) -> SourceStatus:
+def _backfill_metadata(scheme_name: str) -> SourceStatus:
     try:
         meta = refresh_metadata(scheme_name)
         if not meta or not any(meta.get(k) for k in ("aum_crores", "expense_ratio", "benchmark", "launch_date")):
@@ -82,11 +82,11 @@ def retry_unavailable(scheme_name: str) -> dict[str, SourceStatus]:
 
     results: dict[str, SourceStatus] = {}
     if targets["nav_status"] == "unavailable":
-        results["nav_status"] = _fetch_nav(scheme_name)
+        results["nav_status"] = _backfill_nav(scheme_name)
     if targets["holdings_status"] == "unavailable":
-        results["holdings_status"] = _fetch_holdings(scheme_name)
+        results["holdings_status"] = _backfill_holdings(scheme_name)
     if targets["metadata_status"] == "unavailable":
-        results["metadata_status"] = _fetch_metadata(scheme_name)
+        results["metadata_status"] = _backfill_metadata(scheme_name)
 
     if results:
         set_status(scheme_name, **results)
@@ -148,13 +148,13 @@ def backfill_missing(
     def _do_one(scheme_name: str, source: str) -> tuple[str, str, str]:
         try:
             if source == "nav":
-                status = _fetch_nav(scheme_name)
+                status = _backfill_nav(scheme_name)
                 set_status(scheme_name, nav_status=status)
             elif source == "metadata":
-                status = _fetch_metadata(scheme_name)
+                status = _backfill_metadata(scheme_name)
                 set_status(scheme_name, metadata_status=status)
             elif source == "holdings":
-                status = _fetch_holdings(scheme_name)
+                status = _backfill_holdings(scheme_name)
                 set_status(scheme_name, holdings_status=status)
             else:
                 status = "unavailable"

@@ -11,7 +11,7 @@ from strategies.markov import (
     bucket_states,
     estimate,
     final_matrix,
-    read_rows,
+    pick_state_rows,
     scaled_returns,
     state_table,
 )
@@ -138,8 +138,8 @@ def test_the_estimate_on_a_bar_never_uses_a_later_bar():
     truncated = estimate(states[:, :cut], moves[:, :cut], scheme, window=250)
 
     for attribute in ("p_up", "p_down", "expected", "samples", "directional"):
-        a = read_rows(states, getattr(full, attribute))[:, :cut]
-        b = read_rows(states[:, :cut], getattr(truncated, attribute))
+        a = pick_state_rows(states, getattr(full, attribute))[:, :cut]
+        b = pick_state_rows(states[:, :cut], getattr(truncated, attribute))
         assert np.allclose(np.nan_to_num(a), np.nan_to_num(b))
     assert np.allclose(np.nan_to_num(full.base_up[:cut]), np.nan_to_num(truncated.base_up))
     assert np.allclose(np.nan_to_num(full.base_directional[:cut]), np.nan_to_num(truncated.base_directional))
@@ -170,7 +170,7 @@ def test_samples_accumulate_across_the_basket_when_pooled():
 def test_read_rows_picks_each_symbol_its_own_state_and_blanks_the_unknown():
     values = np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
     states = np.array([[0, 2], [1, -1]])
-    picked = read_rows(states, values)
+    picked = pick_state_rows(states, values)
     assert picked[0].tolist() == [0.1, 0.6]
     assert picked[1][0] == pytest.approx(0.2)
     assert np.isnan(picked[1][1])

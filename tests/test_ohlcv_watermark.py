@@ -1,6 +1,6 @@
 """Unit tests for the OHLCV availability watermark state machine (data.repositories.ohlcv_watermark).
 
-_ensure_ohlcv is dependency-injected (model / fetch_fn / get_wm / set_wm), so the branchy logic —
+_ensure_ohlcv is dependency-injected (model / fill_fn / get_wm / set_wm), so the branchy logic —
 empty-streak → unavailable, negative-cache re-hammer guard, backward-gap floor lock — is tested here
 with in-memory fakes + monkeypatched DB helpers, no database required.
 """
@@ -51,13 +51,13 @@ def _ranges(monkeypatch, values):
     monkeypatch.setattr(wm, "_date_range", lambda *a: next(it))
 
 
-def _run(fake: FakeWm, fetch_fn, *, flag_unavailable=True):
+def _run(fake: FakeWm, fill_fn, *, flag_unavailable=True):
     return wm._ensure_ohlcv(
         "SYM",
         START,
         END,
         model=object,
-        fetch_fn=fetch_fn,
+        fill_fn=fill_fn,
         get_wm=fake.get,
         set_wm=fake.set,
         flag_unavailable=flag_unavailable,

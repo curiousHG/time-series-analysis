@@ -289,7 +289,7 @@ def get_scheme_details_by_name(scheme_name: str) -> dict | None:
     }
 
 
-def latest_amfi_nav_date() -> date | None:
+def get_latest_amfi_nav_date() -> date | None:
     """Latest NAV date across the AMFI master."""
     with get_session() as session:
         return session.exec(select(func.max(AmfiScheme.nav_date))).one()
