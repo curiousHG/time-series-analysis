@@ -51,6 +51,14 @@ def _block_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(yfinance, "download", refuse)
 
 
+@pytest.fixture(autouse=True)
+def _stub_page_links(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A page run on its own has no router, so `st.page_link` can't resolve its target page."""
+    import streamlit as st
+
+    monkeypatch.setattr(st, "page_link", lambda *_args, **_kwargs: None)
+
+
 @pytest.mark.parametrize("page", PAGES)
 def test_page_renders(page: str) -> None:
     at = AppTest.from_file(page).run(timeout=120)
