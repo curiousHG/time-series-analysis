@@ -44,7 +44,7 @@ def fetch_single_nav(scheme_name: str, scheme_code: int | None = None) -> pl.Dat
 
     logger.debug("Falling back to AdvisorKhoj for NAV: %s", scheme_name)
     data = fetch_nav_from_advisorkhoj(scheme_name)
-    df = nav_json_to_df(data["nav_data"], scheme_name)
+    df = nav_json_to_df(data.nav_data, scheme_name)
     return df.with_columns(pl.lit(scheme_code, dtype=pl.Int64).alias("scheme_code"))
 
 

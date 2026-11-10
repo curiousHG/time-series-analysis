@@ -7,6 +7,7 @@ fund "available", and the holdings fetch fuzzy-matched onto other funds' portfol
 
 from __future__ import annotations
 
+import datetime
 from unittest.mock import patch
 
 import httpx
@@ -14,6 +15,7 @@ import pytest
 
 from data.exceptions import SourceNotFound
 from data.fetchers import advisorkhoj as mf
+from data.fetchers.schemas import FundMetadata
 from mutual_funds.advisorkhoj import base_name, base_variants, name_candidates, same_fund, short_option
 
 # ---- pure helpers ------------------------------------------------------------------------
@@ -345,21 +347,21 @@ def test_regular_plan_takes_scheme_level_fields_from_direct_sibling(monkeypatch)
     riskometer come from the Direct twin; TER / launch / minimums stay empty."""
     from data.repositories import metadata as repo
 
-    twin = {
-        "scheme_name": "X Fund - Direct Plan - Growth",
-        "aum_crores": 1234.5,
-        "expense_ratio": 0.4,
-        "launch_date": "2013-01-01",
-        "min_investment": 5000.0,
-        "fund_manager": "A. Manager",
-        "risk_level": "Very High",
-        "category": "Flexi Cap Fund",
-        "asset_class": "Equity",
-        "status": "Open Ended",
-        "turnover_ratio": 0.3,
-        "investment_objective": "Grow.",
-        "source_url": "https://kuvera.in/mutual-funds/scheme/x-direct",
-    }
+    twin = FundMetadata(
+        scheme_name="X Fund - Direct Plan - Growth",
+        aum_crores=1234.5,
+        expense_ratio=0.4,
+        launch_date=datetime.date(2013, 1, 1),
+        min_investment=5000.0,
+        fund_manager="A. Manager",
+        risk_level="Very High",
+        category="Flexi Cap Fund",
+        asset_class="Equity",
+        status="Open Ended",
+        turnover_ratio=0.3,
+        investment_objective="Grow.",
+        source_url="https://kuvera.in/mutual-funds/scheme/x-direct",
+    )
     saved: list[dict] = []
     monkeypatch.setattr(
         repo,
@@ -375,7 +377,7 @@ def test_regular_plan_takes_scheme_level_fields_from_direct_sibling(monkeypatch)
         "find_direct_sibling",
         lambda code: {
             "scheme_code": 1,
-            "scheme_name": twin["scheme_name"],
+            "scheme_name": twin.scheme_name,
             "isin_growth": "INFDIR",
             "isin_reinvestment": None,
         },
@@ -384,10 +386,10 @@ def test_regular_plan_takes_scheme_level_fields_from_direct_sibling(monkeypatch)
 
     meta = repo.refresh_metadata("X Fund - Regular Plan - Growth")
 
-    assert meta["scheme_name"] == "X Fund - Regular Plan - Growth"
-    assert meta["aum_crores"] == 1234.5
-    assert meta["fund_manager"] == "A. Manager" and meta["risk_level"] == "Very High"
-    assert meta["expense_ratio"] is None and meta["launch_date"] is None and meta["min_investment"] is None
+    assert meta.scheme_name == "X Fund - Regular Plan - Growth"
+    assert meta.aum_crores == 1234.5
+    assert meta.fund_manager == "A. Manager" and meta.risk_level == "Very High"
+    assert meta.expense_ratio is None and meta.launch_date is None and meta.min_investment is None
     assert saved == [meta]
 
 

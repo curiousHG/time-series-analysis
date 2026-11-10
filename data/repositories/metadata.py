@@ -13,6 +13,7 @@ from core.models import AmfiScheme, MfAmc, MfCategory, MfMetadata
 from data.exceptions import SourceNotFound
 from data.fetchers.advisorkhoj import fetch_fund_metadata
 from data.fetchers.kuvera import fetch_fund_metadata_kuvera
+from data.fetchers.schemas import FundMetadata
 from data.repositories.advisorkhoj_keys import resolve_advisorkhoj_slug
 from data.repositories.amfi import find_direct_sibling, get_scheme_details_by_name, upsert_amc, upsert_category
 from data.repositories.holdings import clear_slug_cache
@@ -21,31 +22,29 @@ from data.repositories.scheme_codes import mint_synthetic_codes
 logger = logging.getLogger("data.repositories.metadata")
 
 
-def _attach_amfi_fields(meta: dict) -> dict:
+def _attach_amfi_fields(meta: FundMetadata) -> FundMetadata:
     """Fill missing fund_house / category text from amfi_schemes via the dim tables."""
+    update: dict[str, str] = {}
     with get_session() as session:
         row = session.exec(
-            select(AmfiScheme.fund_house_id, AmfiScheme.category_id).where(
-                AmfiScheme.scheme_name == meta["scheme_name"]
-            )
+            select(AmfiScheme.fund_house_id, AmfiScheme.category_id).where(AmfiScheme.scheme_name == meta.scheme_name)
         ).first()
         if row is None:
             return meta
         fh_id, cat_id = row
-        if fh_id is not None and not meta.get("fund_house"):
+        if fh_id is not None and not meta.fund_house:
             amc = session.exec(select(MfAmc.name).where(MfAmc.id == fh_id)).first()
             if amc is not None:
-                meta["fund_house"] = amc[0] if isinstance(amc, tuple) else amc
-        if cat_id is not None and not meta.get("category"):
+                update["fund_house"] = amc[0] if isinstance(amc, tuple) else amc
+        if cat_id is not None and not meta.category:
             cat = session.exec(select(MfCategory.name).where(MfCategory.id == cat_id)).first()
             if cat is not None:
-                meta["category"] = cat[0] if isinstance(cat, tuple) else cat
-    return meta
+                update["category"] = cat[0] if isinstance(cat, tuple) else cat
+    return meta.model_copy(update=update)
 
 
-def save_metadata(meta: dict) -> None:
-    meta = dict(meta)
-    meta = _attach_amfi_fields(meta)
+def save_metadata(metadata: FundMetadata) -> None:
+    meta = _attach_amfi_fields(metadata).model_dump(exclude_unset=True)
     meta["fetched_at"] = datetime.now(UTC).replace(tzinfo=None)
     scheme_name = meta.pop("scheme_name")
     with get_session() as session:
@@ -124,7 +123,7 @@ def load_metadata(scheme_names: list[str] | None = None) -> pl.DataFrame:
     )
 
 
-def _advisorkhoj_metadata(scheme_name: str, scheme_code: int | None) -> tuple[dict | None, Exception | None]:
+def _advisorkhoj_metadata(scheme_name: str, scheme_code: int | None) -> tuple[FundMetadata | None, Exception | None]:
     """AdvisorKhoj scrape by verified slug first, then by name. Returns (metadata, last_error)."""
     keys: list[str | None] = []
     if scheme_code is not None:
@@ -143,16 +142,16 @@ def _advisorkhoj_metadata(scheme_name: str, scheme_code: int | None) -> tuple[di
             last_error = e
             logger.warning("AdvisorKhoj metadata failed for %s (key=%s): %s", scheme_name, key, e)
             continue
-        if any(meta.get(k) is not None for k in ("aum_crores", "expense_ratio", "launch_date")):
+        if any(getattr(meta, k) is not None for k in ("aum_crores", "expense_ratio", "launch_date")):
             return meta, None
     return None, last_error
 
 
-def refresh_metadata(scheme_name: str) -> dict:
+def refresh_metadata(scheme_name: str) -> FundMetadata:
     """Fetch metadata for one scheme (Kuvera, then AdvisorKhoj by slug and by name, then a Direct sibling) and save it,
     replacing any existing row.
 
-    Returns the saved dict; raises the last source error when nothing is found.
+    Returns the saved metadata; raises the last source error when nothing is found.
     """
     amfi_row = get_scheme_details_by_name(scheme_name)
     isins = tuple((amfi_row.get("isin_growth"), amfi_row.get("isin_reinvestment")) if amfi_row else ())
@@ -165,9 +164,9 @@ def refresh_metadata(scheme_name: str) -> dict:
     if meta is None and adv is not None:
         meta, source = adv, "AdvisorKhoj"
     elif meta is not None and adv is not None:
-        for k, v in adv.items():
-            if meta.get(k) is None and v is not None:
-                meta[k] = v
+        meta = meta.model_copy(
+            update={k: v for k, v in adv.model_dump().items() if v is not None and getattr(meta, k) is None}
+        )
 
     if meta is None and scheme_code is not None:
         meta = _from_direct_sibling(scheme_name, scheme_code)
@@ -192,19 +191,18 @@ _SCHEME_LEVEL_FIELDS = (
 )
 
 
-def _from_direct_sibling(scheme_name: str, scheme_code: int) -> dict | None:
+def _from_direct_sibling(scheme_name: str, scheme_code: int) -> FundMetadata | None:
     """Scheme-level fields from the Direct twin's Kuvera record, for a plan no source knows."""
     sibling = find_direct_sibling(scheme_code)
     if sibling is None:
         return None
     twin = fetch_fund_metadata_kuvera(sibling["scheme_name"], (sibling["isin_growth"], sibling["isin_reinvestment"]))
-    if not twin or twin.get("aum_crores") is None:
+    if not twin or twin.aum_crores is None:
         return None
-    meta = dict.fromkeys(twin)
-    meta.update({k: twin.get(k) for k in _SCHEME_LEVEL_FIELDS})
-    meta["scheme_name"] = scheme_name
-    meta["source_url"] = twin.get("source_url")
-    return meta
+    fields = dict.fromkeys(FundMetadata.model_fields)
+    fields.update({k: getattr(twin, k) for k in _SCHEME_LEVEL_FIELDS})
+    fields.update(scheme_name=scheme_name, source_url=twin.source_url)
+    return FundMetadata(**fields)
 
 
 def ensure_metadata(scheme_names: list[str]) -> pl.DataFrame:

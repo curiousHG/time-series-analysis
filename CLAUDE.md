@@ -145,6 +145,7 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
            mfapi.py                    # MFAPI NAV + scheme search
            advisorkhoj.py              # AdvisorKhoj portfolio, metadata, NAV
            amfi.py                     # AMFI NAVAll.txt master
+           schemas.py                  # pydantic models validating upstream payloads (validate_upstream)
            stock.py                    # yfinance + jugaad-data (NSE fallback)
          data/repositories/            # DB CRUD (one file per aggregate)
            nav.py                      # NAV load/save/upsert/fetch

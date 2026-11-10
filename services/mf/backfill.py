@@ -58,7 +58,7 @@ def _backfill_holdings(scheme_name: str) -> SourceStatus:
 def _backfill_metadata(scheme_name: str) -> SourceStatus:
     try:
         meta = refresh_metadata(scheme_name)
-        if not meta or not any(meta.get(k) for k in ("aum_crores", "expense_ratio", "benchmark", "launch_date")):
+        if not meta or not any(getattr(meta, k) for k in ("aum_crores", "expense_ratio", "benchmark", "launch_date")):
             return SourceStatus.UNAVAILABLE
         return SourceStatus.AVAILABLE
     except Exception as e:

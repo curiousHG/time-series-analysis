@@ -5,6 +5,8 @@ from datetime import date
 
 import polars as pl
 
+from data.fetchers.schemas import AdvisorKhojNav
+
 
 def _frame(name: str, nav: float) -> pl.DataFrame:
     return pl.DataFrame({"date": [date(2026, 9, 7)], "nav": [nav], "schemeName": [name]})
@@ -108,7 +110,7 @@ def test_fetch_single_nav_skips_mfapi_for_a_synthetic_code(monkeypatch):
 
     def fake_advisorkhoj(name):
         asked.append(name)
-        return {"scheme": name, "launch_date": "01-01-2020", "nav_data": []}
+        return AdvisorKhojNav(scheme=name, launch_date="01-01-2020", nav_data=[])
 
     monkeypatch.setattr(nav, "fetch_nav_from_mfapi", fake_mfapi)
     monkeypatch.setattr(nav, "fetch_nav_from_advisorkhoj", fake_advisorkhoj)

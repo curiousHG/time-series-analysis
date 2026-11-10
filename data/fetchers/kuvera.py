@@ -5,13 +5,13 @@ from __future__ import annotations
 import logging
 import re
 import time
-from datetime import date
 from functools import lru_cache
 
 import httpx
 
 from data.constants import HEADERS
 from data.exceptions import UpstreamFormatError
+from data.fetchers.schemas import FundMetadata, KuveraSchemeDetail, KuveraSchemeList, validate_upstream
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ _THROTTLE_STATUSES = frozenset({429, 403, 503})
 _BACKOFF_SECONDS = 5.0
 
 
-def _get_detail(code: str) -> list[dict]:
+def _get_detail(code: str) -> KuveraSchemeDetail | None:
     for attempt in range(2):
         resp = httpx.get(_DETAIL_URL.format(code=code), headers=HEADERS, timeout=30)
         if resp.status_code in _THROTTLE_STATUSES and attempt == 0:
@@ -36,7 +36,9 @@ def _get_detail(code: str) -> list[dict]:
         payload = resp.json()
         if not isinstance(payload, list):
             raise UpstreamFormatError("Kuvera scheme detail", f"expected a list, got {type(payload).__name__}")
-        return payload
+        if not payload:
+            return None
+        return validate_upstream("Kuvera scheme detail", KuveraSchemeDetail, payload[0])
     raise RuntimeError("unreachable")
 
 
@@ -51,11 +53,7 @@ def _code_index() -> list[tuple[frozenset[str], str]]:
     """(token-set, kuvera code) for every scheme in Kuvera's list. One fetch per process."""
     resp = httpx.get(_LIST_URL, headers=HEADERS, timeout=60)
     resp.raise_for_status()
-    payload = resp.json()
-    if not isinstance(payload, dict):
-        raise UpstreamFormatError(
-            "Kuvera scheme list", f"expected a {{class: {{sub: {{amc: [...]}}}}}} object, got {type(payload).__name__}"
-        )
+    payload = validate_upstream("Kuvera scheme list", KuveraSchemeList, resp.json())
     index: list[tuple[frozenset[str], str]] = []
     for asset_class in payload.values():
         for sub_cat in asset_class.values():
@@ -88,8 +86,8 @@ def _candidate_codes(scheme_name: str, max_candidates: int = 4) -> list[str]:
     return [code for _, code in scored[:max_candidates]]
 
 
-def fetch_fund_metadata_kuvera(scheme_name: str, isins: tuple[str | None, ...]) -> dict | None:
-    """Metadata dict (same shape as fetch_fund_metadata) from Kuvera, or None.
+def fetch_fund_metadata_kuvera(scheme_name: str, isins: tuple[str | None, ...]) -> FundMetadata | None:
+    """`FundMetadata` from Kuvera, or None.
 
     :param isins: acceptable ISINs from the AMFI record (growth/reinvestment); a candidate
         is accepted only when its detail ISIN is one of these.
@@ -100,7 +98,7 @@ def fetch_fund_metadata_kuvera(scheme_name: str, isins: tuple[str | None, ...]) 
 
     for code in _candidate_codes(scheme_name):
         try:
-            payload = _get_detail(code)
+            d = _get_detail(code)
         except httpx.HTTPStatusError as e:
             if e.response.status_code in _THROTTLE_STATUSES:
                 raise
@@ -109,50 +107,28 @@ def fetch_fund_metadata_kuvera(scheme_name: str, isins: tuple[str | None, ...]) 
         except Exception as e:
             logger.debug("Kuvera detail failed for %s: %s", code, e)
             continue
-        if not payload:
-            continue
-        d = payload[0]
-        if d.get("ISIN") not in accept:
+        if d is None or d.isin not in accept:
             continue
 
-        aum = _num(d.get("aum"))
-        return {
-            "scheme_name": scheme_name,
-            "aum_crores": round(aum / 10.0, 2) if aum else None,
-            "aum_as_of": None,
-            "expense_ratio": _num(d.get("expense_ratio")),
-            "expense_ratio_as_of": _iso_date(d.get("expense_ratio_date")),
-            "benchmark": None,
-            "launch_date": _iso_date(d.get("start_date")),
-            "category": d.get("fund_category"),
-            "asset_class": d.get("fund_type"),
-            "status": "Open Ended" if d.get("maturity_type") == "Open Ended" else d.get("maturity_type"),
-            "min_investment": _num(d.get("lump_min")),
-            "min_topup": _num(d.get("lump_min_additional")),
-            "turnover_ratio": _num(d.get("portfolio_turnover")),
-            "exit_load": None,
-            "investment_objective": (d.get("investment_objective") or "")[:2000] or None,
-            "risk_level": (d.get("crisil_rating") or "").removesuffix(" Risk") or None,
-            "fund_manager": d.get("fund_manager"),
-            "fund_house": None,
-            "source_url": _FUND_URL.format(slug=d.get("slug", code)),
-        }
+        return FundMetadata(
+            scheme_name=scheme_name,
+            aum_crores=round(d.aum / 10.0, 2) if d.aum else None,
+            aum_as_of=None,
+            expense_ratio=d.expense_ratio,
+            expense_ratio_as_of=d.expense_ratio_date,
+            benchmark=None,
+            launch_date=d.start_date,
+            category=d.fund_category,
+            asset_class=d.fund_type,
+            status="Open Ended" if d.maturity_type == "Open Ended" else d.maturity_type,
+            min_investment=d.lump_min,
+            min_topup=d.lump_min_additional,
+            turnover_ratio=d.portfolio_turnover,
+            exit_load=None,
+            investment_objective=(d.investment_objective or "")[:2000] or None,
+            risk_level=(d.crisil_rating or "").removesuffix(" Risk") or None,
+            fund_manager=d.fund_manager,
+            fund_house=None,
+            source_url=_FUND_URL.format(slug=d.slug or code),
+        )
     return None
-
-
-def _num(v) -> float | None:
-    """Kuvera mixes numerics and numeric strings; normalise to float or None."""
-    try:
-        return float(v) if v is not None and v != "" else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _iso_date(v):
-    """'2013-01-01' → date; passthrough for None/invalid."""
-    if not v:
-        return None
-    try:
-        return date.fromisoformat(str(v)[:10])
-    except ValueError:
-        return None

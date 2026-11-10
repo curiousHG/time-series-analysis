@@ -11,8 +11,8 @@ import httpx
 import polars as pl
 
 from data.constants import MFAPI_BASE_URL
-from data.exceptions import SourceThrottled, UpstreamFormatError
-from data.fetchers._payload import shape_of
+from data.exceptions import SourceThrottled
+from data.fetchers.schemas import MfapiNav, MfapiSearchHit, validate_upstream
 
 logger = logging.getLogger(__name__)
 
@@ -62,16 +62,10 @@ def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
     resp = _get_mfapi(url)
     resp.raise_for_status()
 
-    raw = resp.json()
-    if not isinstance(raw, dict) or "data" not in raw:
-        raise UpstreamFormatError("MFAPI", f"expected an object with a 'data' key, got {shape_of(raw)}")
-    data = raw["data"]
+    data = validate_upstream("MFAPI", MfapiNav, resp.json()).data
     if not data:
         logger.debug("Empty NAV response from MFAPI for code=%s", scheme_code)
         raise ValueError(f"No NAV data from MFAPI for scheme code {scheme_code}")
-    missing = {"date", "nav"} - set(data[0])
-    if missing:
-        raise UpstreamFormatError("MFAPI", f"NAV rows lost the {sorted(missing)} key(s); got {sorted(data[0])}")
 
     df = pl.DataFrame(data)
     result = df.with_columns(
@@ -83,19 +77,14 @@ def fetch_nav_from_mfapi(scheme_code: str, scheme_name: str) -> pl.DataFrame:
     return result
 
 
-def search_mfapi(query: str) -> list[dict]:
-    """Search MFAPI for schemes → list of {schemeCode, schemeName}."""
+def search_mfapi(query: str) -> list[MfapiSearchHit]:
+    """Search MFAPI for schemes."""
     if not query or len(query.strip()) < 2:
         return []
 
     resp = httpx.get(f"{MFAPI_BASE_URL}/search", params={"q": query}, timeout=15)
     resp.raise_for_status()
-    results = resp.json()
-    if not isinstance(results, list):
-        raise UpstreamFormatError("MFAPI search", f"expected a list of schemes, got {shape_of(results)}")
-    if results and not {"schemeCode", "schemeName"} <= set(results[0]):
-        raise UpstreamFormatError("MFAPI search", f"result rows lost schemeCode/schemeName; got {sorted(results[0])}")
-    return results
+    return validate_upstream("MFAPI search", list[MfapiSearchHit], resp.json())
 
 
 def _normalize_for_match(s: str) -> str:
@@ -116,15 +105,15 @@ def resolve_mfapi_code(scheme_name: str) -> str | None:
     target = _normalize_for_match(scheme_name)
 
     for r in results:
-        if _normalize_for_match(r["schemeName"]) == target:
-            return str(r["schemeCode"])
+        if _normalize_for_match(r.scheme_name) == target:
+            return str(r.scheme_code)
 
     for r in results:
-        candidate = _normalize_for_match(r["schemeName"])
+        candidate = _normalize_for_match(r.scheme_name)
         if target in candidate or candidate in target:
-            return str(r["schemeCode"])
+            return str(r.scheme_code)
 
     if len(words) >= 4 and results:
-        return str(results[0]["schemeCode"])
+        return str(results[0].scheme_code)
 
     return None

@@ -86,6 +86,13 @@ Why behind non-obvious choices. Inline comments stay minimal; the rationale live
   empty; last resort is the Direct sibling's record. Only `_SCHEME_LEVEL_FIELDS` (AUM, manager,
   objective, riskometer, category) are copied from a sibling; TER, launch date and minimums differ by
   plan. A row without AUM counts as missing (`ensure_metadata`), so the next source gets a chance.
+- **Metadata writes only the fields a source set** — `save_metadata` writes `FundMetadata.model_dump(
+  exclude_unset=True)`. AdvisorKhoj never reports a fund manager, so a full dump would null the one an
+  earlier Kuvera fetch saved.
+- **Upstream payloads are validated at the fetcher** (`data/fetchers/schemas.py`) — a changed upstream
+  shape fails as `UpstreamFormatError` naming the field, instead of a `KeyError` deep in a refresh.
+  Kuvera mixes numbers, numeric strings and `""`, so its numbers and dates use lenient types that turn
+  junk into `None`. MFAPI NAV rows are a `TypedDict`: validating 5,000 rows takes about 0.5 ms.
 - **screener.in** (`fetchers.screener_in`, `stock_fundamentals.save_company_fundamentals`) —
   standalone-only reporters (Hitachi Energy / POWERINDIA) serve a consolidated page that loads 200
   with every value blank, so `fetch_company` keeps the first page whose top ratios carry values. A

@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from data.constants import BASE_OVERVIEW_URL, HEADERS, NAV_URL
 from data.exceptions import SourceNotFound, UpstreamFormatError
 from data.fetchers._payload import shape_of
+from data.fetchers.schemas import AdvisorKhojNav, FundMetadata, validate_upstream
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ def fetch_portfolio(scheme_amfi: str):
 
 def fetch_nav_from_advisorkhoj(
     scheme_name: str,
-) -> dict:
+) -> AdvisorKhojNav:
     """AdvisorKhoj NAV pipeline: HTML → launch date → NAV JSON."""
     html = fetch_fund_overview_html(scheme_name)
     launch_date = extract_launch_date(html, scheme_name)
@@ -76,20 +77,20 @@ def fetch_nav_from_advisorkhoj(
     )
 
     resp.raise_for_status()
-    return {
-        "scheme": scheme_name,
-        "launch_date": launch_date,
-        "nav_data": resp.json(),
-    }
+    return validate_upstream(
+        "AdvisorKhoj NAV",
+        AdvisorKhojNav,
+        {"scheme": scheme_name, "launch_date": launch_date, "nav_data": resp.json()},
+    )
 
 
 _EXIT_LOAD_FIELD_RE = re.compile(r"Exit Load\s*:\s*(.+?)(?=Exit Load\s*:|Turn ?over\s*:|$)", re.DOTALL)
 
 
-def fetch_fund_metadata(scheme_name: str, *, lookup_key: str | None = None) -> dict:
-    """Scrape the AdvisorKhoj overview page → metadata dict (missing fields = None).
+def fetch_fund_metadata(scheme_name: str, *, lookup_key: str | None = None) -> FundMetadata:
+    """Scrape the AdvisorKhoj overview page → `FundMetadata` (missing fields = None).
 
-    `lookup_key` overrides the URL key; the returned dict is still keyed on `scheme_name`.
+    `lookup_key` overrides the URL key; the result is still keyed on `scheme_name`.
     """
     key = lookup_key or scheme_name
     html = fetch_fund_overview_html(key)
@@ -193,7 +194,7 @@ def fetch_fund_metadata(scheme_name: str, *, lookup_key: str | None = None) -> d
     if candidates:
         out["exit_load"] = max(candidates, key=len)[:1000]
 
-    return out
+    return FundMetadata(**out)
 
 
 def fetch_fund_overview_html(scheme_name: str) -> str:
