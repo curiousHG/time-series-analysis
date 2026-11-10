@@ -63,6 +63,14 @@ incrementally; `st.cache_data` pickles return values, so never nest the class. D
 DB rows, JSON payloads and library options. `test_record_dicts_shrink` ratchets bare `-> dict` returns
 in `services/`, `data/`, `mutual_funds/` and `stocks/`.
 
+### Data crossing a boundary
+
+Pydantic models validate data the app did not just build in memory: upstream responses
+(`data/fetchers/schemas.py`, via `validate_upstream`, which raises `UpstreamFormatError`) and JSON it
+reads back (Backtest Lab configs, `selections.json`). Models use `extra="ignore"` and are frozen unless
+mutated. Bulk time-series rows are `TypedDict`s inside an envelope model, so validation stays in
+pydantic-core and the rows go straight to Polars. Everything internal stays a dataclass.
+
 ## 3. Data correctness
 
 - **One source per datatype**, declared in `data/sources.py` — the routing registry is the single

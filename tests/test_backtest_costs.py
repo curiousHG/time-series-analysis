@@ -64,7 +64,7 @@ def test_tick_rounding_and_slippage_sides():
 
 def test_presets_round_trip_through_dicts():
     for preset in PRESETS.values():
-        assert CostPreset.from_dict(preset.to_dict()) == preset
-    custom = CostPreset.from_dict({**ZERODHA_DELIVERY.to_dict(), "name": "custom", "brokerage_pct": 0.0005})
+        assert CostPreset.model_validate(preset.model_dump()) == preset
+    custom = CostPreset.model_validate({**ZERODHA_DELIVERY.model_dump(), "name": "custom", "brokerage_pct": 0.0005})
     assert custom.name == "custom"
     assert apply_costs("buy", 100, 1000.0, custom).brokerage == pytest.approx(50.0)

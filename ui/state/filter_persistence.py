@@ -18,7 +18,7 @@ def hydrate_filters(persist_key: str, defaults: dict) -> None:
 
     Idempotent; None values are never seeded. Widgets reading a seeded key must omit `default=`/`value=`.
     """
-    saved = load_selection(persist_key, {})
+    saved = load_selection(persist_key)
     for key, default in defaults.items():
         if key in st.session_state:
             continue

@@ -11,6 +11,8 @@ import math
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 
+from pydantic import BaseModel, ConfigDict
+
 
 class Side(StrEnum):
     BUY = "buy"
@@ -28,8 +30,9 @@ SEBI_PCT = 0.000001
 GST_PCT = 0.18
 
 
-@dataclass(frozen=True)
-class CostPreset:
+class CostPreset(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
     name: str
     brokerage_pct: float = 0.0
     brokerage_cap: float | None = None
@@ -41,13 +44,6 @@ class CostPreset:
     stamp_buy_pct: float = 0.0
     gst_pct: float = GST_PCT
     dp_charge_per_sell: float = 0.0
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, payload: dict) -> CostPreset:
-        return cls(**payload)
 
 
 ZERODHA_DELIVERY = CostPreset(

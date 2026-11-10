@@ -131,7 +131,7 @@ def _runs_frame(rows: list[dict]) -> pl.DataFrame:
 
 
 def _run_row(run_id: int, name: str, status: str = "done") -> dict:
-    payload = _config().to_dict()
+    payload = _config().model_dump(mode="json")
     return {
         "id": run_id,
         "name": name,

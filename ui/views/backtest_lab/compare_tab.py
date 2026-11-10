@@ -8,7 +8,6 @@ import pandas as pd
 import streamlit as st
 
 from core.enums import RunStatus
-from services.backtest.config import UniverseSpec
 from ui.charts import backtest as charts
 from ui.components.chrome import section_header
 from ui.components.metric_tiles import fmt_inr_compact
@@ -61,10 +60,9 @@ def metrics_table(details: list[RunDetail]) -> pd.DataFrame:
 
 def _settings(detail: RunDetail) -> dict[str, Any]:
     config = detail.config
-    universe = config.universe if isinstance(config.universe, UniverseSpec) else UniverseSpec.from_dict(config.universe)
     return {
         "strategy": config.strategy,
-        "universe": universe.label(),
+        "universe": config.universe.label(),
         "period": f"{config.start} to {config.end}",
         "costs": config.costs.name,
         "slippage_bps": config.slippage_bps,

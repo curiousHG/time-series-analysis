@@ -171,7 +171,7 @@ def _result():
     config = BacktestConfig(
         strategy="Buyer",
         params={},
-        universe=UniverseSpec("list", symbols=("A",)),
+        universe=UniverseSpec(kind="list", symbols=("A",)),
         start=date(2024, 1, 1),
         end=date(2024, 1, 16),
         init_cash=100_000.0,

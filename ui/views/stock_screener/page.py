@@ -72,7 +72,7 @@ def _add_stocks(picks: list[tuple[str, str, str]]) -> None:
         if nse_bare:
             sync_stocks(nse_bare)
 
-    existing = {to_bare_symbol(s) for s in load_selection("selected_stocks", [])}
+    existing = {to_bare_symbol(s) for s in load_selection("selected_stocks")}
     watchlist = sorted(existing | set(nse_bare) | set(global_syms))
     save_selection("selected_stocks", watchlist)
     st.session_state.selected_stocks = watchlist

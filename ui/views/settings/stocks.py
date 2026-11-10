@@ -114,7 +114,7 @@ def _render_unavailable() -> None:
             with st.spinner(f"Re-fetching {pick}…"):
                 status = retry_stock_ohlcv(pick)
             if status == SourceStatus.AVAILABLE:
-                watchlist = sorted({*load_selection("selected_stocks", []), pick})
+                watchlist = sorted({*load_selection("selected_stocks"), pick})
                 save_selection("selected_stocks", watchlist)
                 load_stock_open_close.clear()
                 st.toast(f"{pick} recovered and added to your watchlist.", icon="✅")

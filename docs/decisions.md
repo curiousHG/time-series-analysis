@@ -359,6 +359,9 @@ Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep
   off), so a typo like `"availble"` silently matched nothing. A `StrEnum` member is a `str`, so it equals the
   stored value and round-trips through JSON, pickling and Polars filters. Columns stay plain `VARCHAR`: a native
   Postgres enum would need a migration for every new value.
+- **`selections.json` keeps what it can read** — it is a pydantic `Selections` model; a field that fails
+  validation falls back to its default and the other fields load. Resetting the whole file instead would
+  let the next save overwrite every saved selection. New keys must be added to the model.
 
 ## Logging and process lifecycle
 

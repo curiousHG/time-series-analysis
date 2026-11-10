@@ -173,7 +173,7 @@ def _apply_best(run_id: int, detail: RunDetail, opt: OptimizationDetail) -> None
     from services.backtest.optimizer import config_with_params  # noqa: PLC0415 — pulls optuna in
     from services.backtest.runs import duplicate_run  # noqa: PLC0415 — pulls the engine in
 
-    payload = config_with_params(detail.config, opt.best_params).to_dict()
+    payload = config_with_params(detail.config, opt.best_params).model_dump(mode="json")
     new_id = duplicate_run(
         run_id,
         {

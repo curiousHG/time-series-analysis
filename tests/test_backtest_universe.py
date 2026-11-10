@@ -109,20 +109,20 @@ def seam(monkeypatch):
 
 
 def test_resolve_universe_from_index_list_and_watchlist(seam):
-    assert resolve_universe(UniverseSpec("index", name="NIFTY BANK")) == ["HDFCBANK", "SBIN"]
-    assert resolve_universe(UniverseSpec("index", name="NIFTY 50")) == list(NIFTY_50)
-    assert resolve_universe(UniverseSpec("index", name="NIFTY UNKNOWN")) == []
-    listed = resolve_universe(UniverseSpec("list", symbols=("RELIANCE.NS", "TCS", "RELIANCE", " infy ")))
+    assert resolve_universe(UniverseSpec(kind="index", name="NIFTY BANK")) == ["HDFCBANK", "SBIN"]
+    assert resolve_universe(UniverseSpec(kind="index", name="NIFTY 50")) == list(NIFTY_50)
+    assert resolve_universe(UniverseSpec(kind="index", name="NIFTY UNKNOWN")) == []
+    listed = resolve_universe(UniverseSpec(kind="list", symbols=("RELIANCE.NS", "TCS", "RELIANCE", " infy ")))
     assert listed == ["RELIANCE", "TCS", "INFY"]
-    assert resolve_universe(UniverseSpec("watchlist"), watchlist=["A", "B", "A"]) == ["A", "B"]
-    assert resolve_universe(UniverseSpec("watchlist"), watchlist=None) == []
+    assert resolve_universe(UniverseSpec(kind="watchlist"), watchlist=["A", "B", "A"]) == ["A", "B"]
+    assert resolve_universe(UniverseSpec(kind="watchlist"), watchlist=None) == []
 
 
 # ---------------------------------------------------------------- load_backtest_inputs
 
 
 def test_inputs_have_warm_up_calendar_reindexed_frames_and_metadata(seam):
-    config = _config(UniverseSpec("list", symbols=("A", "B", "SHORT", "MISSING")))
+    config = _config(UniverseSpec(kind="list", symbols=("A", "B", "SHORT", "MISSING")))
     progress: list[dict] = []
     inputs = load_backtest_inputs(config, _Strategy, progress_cb=lambda **f: progress.append(f))
 
@@ -152,7 +152,7 @@ def test_inputs_have_warm_up_calendar_reindexed_frames_and_metadata(seam):
 def test_gaps_in_a_symbol_history_become_nan_rows(seam):
     calendar = seam["calendar"]
     seam["histories"]["A"] = [d for d in calendar if d != date(2023, 7, 3)]
-    inputs = load_backtest_inputs(_config(UniverseSpec("list", symbols=("A",))), _Strategy)
+    inputs = load_backtest_inputs(_config(UniverseSpec(kind="list", symbols=("A",))), _Strategy)
     assert np.isnan(inputs.frames["A"].loc[pd.Timestamp("2023-07-03"), "Close"])
     assert inputs.frames["A"]["Close"].notna().sum() == len(inputs.calendar) - 1
 
@@ -161,7 +161,7 @@ def test_index_universe_records_a_survivorship_warning(seam):
     seam["histories"]["HDFCBANK"] = seam["calendar"]
     seam["histories"]["SBIN"] = seam["calendar"]
     seam["kinds"].update({"HDFCBANK": "equity", "SBIN": "equity"})
-    inputs = load_backtest_inputs(_config(UniverseSpec("index", name="NIFTY BANK")), _Strategy)
+    inputs = load_backtest_inputs(_config(UniverseSpec(kind="index", name="NIFTY BANK")), _Strategy)
     assert list(inputs.frames) == ["HDFCBANK", "SBIN"]
     assert any("survivorship" in w.lower() for w in inputs.warnings)
 
@@ -170,7 +170,7 @@ def test_insufficient_warm_up_moves_the_start_and_warns(seam):
     seam["calendar"] = _calendar()[95:]
     seam["histories"] = {"A": seam["calendar"]}
     seam["kinds"] = {"A": "equity"}
-    config = _config(UniverseSpec("list", symbols=("A",)), start=seam["calendar"][5])
+    config = _config(UniverseSpec(kind="list", symbols=("A",)), start=seam["calendar"][5])
     inputs = load_backtest_inputs(config, _Strategy)
     assert inputs.start_pos == 20
     effective = inputs.calendar[20].date()
@@ -179,7 +179,7 @@ def test_insufficient_warm_up_moves_the_start_and_warns(seam):
 
 
 def test_no_trading_days_in_range_raises(seam):
-    config = _config(UniverseSpec("list", symbols=("A",)), start=date(2030, 1, 1), end=date(2030, 2, 1))
+    config = _config(UniverseSpec(kind="list", symbols=("A",)), start=date(2030, 1, 1), end=date(2030, 2, 1))
     with pytest.raises(ValueError):
         load_backtest_inputs(config, _Strategy)
 
@@ -215,8 +215,8 @@ def test_split_adjustment_is_applied_when_configured(seam):
         )
 
     universe_module.load_stock_ohlcv_many = split_frame
-    adjusted = load_backtest_inputs(_config(UniverseSpec("list", symbols=("A",)), adjust_splits=True), _Strategy)
-    raw = load_backtest_inputs(_config(UniverseSpec("list", symbols=("A",)), adjust_splits=False), _Strategy)
+    adjusted = load_backtest_inputs(_config(UniverseSpec(kind="list", symbols=("A",)), adjust_splits=True), _Strategy)
+    raw = load_backtest_inputs(_config(UniverseSpec(kind="list", symbols=("A",)), adjust_splits=False), _Strategy)
     assert adjusted.frames["A"]["Close"].iloc[0] == pytest.approx(100.0)
     assert adjusted.frames["A"]["Volume"].iloc[0] == pytest.approx(10_000.0)
     assert raw.frames["A"]["Close"].iloc[0] == pytest.approx(1000.0)
@@ -231,7 +231,7 @@ def test_symbol_fetch_failure_is_skipped_with_a_warning(seam):
         return original(symbol, start, end)
 
     universe_module.ensure_stock_data = flaky
-    inputs = load_backtest_inputs(_config(UniverseSpec("list", symbols=("A", "B"))), _Strategy)
+    inputs = load_backtest_inputs(_config(UniverseSpec(kind="list", symbols=("A", "B"))), _Strategy)
     assert list(inputs.frames) == ["A"]
     assert inputs.skipped == ["B"]
     assert any("B" in w for w in inputs.warnings)
@@ -248,7 +248,7 @@ def test_startup_uses_the_parametrised_strategy_instance(seam):
         def startup_candle_count(self) -> int:
             return self.lookback + 1
 
-    config = _config(UniverseSpec("list", symbols=("A",)), params={"lookback": 30})
+    config = _config(UniverseSpec(kind="list", symbols=("A",)), params={"lookback": 30})
     inputs = load_backtest_inputs(config, Parametrised)
     assert inputs.start_pos == 31
     assert inputs.calendar[0].date() == seam["calendar"][seam["calendar"].index(date(2023, 6, 1)) - 31]

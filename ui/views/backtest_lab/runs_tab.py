@@ -64,8 +64,11 @@ def refresh_for(run_id: int, name: str) -> BackgroundRefresh:
     )
 
 
-def universe_label(payload: dict | None) -> str:
-    return UniverseSpec.from_dict(payload).label() if payload else "—"
+def universe_label(value: str | dict | None) -> str:
+    if not value:
+        return "—"
+    spec = UniverseSpec.model_validate_json(value) if isinstance(value, str) else UniverseSpec.model_validate(value)
+    return spec.label()
 
 
 def _progress(run_id: int) -> str:
@@ -99,7 +102,7 @@ def display_frame(rows: list[dict]) -> pd.DataFrame:
             {
                 "Name": r["name"],
                 "Strategy": r["strategy"],
-                "Universe": universe_label(_payload(r["universe"])),
+                "Universe": universe_label(r["universe"]),
                 "Params": params_summary(_payload(r["params"])),
                 "Costs": PRESET_LABELS.get(_payload(r["costs"]).get("name"), "Custom"),
                 "Period": f"{r['start']:%b %Y} to {r['end']:%b %Y}",

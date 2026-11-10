@@ -89,7 +89,7 @@ def _run(strategy_cls, frames, params=None, **overrides):
     config = BacktestConfig(
         strategy=strategy_cls.name,
         params=params,
-        universe=UniverseSpec("list", symbols=tuple(frames)),
+        universe=UniverseSpec(kind="list", symbols=tuple(frames)),
         start=index[0].date(),
         end=index[-1].date(),
         init_cash=1_000_000.0,

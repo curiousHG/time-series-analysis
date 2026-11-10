@@ -15,11 +15,11 @@ def test_config_round_trips_through_json_safe_dicts():
         slippage_bps=8,
         strategy_overrides={"stoploss": -0.08, "top_k": 5},
     )
-    payload = config.to_dict()
+    payload = config.model_dump(mode="json")
     assert payload["start"] == "2020-01-01"
     assert payload["costs"]["name"] == "zerodha_intraday"
     assert payload["universe"] == {"kind": "index", "name": "NIFTY 50", "symbols": []}
-    assert BacktestConfig.from_dict(payload) == config
+    assert BacktestConfig.model_validate(payload) == config
 
 
 def test_universe_labels_read_naturally():

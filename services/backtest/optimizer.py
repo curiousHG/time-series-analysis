@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from services.backtest.objectives import DEFAULT_MIN_TRADES, Objective, score
 from services.backtest.runs import get_strategy, run_backtest_basket
@@ -44,20 +46,19 @@ SUMMARY_METRIC_KEYS = (
 )
 
 
-@dataclass(frozen=True)
-class ParamSpace:
+class ParamSpace(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
     kind: str
     low: float | None = None
     high: float | None = None
     step: float | None = None
     choices: tuple = ()
 
-    def to_dict(self) -> dict:
-        return {"kind": self.kind, "low": self.low, "high": self.high, "step": self.step, "choices": list(self.choices)}
 
+class OptimizationSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
-@dataclass(frozen=True)
-class OptimizationSpec:
     objective: Objective = Objective.SHARPE
     n_trials: int = 50
     min_trades: int = DEFAULT_MIN_TRADES
@@ -65,24 +66,10 @@ class OptimizationSpec:
     optimize_top_k: bool = False
     oos_fraction: float = 0.0
     oos_top_n: int = 5
-    space_overrides: dict[str, ParamSpace] = field(default_factory=dict)
-    fixed_params: dict[str, Any] = field(default_factory=dict)
+    space_overrides: dict[str, ParamSpace] = Field(default_factory=dict)
+    fixed_params: dict[str, Any] = Field(default_factory=dict)
     seed: int | None = 42
-    timeout_s: float | None = None
-
-    def to_dict(self) -> dict:
-        return {
-            "objective": self.objective,
-            "n_trials": self.n_trials,
-            "min_trades": self.min_trades,
-            "optimize_stoploss": self.optimize_stoploss,
-            "optimize_top_k": self.optimize_top_k,
-            "oos_fraction": self.oos_fraction,
-            "oos_top_n": self.oos_top_n,
-            "space_overrides": {k: v.to_dict() for k, v in self.space_overrides.items()},
-            "fixed_params": self.fixed_params,
-            "seed": self.seed,
-        }
+    timeout_s: float | None = Field(default=None, exclude=True)
 
 
 @dataclass
@@ -134,15 +121,15 @@ def build_search_space(strategy_cls: type, spec: OptimizationSpec) -> dict[str, 
         if not param.optimize or name in spec.fixed_params:
             continue
         if isinstance(param, IntParameter):
-            space[name] = ParamSpace("int", low=param.low, high=param.high, step=param.step)
+            space[name] = ParamSpace(kind="int", low=param.low, high=param.high, step=param.step)
         elif isinstance(param, DecimalParameter):
-            space[name] = ParamSpace("decimal", low=param.low, high=param.high, step=param.step)
+            space[name] = ParamSpace(kind="decimal", low=param.low, high=param.high, step=param.step)
         elif isinstance(param, CategoricalParameter):
-            space[name] = ParamSpace("categorical", choices=tuple(param.choices))
+            space[name] = ParamSpace(kind="categorical", choices=tuple(param.choices))
     if spec.optimize_stoploss:
-        space["stoploss"] = ParamSpace("decimal", low=STOPLOSS_BOUNDS[0], high=STOPLOSS_BOUNDS[1], step=0.01)
+        space["stoploss"] = ParamSpace(kind="decimal", low=STOPLOSS_BOUNDS[0], high=STOPLOSS_BOUNDS[1], step=0.01)
     if spec.optimize_top_k and getattr(strategy_cls, "mode", "signal") == "rank":
-        space["top_k"] = ParamSpace("int", low=TOP_K_BOUNDS[0], high=TOP_K_BOUNDS[1], step=1)
+        space["top_k"] = ParamSpace(kind="int", low=TOP_K_BOUNDS[0], high=TOP_K_BOUNDS[1], step=1)
     for name, override in spec.space_overrides.items():
         if name in space or name in ATTRIBUTE_DIMENSIONS:
             space[name] = override
@@ -165,10 +152,8 @@ def config_with_params(config: BacktestConfig, params: dict) -> BacktestConfig:
     """Split a trial's suggestion: strategy attributes into overrides, everything else into params."""
     attributes = {k: v for k, v in params.items() if k in ATTRIBUTE_DIMENSIONS}
     plain = {k: v for k, v in params.items() if k not in ATTRIBUTE_DIMENSIONS}
-    return replace(
-        config,
-        params={**config.params, **plain},
-        strategy_overrides={**config.strategy_overrides, **attributes},
+    return config.model_copy(
+        update={"params": {**config.params, **plain}, "strategy_overrides": {**config.strategy_overrides, **attributes}}
     )
 
 
@@ -180,7 +165,7 @@ def split_is_oos(config: BacktestConfig, oos_fraction: float) -> tuple[BacktestC
     if span < 2:
         return config, None
     cut = config.start + (config.end - config.start) * (1 - oos_fraction)
-    return replace(config, end=cut), replace(config, start=cut)
+    return config.model_copy(update={"end": cut}), config.model_copy(update={"start": cut})
 
 
 def apply_best(config: BacktestConfig, result: OptimizationResult) -> BacktestConfig:

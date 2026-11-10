@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import date
+from datetime import date  # noqa: TC003
 from enum import StrEnum
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 from services.backtest.costs import ZERODHA_DELIVERY, CostPreset
 
@@ -16,8 +17,9 @@ class UniverseKind(StrEnum):
     WATCHLIST = "watchlist"
 
 
-@dataclass(frozen=True)
-class UniverseSpec:
+class UniverseSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
     kind: UniverseKind
     name: str = ""
     symbols: tuple[str, ...] = ()
@@ -30,18 +32,10 @@ class UniverseSpec:
         count = len(self.symbols)
         return f"{count} symbol{'' if count == 1 else 's'}"
 
-    def to_dict(self) -> dict:
-        return {"kind": self.kind, "name": self.name, "symbols": list(self.symbols)}
 
-    @classmethod
-    def from_dict(cls, payload: dict) -> UniverseSpec:
-        return cls(
-            kind=UniverseKind(payload["kind"]), name=payload.get("name", ""), symbols=tuple(payload.get("symbols", ()))
-        )
+class BacktestConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
-
-@dataclass
-class BacktestConfig:
     strategy: str
     params: dict[str, Any]
     universe: UniverseSpec
@@ -50,30 +44,22 @@ class BacktestConfig:
     init_cash: float = 1_000_000.0
     costs: CostPreset = ZERODHA_DELIVERY
     slippage_bps: float = 5.0
-    strategy_overrides: dict[str, Any] = field(default_factory=dict)
+    strategy_overrides: dict[str, Any] = Field(default_factory=dict)
     stake_amount: float | None = None
     adjust_splits: bool = True
     benchmark: str = "^NSEI"
     max_volume_share: float | None = None
 
-    def to_dict(self) -> dict:
-        payload = asdict(self)
-        payload["universe"] = self.universe.to_dict()
-        payload["costs"] = self.costs.to_dict()
-        payload["start"] = self.start.isoformat()
-        payload["end"] = self.end.isoformat()
-        payload["strategy_overrides"] = {k: _roi_to_json(k, v) for k, v in self.strategy_overrides.items()}
-        return payload
-
+    @field_validator("strategy_overrides", mode="before")
     @classmethod
-    def from_dict(cls, payload: dict) -> BacktestConfig:
-        data = dict(payload)
-        data["universe"] = UniverseSpec.from_dict(data["universe"])
-        data["costs"] = CostPreset.from_dict(data["costs"])
-        data["start"] = date.fromisoformat(data["start"])
-        data["end"] = date.fromisoformat(data["end"])
-        data["strategy_overrides"] = {k: _roi_from_json(k, v) for k, v in data.get("strategy_overrides", {}).items()}
-        return cls(**data)
+    def _roi_keys_to_int(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: _roi_from_json(k, v) for k, v in value.items()}
+        return value
+
+    @field_serializer("strategy_overrides")
+    def _roi_keys_to_str(self, value: dict[str, Any]) -> dict[str, Any]:
+        return {k: _roi_to_json(k, v) for k, v in value.items()}
 
 
 def _roi_to_json(key: str, value: Any) -> Any:

@@ -9,7 +9,6 @@ import pandas as pd
 import streamlit as st
 
 from core.enums import RunStatus
-from services.backtest.config import UniverseSpec
 from services.backtest.costs import PRESET_LABELS
 from ui.charts import backtest as charts
 from ui.charts import ml_diagnostics as ml_charts
@@ -78,10 +77,9 @@ def _ratio(value: Any) -> str:
 def config_caption(detail: RunDetail) -> str:
     """One line describing exactly what this run was: universe, period, costs and parameters."""
     config = detail.config
-    universe = config.universe if isinstance(config.universe, UniverseSpec) else UniverseSpec.from_dict(config.universe)
     costs = PRESET_LABELS.get(config.costs.name, config.costs.name)
     return (
-        f"{config.strategy} · {universe.label()} · {config.start:%b %Y} to {config.end:%b %Y} · "
+        f"{config.strategy} · {config.universe.label()} · {config.start:%b %Y} to {config.end:%b %Y} · "
         f"{costs} + {config.slippage_bps:.0f} bps · start ₹{config.init_cash:,.0f} · {params_summary(config.params)}"
     )
 
@@ -341,7 +339,7 @@ def _render_reference_expanders(detail: RunDetail) -> None:
         rows = pd.DataFrame({"Metric": list(detail.metrics), "Value": [detail.metrics[k] for k in detail.metrics]})
         st.dataframe(rows.astype({"Value": str}), hide_index=True, use_container_width=True)
     with st.expander("Run configuration", icon=":material/settings:"):
-        st.json(detail.config.to_dict())
+        st.json(detail.config.model_dump(mode="json"))
 
 
 def _render_unfinished(detail: RunDetail) -> None:
@@ -351,7 +349,7 @@ def _render_unfinished(detail: RunDetail) -> None:
     else:
         st.info("This run has no results yet — launch it from the Runs view.")
     with st.expander("Run configuration", icon=":material/settings:"):
-        st.json(detail.config.to_dict())
+        st.json(detail.config.model_dump(mode="json"))
 
 
 def render() -> None:

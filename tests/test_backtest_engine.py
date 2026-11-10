@@ -64,7 +64,7 @@ def _config(symbols, **overrides) -> BacktestConfig:
     base = dict(
         strategy="Scripted",
         params={},
-        universe=UniverseSpec("list", symbols=tuple(symbols)),
+        universe=UniverseSpec(kind="list", symbols=tuple(symbols)),
         start=date(2024, 1, 1),
         end=date(2024, 12, 31),
         init_cash=100_000.0,

@@ -31,7 +31,7 @@ WATCHLIST_SELECTION = "selected_stocks"
 
 def watchlist_symbols() -> list[str]:
     """The Stock Analysis watchlist — the same persisted selection that page writes."""
-    return [str(s) for s in (load_selection(WATCHLIST_SELECTION, []) or [])]
+    return [str(s) for s in load_selection(WATCHLIST_SELECTION)]
 
 
 def resolve(spec: UniverseSpec) -> list[str]:

@@ -112,7 +112,7 @@ def _compose(
     )
 
     section_header("Universe", "Every symbol is loaded DB-first; only missing bars are fetched.")
-    stored_universe = UniverseSpec.from_dict(values["universe"]) if values.get("universe") else None
+    stored_universe = UniverseSpec.model_validate(values["universe"]) if values.get("universe") else None
     universe, symbols = universe_picker.render(prefix=prefix, universe=stored_universe, force=force)
 
     section_header("Costs and period", "Zerodha charges per order plus slippage on every fill.")
@@ -197,7 +197,7 @@ def edit_dialog(run_id: int, catalog: dict[str, StrategySpec]) -> None:
     loaded_key = f"{EDIT_PREFIX}loaded"
     fresh = st.session_state.get(loaded_key) != run_id
     st.session_state[loaded_key] = run_id
-    values = {**detail.config.to_dict(), "name": detail.name}
+    values = {**detail.config.model_dump(mode="json"), "name": detail.name}
     config, name = _compose(catalog, prefix=EDIT_PREFIX, values=values, force=fresh)
     is_draft = detail.status == RunStatus.DRAFT
     st.caption("Saving rewrites this draft." if is_draft else "This run has results — saving creates a new draft.")

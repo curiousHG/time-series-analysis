@@ -139,7 +139,7 @@ def test_momentum_rank_strategy_runs_end_to_end_on_a_synthetic_basket():
     config = BacktestConfig(
         strategy=MomentumRankStrategy.name,
         params={"lookback": 20},
-        universe=UniverseSpec("list", symbols=tuple(frames)),
+        universe=UniverseSpec(kind="list", symbols=tuple(frames)),
         start=idx[25].date(),
         end=idx[-1].date(),
         init_cash=1_000_000.0,

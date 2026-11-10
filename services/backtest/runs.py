@@ -147,7 +147,7 @@ def create_strategy_file(class_name: str, *, display_name: str | None = None, mo
 
 
 def create_run(config: BacktestConfig, name: str) -> int:
-    payload = config.to_dict()
+    payload = config.model_dump(mode="json")
     return repo.save_backtest_run(
         name=name,
         strategy=config.strategy,
@@ -163,7 +163,7 @@ def create_run(config: BacktestConfig, name: str) -> int:
 
 
 def update_run(run_id: int, config: BacktestConfig, name: str) -> None:
-    payload = config.to_dict()
+    payload = config.model_dump(mode="json")
     repo.update_backtest_run(
         run_id,
         name=name,
@@ -181,7 +181,7 @@ def duplicate_run(run_id: int, overrides: dict | None = None) -> int:
     overrides = dict(overrides or {})
     name = overrides.pop("name", f"{row['name']} (copy)")
     payload = {**row["config"], **overrides}
-    return create_run(BacktestConfig.from_dict(payload), name)
+    return create_run(BacktestConfig.model_validate(payload), name)
 
 
 def delete_run(run_id: int) -> None:
@@ -202,7 +202,7 @@ def start_run(run_id: int, *, progress_cb: Callable[..., None] | None = None) ->
     row = repo.get_backtest_run(run_id)
     if row is None:
         raise KeyError(run_id)
-    config = BacktestConfig.from_dict(row["config"])
+    config = BacktestConfig.model_validate(row["config"])
     repo.save_backtest_run_status(run_id, RunStatus.QUEUED)
     repo.save_backtest_run_status(run_id, RunStatus.RUNNING)
     started = time.perf_counter()
@@ -232,7 +232,7 @@ def load_run(run_id: int) -> RunDetail | None:
     row = repo.get_backtest_run(run_id)
     if row is None:
         return None
-    config = BacktestConfig.from_dict(row["config"])
+    config = BacktestConfig.model_validate(row["config"])
     trades = repo.load_backtest_trades(run_id).to_pandas()
     equity, benchmark = _equity_from_payload(row.get("equity"))
     metrics = dict(row.get("summary") or {})
@@ -360,9 +360,9 @@ def start_optimization(
     row = repo.get_backtest_run(run_id)
     if row is None:
         raise KeyError(run_id)
-    config = BacktestConfig.from_dict(row["config"])
+    config = BacktestConfig.model_validate(row["config"])
     optimization_id = repo.save_optimization(
-        run_id=run_id, objective=spec.objective, n_trials=spec.n_trials, spec=spec.to_dict()
+        run_id=run_id, objective=spec.objective, n_trials=spec.n_trials, spec=spec.model_dump(mode="json")
     )
     try:
         result = optimize(config, spec, progress_cb=progress_cb, should_stop=should_stop)

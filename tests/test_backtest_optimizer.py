@@ -71,7 +71,7 @@ def _peak_at_three(config: BacktestConfig, **kwargs) -> _FakeResult:
 def test_search_space_reads_the_declaration_and_skips_pinned_parameters():
     space = build_search_space(_Tunable, OptimizationSpec())
     assert set(space) == {"fast", "slow", "flavour"}
-    assert space["fast"] == ParamSpace("int", low=1, high=20, step=1)
+    assert space["fast"] == ParamSpace(kind="int", low=1, high=20, step=1)
     assert space["slow"].kind == "decimal"
     assert space["flavour"].choices == ("a", "b")
 
@@ -81,7 +81,7 @@ def test_search_space_honours_fixed_params_bounds_and_attribute_dimensions():
         fixed_params={"flavour": "b"},
         optimize_stoploss=True,
         optimize_top_k=True,
-        space_overrides={"fast": ParamSpace("int", low=5, high=8, step=1)},
+        space_overrides={"fast": ParamSpace(kind="int", low=5, high=8, step=1)},
     )
     space = build_search_space(_Tunable, spec)
     assert "flavour" not in space

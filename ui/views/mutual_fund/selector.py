@@ -46,7 +46,7 @@ def _render_quick_access(tracked_set: set[str]) -> None:
     """One dropdown combining portfolio holdings + bookmarks; selecting jumps the fund picker.
     Each entry is tagged 📁 (held) / ⭐ (bookmarked)."""
     portfolio = {n for n in _portfolio_fund_names() if n in tracked_set}
-    bookmarks = {n for n in load_selection(_BOOKMARKS_KEY, []) if n in tracked_set}
+    bookmarks = {n for n in load_selection(_BOOKMARKS_KEY) if n in tracked_set}
     labels = unique_short_names(portfolio | bookmarks)
     combined = sorted(labels, key=lambda n: labels[n].lower())
     if not combined:
@@ -71,7 +71,7 @@ def _render_quick_access(tracked_set: set[str]) -> None:
 
 def _render_bookmark_toggle(selected: str | None) -> None:
     """★/☆ button to add/remove the selected fund from bookmarks."""
-    bookmarks = load_selection(_BOOKMARKS_KEY, [])
+    bookmarks = load_selection(_BOOKMARKS_KEY)
     is_bookmarked = selected in bookmarks
     if st.button(
         "★" if is_bookmarked else "☆",
