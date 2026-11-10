@@ -8,10 +8,12 @@ from datetime import date
 import polars as pl
 import streamlit as st
 
+from core.enums import SourceStatus
 from data.repositories.amfi import get_scheme_details_by_name
 from data.repositories.nav import load_nav_df
 from mutual_funds.display import make_slug, short_scheme_name
 from mutual_funds.tradebook import signed_flows
+from services.constants import BackfillSource
 from services.mf.backfill import backfill_missing
 from services.mf.metrics_math import absolute_return
 from services.mf.registry import list_tracked
@@ -112,8 +114,12 @@ metadata_status = reg_row["metadataStatus"]
 
 pending_sources = [
     s
-    for s, status in [("nav", nav_status), ("metadata", metadata_status), ("holdings", holdings_status)]
-    if status == "pending"
+    for s, status in [
+        (BackfillSource.NAV, nav_status),
+        (BackfillSource.METADATA, metadata_status),
+        (BackfillSource.HOLDINGS, holdings_status),
+    ]
+    if status == SourceStatus.PENDING
 ]
 
 if pending_sources:
@@ -126,10 +132,10 @@ if pending_sources:
         )
     st.rerun()
 
-if nav_status == "unavailable":
+if nav_status == SourceStatus.UNAVAILABLE:
     st.error(f"NAV data is **unavailable** for *{short_scheme_name(selected)}*. Try **Settings → Retry unavailable**.")
     st.stop()
-if metadata_status == "unavailable":
+if metadata_status == SourceStatus.UNAVAILABLE:
     st.warning("Metadata not available for this fund — header AMC/AUM/TER/benchmark fields will be partial.")
 
 nav_df = load_nav_df([selected]).sort("date")

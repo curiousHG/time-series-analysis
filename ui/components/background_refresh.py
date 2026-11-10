@@ -22,6 +22,7 @@ from core.background import (
     task_log,
     task_state,
 )
+from core.enums import TaskStatus
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -118,7 +119,7 @@ class BackgroundRefresh:
             return
         for clear in self.cache_clearers:
             clear()
-        if finished.status == "done":
+        if finished.status == TaskStatus.DONE:
             st.toast(f"{self.label} done — {self.summarize(finished.result)}.", icon="✅")
         else:
             st.toast(f"{self.label} failed: {finished.error}", icon="⚠️")

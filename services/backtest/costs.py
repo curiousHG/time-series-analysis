@@ -9,10 +9,18 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
-from typing import Literal
+from enum import StrEnum
 
-Side = Literal["buy", "sell"]
-Instrument = Literal["equity", "etf"]
+
+class Side(StrEnum):
+    BUY = "buy"
+    SELL = "sell"
+
+
+class Instrument(StrEnum):
+    EQUITY = "equity"
+    ETF = "etf"
+
 
 TICK = 0.05
 NSE_TXN_PCT = 0.0000307
@@ -87,7 +95,7 @@ class CostBreakdown:
 
 
 def apply_costs(
-    side: Side, shares: int, price: float, preset: CostPreset, *, instrument: Instrument = "equity"
+    side: Side, shares: int, price: float, preset: CostPreset, *, instrument: Instrument = Instrument.EQUITY
 ) -> CostBreakdown:
     turnover = shares * price
     if turnover <= 0:
@@ -95,24 +103,24 @@ def apply_costs(
     brokerage = turnover * preset.brokerage_pct
     if preset.brokerage_cap is not None:
         brokerage = min(brokerage, preset.brokerage_cap)
-    if instrument == "etf":
-        stt = turnover * preset.etf_stt_sell_pct if side == "sell" else 0.0
+    if instrument == Instrument.ETF:
+        stt = turnover * preset.etf_stt_sell_pct if side == Side.SELL else 0.0
     else:
-        stt = turnover * (preset.stt_buy_pct if side == "buy" else preset.stt_sell_pct)
+        stt = turnover * (preset.stt_buy_pct if side == Side.BUY else preset.stt_sell_pct)
     exchange_txn = turnover * preset.exchange_txn_pct
     sebi = turnover * preset.sebi_pct
-    stamp = turnover * preset.stamp_buy_pct if side == "buy" else 0.0
+    stamp = turnover * preset.stamp_buy_pct if side == Side.BUY else 0.0
     gst = preset.gst_pct * (brokerage + exchange_txn + sebi)
-    dp = preset.dp_charge_per_sell if side == "sell" else 0.0
+    dp = preset.dp_charge_per_sell if side == Side.SELL else 0.0
     return CostBreakdown(brokerage, stt, exchange_txn, sebi, stamp, gst, dp)
 
 
 def round_tick(price: float, side: Side) -> float:
     ticks = price / TICK
-    rounded = math.ceil(ticks - 1e-9) if side == "buy" else math.floor(ticks + 1e-9)
+    rounded = math.ceil(ticks - 1e-9) if side == Side.BUY else math.floor(ticks + 1e-9)
     return round(rounded * TICK, 2)
 
 
 def fill_price(raw: float, side: Side, slippage_bps: float) -> float:
-    slipped = raw * (1 + slippage_bps / 1e4) if side == "buy" else raw * (1 - slippage_bps / 1e4)
+    slipped = raw * (1 + slippage_bps / 1e4) if side == Side.BUY else raw * (1 - slippage_bps / 1e4)
     return round_tick(slipped, side)

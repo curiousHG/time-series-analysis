@@ -13,6 +13,8 @@ from ui.state.loaders import load_benchmark_returns
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from core.enums import SourceStatus
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,7 @@ class FundContext:
     amfi_row: dict | None
     metrics_row: dict | None
     sub_category: str | None
-    holdings_status: str
+    holdings_status: SourceStatus
 
 
 def load_index_returns(symbol: str, start: datetime, end: datetime) -> pd.Series:

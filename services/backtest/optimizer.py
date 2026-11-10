@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
-from services.backtest.objectives import DEFAULT_MIN_TRADES, score
+from services.backtest.objectives import DEFAULT_MIN_TRADES, Objective, score
 from services.backtest.runs import get_strategy, run_backtest_basket
 from strategies.parameters import CategoricalParameter, DecimalParameter, IntParameter
 
@@ -58,7 +58,7 @@ class ParamSpace:
 
 @dataclass(frozen=True)
 class OptimizationSpec:
-    objective: str = "sharpe"
+    objective: Objective = Objective.SHARPE
     n_trials: int = 50
     min_trades: int = DEFAULT_MIN_TRADES
     optimize_stoploss: bool = False

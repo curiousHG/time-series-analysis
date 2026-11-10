@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Literal
+from enum import StrEnum
+from typing import TYPE_CHECKING
 
 import polars as pl
 
@@ -30,7 +31,12 @@ if TYPE_CHECKING:
 
     from services.mf.freshness import FreshnessReport
 
-Severity = Literal["info", "warn", "critical"]
+
+class Severity(StrEnum):
+    INFO = "info"
+    WARN = "warn"
+    CRITICAL = "critical"
+
 
 UNDERPERF_6M_PP = 3.0
 UNDERPERF_1Y_PP = 5.0
@@ -43,7 +49,7 @@ FUND_CONC_WARN_PCT = 30.0
 
 _CASH_PARKING_INSTRUMENTS = ("treps", "repo", "net current assets", "cash", "t-bill", "treasury bill")
 
-_SEVERITY_ORDER = {"critical": 0, "warn": 1, "info": 2}
+_SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.WARN: 1, Severity.INFO: 2}
 
 
 @dataclass(frozen=True)
@@ -87,7 +93,7 @@ def underperformance_alerts(
         if gap_1y is not None and gap_1y < -UNDERPERF_1Y_PP:
             alerts.append(
                 Alert(
-                    "critical",
+                    Severity.CRITICAL,
                     "underperformance",
                     f"**{short}** is {-gap_1y:.1f} pp behind its benchmark over 1Y.",
                     scheme_name=scheme,
@@ -97,7 +103,7 @@ def underperformance_alerts(
         elif gap_6m is not None and gap_6m < -UNDERPERF_6M_PP:
             alerts.append(
                 Alert(
-                    "warn",
+                    Severity.WARN,
                     "underperformance",
                     f"**{short}** is {-gap_6m:.1f} pp behind its benchmark over 6M.",
                     scheme_name=scheme,
@@ -137,7 +143,7 @@ def alpha_decay_alerts(
         if alpha < 0 and r3y >= med:
             alerts.append(
                 Alert(
-                    "warn",
+                    Severity.WARN,
                     "alpha_decay",
                     f"**{short_scheme_name(row['scheme_name'])}** has negative 1Y alpha "
                     f"({alpha * 100:+.1f}%) despite a top-half 3Y record in its sub-category.",
@@ -157,9 +163,9 @@ def portfolio_drawdown_alert(pv: pd.Series) -> Alert | None:
         return None
     dd = 1.0 - float(pv.iloc[-1]) / peak
     if dd > PORTFOLIO_DD_CRIT:
-        sev: Severity = "critical"
+        sev: Severity = Severity.CRITICAL
     elif dd > PORTFOLIO_DD_WARN:
-        sev = "warn"
+        sev = Severity.WARN
     else:
         return None
     return Alert(sev, "drawdown", f"Portfolio is **{dd * 100:.1f}%** below its all-time peak.", value=dd)
@@ -178,7 +184,7 @@ def concentration_alerts(
             ~pl.col("instrument_name").str.to_lowercase().str.contains_any(list(_CASH_PARKING_INSTRUMENTS))
         )
         for row in eq.filter(pl.col("exposure_pct") > STOCK_CONC_WARN_PCT).iter_rows(named=True):
-            sev: Severity = "critical" if row["exposure_pct"] > STOCK_CONC_CRIT_PCT else "warn"
+            sev: Severity = Severity.CRITICAL if row["exposure_pct"] > STOCK_CONC_CRIT_PCT else Severity.WARN
             alerts.append(
                 Alert(
                     sev,
@@ -193,14 +199,17 @@ def concentration_alerts(
         if w * 100 > AMC_CONC_WARN_PCT:
             alerts.append(
                 Alert(
-                    "warn", "concentration", f"**{w * 100:.0f}%** of the portfolio sits with one AMC ({amc}).", value=w
+                    Severity.WARN,
+                    "concentration",
+                    f"**{w * 100:.0f}%** of the portfolio sits with one AMC ({amc}).",
+                    value=w,
                 )
             )
     for fund, w in fund_wts.items():
         if w * 100 > FUND_CONC_WARN_PCT:
             alerts.append(
                 Alert(
-                    "warn",
+                    Severity.WARN,
                     "concentration",
                     f"**{short_scheme_name(fund)}** alone is **{w * 100:.0f}%** of the portfolio.",
                     scheme_name=fund,
@@ -221,7 +230,7 @@ def staleness_alerts(nav_report: FreshnessReport, holdings_report: FreshnessRepo
         )
         alerts.append(
             Alert(
-                "info",
+                Severity.INFO,
                 "staleness",
                 f"NAV data is stale for **{nav_report.stale_count} of {nav_report.total}** held funds{suffix}.",
                 value=float(nav_report.stale_count),
@@ -230,7 +239,7 @@ def staleness_alerts(nav_report: FreshnessReport, holdings_report: FreshnessRepo
     if holdings_report.has_stale:
         alerts.append(
             Alert(
-                "info",
+                Severity.INFO,
                 "staleness",
                 f"Holdings data is stale for **{holdings_report.stale_count} of {holdings_report.total}** held funds.",
                 value=float(holdings_report.stale_count),

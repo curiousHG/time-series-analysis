@@ -7,6 +7,7 @@ from datetime import date as _date
 from datetime import timedelta as _timedelta
 from typing import TYPE_CHECKING
 
+from core.enums import SourceStatus
 from data.repositories.stock_fundamentals import ensure_stock_fundamentals
 from services.stock.metrics import recompute_price_metrics
 
@@ -316,7 +317,7 @@ def list_unavailable_stocks() -> list[str]:
     return list_unavailable_stock_symbols()
 
 
-def retry_stock_ohlcv(symbol: str) -> str:
+def retry_stock_ohlcv(symbol: str) -> SourceStatus:
     """Clear a symbol's unavailable marker and force a fresh full-history fetch. Returns the
     resulting ohlcv_status ('available' if data was recovered, else 'pending'/'unavailable')."""
     import datetime as _dt  # noqa: PLC0415
@@ -329,4 +330,4 @@ def retry_stock_ohlcv(symbol: str) -> str:
 
     clear_stock_ohlcv_status(symbol)
     ensure_stock_data(symbol, _dt.date(2000, 1, 1), _dt.date.today())
-    return get_stock_ohlcv_statuses([symbol]).get(symbol.removesuffix(".NS"), "pending")
+    return get_stock_ohlcv_statuses([symbol]).get(symbol.removesuffix(".NS"), SourceStatus.PENDING)

@@ -19,6 +19,7 @@ from mutual_funds.metric_catalog import (
     METRIC_RENAME,
     METRIC_TEXT_COLS,
 )
+from services.constants import BackfillSource
 from services.mf.backfill import backfill_missing
 from services.mf.screener import status_cell
 from ui.components.screener_grid import clicked_cell_value, render_screener_grid
@@ -79,7 +80,7 @@ def render_open_action(grid_response: dict) -> None:
     with st.spinner(f"Fetching NAV + metadata for {scheme_name}…"):
         backfill_missing(
             scheme_names=[scheme_name],
-            sources=("nav", "metadata"),
+            sources=(BackfillSource.NAV, BackfillSource.METADATA),
             max_per_run=2,
             submit_delay=0.0,
         )

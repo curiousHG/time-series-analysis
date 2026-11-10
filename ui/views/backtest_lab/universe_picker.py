@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from services.backtest.config import UniverseSpec
+from services.backtest.config import UniverseKind, UniverseSpec
 from ui.persistence.selections import load_selection
 from ui.state.loaders import load_universe_cached
 from ui.views.backtest_lab.params import seed
@@ -25,7 +25,7 @@ INDEX_CHOICES = (
     "NIFTY METAL",
     "NIFTY ENERGY",
 )
-KIND_LABELS = {"index": "Index", "watchlist": "Watchlist", "list": "Custom"}
+KIND_LABELS = {UniverseKind.INDEX: "Index", UniverseKind.WATCHLIST: "Watchlist", UniverseKind.LIST: "Custom"}
 WATCHLIST_SELECTION = "selected_stocks"
 
 
@@ -41,24 +41,24 @@ def resolve(spec: UniverseSpec) -> list[str]:
 
 def freeze(spec: UniverseSpec, symbols: list[str]) -> UniverseSpec:
     """A watchlist is a moving target — store what it resolved to, so the run records what it ran on."""
-    if spec.kind != "watchlist":
+    if spec.kind != UniverseKind.WATCHLIST:
         return spec
-    return UniverseSpec(kind="list", name="Watchlist", symbols=tuple(symbols))
+    return UniverseSpec(kind=UniverseKind.LIST, name="Watchlist", symbols=tuple(symbols))
 
 
 def render(*, prefix: str, universe: UniverseSpec | None = None, force: bool = False) -> tuple[UniverseSpec, list[str]]:
     """Draw the picker and return the chosen spec with the symbols it resolves to."""
     kind_key, index_key, custom_key = f"{prefix}universe_kind", f"{prefix}universe_index", f"{prefix}universe_custom"
-    current = universe or UniverseSpec(kind="index", name=INDEX_CHOICES[0])
+    current = universe or UniverseSpec(kind=UniverseKind.INDEX, name=INDEX_CHOICES[0])
     seed(kind_key, KIND_LABELS.get(current.kind, "Index"), force=force)
     seed(index_key, current.name if current.name in INDEX_CHOICES else INDEX_CHOICES[0], force=force)
-    seed(custom_key, ", ".join(current.symbols) if current.kind == "list" else "", force=force)
+    seed(custom_key, ", ".join(current.symbols) if current.kind == UniverseKind.LIST else "", force=force)
 
     label = st.radio("Universe", list(KIND_LABELS.values()), horizontal=True, key=kind_key)
     if label == "Index":
-        spec = UniverseSpec(kind="index", name=st.selectbox("Index", INDEX_CHOICES, key=index_key))
+        spec = UniverseSpec(kind=UniverseKind.INDEX, name=st.selectbox("Index", INDEX_CHOICES, key=index_key))
     elif label == "Watchlist":
-        spec = UniverseSpec(kind="watchlist")
+        spec = UniverseSpec(kind=UniverseKind.WATCHLIST)
         st.caption(
             f"Uses the {len(watchlist_symbols())} stock(s) tracked on Stock Analysis, frozen when you create the run."
         )
@@ -71,7 +71,7 @@ def render(*, prefix: str, universe: UniverseSpec | None = None, force: bool = F
             height=80,
         )
         spec = UniverseSpec(
-            kind="list", symbols=tuple(s.strip() for s in raw.replace("\n", ",").split(",") if s.strip())
+            kind=UniverseKind.LIST, symbols=tuple(s.strip() for s in raw.replace("\n", ",").split(",") if s.strip())
         )
 
     symbols = resolve(spec)

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Literal
+from enum import StrEnum
 
 import numpy as np
 from sqlmodel import func, select
@@ -11,6 +11,11 @@ from core.database import get_session
 from core.models import AmfiScheme, MfHolding, MfNav
 from data.repositories.holdings import slug_to_code_map
 from services.constants import HOLDINGS_STALE_DAYS, NAV_STALE_BUSINESS_DAYS, FreshnessStatus
+
+
+class FreshnessKey(StrEnum):
+    NAME = "name"
+    SLUG = "slug"
 
 
 @dataclass
@@ -46,7 +51,7 @@ def _build_report(
     current_date: date,
     pairs: list[tuple[str, str]],
     last_date_by_key: dict[str, date],
-    key_kind: Literal["name", "slug"],
+    key_kind: FreshnessKey,
     threshold_days: int,
     use_business_days: bool,
 ) -> FreshnessReport:
@@ -56,7 +61,7 @@ def _build_report(
     max_bdays = None
 
     for name, slug in pairs:
-        key = name if key_kind == "name" else slug
+        key = name if key_kind == FreshnessKey.NAME else slug
         last = last_date_by_key.get(key)
         if last is None:
             rows.append(
@@ -66,7 +71,7 @@ def _build_report(
                     last_date=None,
                     days_old=None,
                     business_days_old=None,
-                    status="missing",
+                    status=FreshnessStatus.MISSING,
                 )
             )
             stale_count += 1
@@ -76,7 +81,7 @@ def _build_report(
         bdays = business_days_between(last, current_date) if use_business_days else None
         compare = bdays if bdays is not None else days
         is_stale = compare > threshold_days
-        status: FreshnessStatus = "stale" if is_stale else "fresh"
+        status: FreshnessStatus = FreshnessStatus.STALE if is_stale else FreshnessStatus.FRESH
 
         rows.append(
             FreshnessRow(
@@ -125,7 +130,7 @@ def compute_nav_freshness(scheme_names: list[str], scheme_slugs: list[str]) -> F
         current_date=today,
         pairs=pairs,
         last_date_by_key=last_by_name,
-        key_kind="name",
+        key_kind=FreshnessKey.NAME,
         threshold_days=NAV_STALE_BUSINESS_DAYS,
         use_business_days=True,
     )
@@ -156,7 +161,7 @@ def compute_holdings_freshness(scheme_names: list[str], scheme_slugs: list[str])
         current_date=today,
         pairs=pairs,
         last_date_by_key=last_by_slug,
-        key_kind="slug",
+        key_kind=FreshnessKey.SLUG,
         threshold_days=HOLDINGS_STALE_DAYS,
         use_business_days=False,
     )

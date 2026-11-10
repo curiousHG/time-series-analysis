@@ -12,10 +12,12 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
+from core.enums import SourceStatus, TaskStatus
 from data.repositories.amfi import get_latest_amfi_nav_date
 from data.repositories.holdings import holdings_count_by_scheme
 from data.repositories.nav import nav_record_stats
 from mutual_funds.display import make_slug
+from services.constants import RefreshScope
 from services.mf.backfill import retry_unavailable
 from services.mf.freshness import (
     FreshnessReport,
@@ -53,7 +55,7 @@ def _fund_freshness() -> dict:
     slugs = [make_slug(n) for n in names]
     return {
         "names": names,
-        "nav_names": active.filter(pl.col("navStatus") != "unavailable")["schemeName"].to_list(),
+        "nav_names": active.filter(pl.col("navStatus") != SourceStatus.UNAVAILABLE)["schemeName"].to_list(),
         "name_to_code": name_to_code,
         "slugs": slugs,
         "nav": compute_nav_freshness(names, slugs),
@@ -115,8 +117,8 @@ def render_status() -> None:
     names = fr["names"]
     dormant = int(tracked["dormant"].sum())
 
-    def _run(scope: str):
-        scoped = fr["nav_names"] if scope == "nav" else names
+    def _run(scope: RefreshScope):
+        scoped = fr["nav_names"] if scope == RefreshScope.NAV else names
         return lambda: refresh_all_fund_data(
             scoped, name_to_code=fr["name_to_code"], scope=scope, progress_cb=progress_cb(_REFRESH.key)
         )
@@ -124,9 +126,11 @@ def render_status() -> None:
     with actions:
         b1, b2 = st.columns(2)
         with b1:
-            _REFRESH.start_button("Update NAV", _run("nav"), meta={"scope": "nav"}, type="primary")
+            _REFRESH.start_button(
+                "Update NAV", _run(RefreshScope.NAV), meta={"scope": RefreshScope.NAV}, type="primary"
+            )
         with b2:
-            _REFRESH.start_button("Update holdings", _run("holdings"), meta={"scope": "holdings"})
+            _REFRESH.start_button("Update holdings", _run(RefreshScope.HOLDINGS), meta={"scope": RefreshScope.HOLDINGS})
     if _REFRESH.is_running():
         _REFRESH.poll()
     else:
@@ -176,7 +180,7 @@ def _render_last_run() -> None:
     took = round(last.finished_at - (last.started_at or last.finished_at))
     with st.container(border=True):
         st.markdown(f"**Last refresh** · finished {finished}, took {took // 60}m {took % 60:02d}s")
-        if last.status == "failed":
+        if last.status == TaskStatus.FAILED:
             st.error(f"The refresh stopped with an error: {last.error}")
             return
         for phase, line, failures in _phase_lines(last.result if isinstance(last.result, dict) else {}):

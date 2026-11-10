@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import streamlit as st
 
+from core.enums import RunStatus
 from services.backtest.config import UniverseSpec
 from services.backtest.costs import PRESET_LABELS
 from ui.charts import backtest as charts
@@ -344,7 +345,7 @@ def _render_reference_expanders(detail: RunDetail) -> None:
 
 
 def _render_unfinished(detail: RunDetail) -> None:
-    if detail.status == "failed":
+    if detail.status == RunStatus.FAILED:
         st.error(f"This run failed: {detail.error or 'no error text was recorded.'}")
         st.caption("Fix the configuration with **Edit** on the Runs view, or relaunch it as-is.")
     else:
@@ -370,7 +371,7 @@ def render() -> None:
         return
     st.caption(config_caption(detail))
     _render_actions(detail)
-    if detail.status != "done" or detail.equity.empty:
+    if detail.status != RunStatus.DONE or detail.equity.empty:
         _render_unfinished(detail)
         return
 

@@ -3,10 +3,21 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
+from enum import StrEnum
 
-Plan = Literal["Direct", "Regular"]
-FundOption = Literal["Growth", "IDCW", "Bonus", "ETF", "Other"]
+
+class Plan(StrEnum):
+    DIRECT = "Direct"
+    REGULAR = "Regular"
+
+
+class FundOption(StrEnum):
+    GROWTH = "Growth"
+    IDCW = "IDCW"
+    BONUS = "Bonus"
+    ETF = "ETF"
+    OTHER = "Other"
+
 
 LABEL_COL = "shortName"
 

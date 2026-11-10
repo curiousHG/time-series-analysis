@@ -9,18 +9,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING
 
 from core.database import get_session
+from core.enums import SourceStatus
 from core.models import MfRegistry
 from data.repositories.advisorkhoj_keys import fetch_holdings_for_scheme
 from data.repositories.holdings import save_assets, save_holdings, save_sectors
 from data.repositories.metadata import refresh_metadata
 from data.repositories.nav import save_nav_df
+from services.constants import BackfillSource
 from services.mf.nav_sources import fetch_single_nav
 from services.mf.registry import list_tracked, resolve_scheme_code, set_status, upsert_registry
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-    from services.constants import BackfillSource, SourceStatus
 
 logger = logging.getLogger(__name__)
 
@@ -29,40 +29,40 @@ def _backfill_nav(scheme_name: str) -> SourceStatus:
     try:
         df = fetch_single_nav(scheme_name)
         if df.height == 0:
-            return "unavailable"
+            return SourceStatus.UNAVAILABLE
         save_nav_df(df)
-        return "available"
+        return SourceStatus.AVAILABLE
     except Exception as e:
         logger.warning("NAV fetch failed for %s: %s", scheme_name, e)
-        return "unavailable"
+        return SourceStatus.UNAVAILABLE
 
 
 def _backfill_holdings(scheme_name: str) -> SourceStatus:
     code = resolve_scheme_code(scheme_name)
     if code is None:
-        return "unavailable"
+        return SourceStatus.UNAVAILABLE
     try:
         h, s, a = fetch_holdings_for_scheme(code)
         if h.height == 0 and s.height == 0 and a.height == 0:
-            return "unavailable"
+            return SourceStatus.UNAVAILABLE
         save_holdings(h, scheme_code=code)
         save_sectors(s, scheme_code=code)
         save_assets(a, scheme_code=code)
-        return "available"
+        return SourceStatus.AVAILABLE
     except Exception as e:
         logger.warning("Holdings fetch failed for %s: %s", scheme_name, e)
-        return "unavailable"
+        return SourceStatus.UNAVAILABLE
 
 
 def _backfill_metadata(scheme_name: str) -> SourceStatus:
     try:
         meta = refresh_metadata(scheme_name)
         if not meta or not any(meta.get(k) for k in ("aum_crores", "expense_ratio", "benchmark", "launch_date")):
-            return "unavailable"
-        return "available"
+            return SourceStatus.UNAVAILABLE
+        return SourceStatus.AVAILABLE
     except Exception as e:
         logger.warning("Metadata fetch failed for %s: %s", scheme_name, e)
-        return "unavailable"
+        return SourceStatus.UNAVAILABLE
 
 
 def retry_unavailable(scheme_name: str) -> dict[str, SourceStatus]:
@@ -81,11 +81,11 @@ def retry_unavailable(scheme_name: str) -> dict[str, SourceStatus]:
         }
 
     results: dict[str, SourceStatus] = {}
-    if targets["nav_status"] == "unavailable":
+    if targets["nav_status"] == SourceStatus.UNAVAILABLE:
         results["nav_status"] = _backfill_nav(scheme_name)
-    if targets["holdings_status"] == "unavailable":
+    if targets["holdings_status"] == SourceStatus.UNAVAILABLE:
         results["holdings_status"] = _backfill_holdings(scheme_name)
-    if targets["metadata_status"] == "unavailable":
+    if targets["metadata_status"] == SourceStatus.UNAVAILABLE:
         results["metadata_status"] = _backfill_metadata(scheme_name)
 
     if results:
@@ -96,7 +96,7 @@ def retry_unavailable(scheme_name: str) -> dict[str, SourceStatus]:
 def backfill_missing(
     *,
     scheme_names: list[str] | None = None,
-    sources: tuple[BackfillSource, ...] = ("nav", "metadata"),
+    sources: tuple[BackfillSource, ...] = (BackfillSource.NAV, BackfillSource.METADATA),
     max_per_run: int = 50,
     submit_delay: float = 0.05,
     max_workers: int = 8,
@@ -120,24 +120,24 @@ def backfill_missing(
         ordered_rows = list(tracked.iter_rows(named=True))
         retry_unavailable_too = False
 
-    def _needs(status: str) -> bool:
-        if status == "available":
+    def _needs(status: SourceStatus) -> bool:
+        if status == SourceStatus.AVAILABLE:
             return False
-        if status == "pending":
+        if status == SourceStatus.PENDING:
             return True
         return retry_unavailable_too
 
-    todo: list[tuple[str, str]] = []
+    todo: list[tuple[str, BackfillSource]] = []
     for row in ordered_rows:
         name = row["schemeName"]
         if row["dormant"]:
             continue
-        if "nav" in sources and _needs(row["navStatus"]):
-            todo.append((name, "nav"))
-        if "metadata" in sources and _needs(row["metadataStatus"]):
-            todo.append((name, "metadata"))
-        if "holdings" in sources and _needs(row["holdingsStatus"]):
-            todo.append((name, "holdings"))
+        if BackfillSource.NAV in sources and _needs(row["navStatus"]):
+            todo.append((name, BackfillSource.NAV))
+        if BackfillSource.METADATA in sources and _needs(row["metadataStatus"]):
+            todo.append((name, BackfillSource.METADATA))
+        if BackfillSource.HOLDINGS in sources and _needs(row["holdingsStatus"]):
+            todo.append((name, BackfillSource.HOLDINGS))
         if len(todo) >= max_per_run:
             break
     todo = todo[:max_per_run]
@@ -145,22 +145,22 @@ def backfill_missing(
     if not todo:
         return {"fetched": [], "failed": [], "skipped": []}
 
-    def _do_one(scheme_name: str, source: str) -> tuple[str, str, str]:
+    def _do_one(scheme_name: str, source: BackfillSource) -> tuple[str, BackfillSource, SourceStatus]:
         try:
-            if source == "nav":
+            if source == BackfillSource.NAV:
                 status = _backfill_nav(scheme_name)
                 set_status(scheme_name, nav_status=status)
-            elif source == "metadata":
+            elif source == BackfillSource.METADATA:
                 status = _backfill_metadata(scheme_name)
                 set_status(scheme_name, metadata_status=status)
-            elif source == "holdings":
+            elif source == BackfillSource.HOLDINGS:
                 status = _backfill_holdings(scheme_name)
                 set_status(scheme_name, holdings_status=status)
             else:
-                status = "unavailable"
+                status = SourceStatus.UNAVAILABLE
         except Exception as e:
             logger.warning("backfill failed for %s/%s: %s", scheme_name, source, e)
-            status = "unavailable"
+            status = SourceStatus.UNAVAILABLE
         return scheme_name, source, status
 
     fetched: list[str] = []
@@ -177,7 +177,7 @@ def backfill_missing(
                 with contextlib.suppress(Exception):
                     progress_cb(done, len(todo), name, source)
             tag = f"{source}: {name}"
-            if status == "available":
+            if status == SourceStatus.AVAILABLE:
                 fetched.append(tag)
             else:
                 failed.append(tag)

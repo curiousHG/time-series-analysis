@@ -9,6 +9,7 @@ from datetime import timedelta
 
 import polars as pl
 
+from core.enums import SourceStatus
 from data.repositories.screener import load_screener_view
 from data.repositories.stock_ohlcv import ensure_stock_data
 from mutual_funds.display import detect_option, detect_plan
@@ -18,11 +19,11 @@ logger = logging.getLogger(__name__)
 _TER_NO_LIMIT_AT = 5.0
 
 
-def status_cell(status: str | None) -> str:
+def status_cell(status: SourceStatus | None) -> str:
     """Map a per-source status to a screener cell glyph: ✓ available, ✗ pending/missing, — untracked."""
     if status is None:
         return "—"
-    if status == "available":
+    if status == SourceStatus.AVAILABLE:
         return "✓"
     return "✗"
 

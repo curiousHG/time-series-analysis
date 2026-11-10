@@ -181,6 +181,24 @@ def test_no_banned_verbs():
     assert not banned, "banned verb prefixes (see docs/standards.md §2):\n  " + "\n  ".join(banned)
 
 
+def test_literal_aliases_only_in_strategies():
+    """Closed string sets are StrEnums; typing.Literal is reserved for author-facing knobs in strategies/."""
+    hits = sorted(
+        f"{rel}:{node.lineno}"
+        for rel, tree in FILES.items()
+        if not rel.startswith("strategies/")
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Subscript)
+        and (
+            (isinstance(node.value, ast.Name) and node.value.id == "Literal")
+            or (isinstance(node.value, ast.Attribute) and node.value.attr == "Literal")
+        )
+    )
+    assert not hits, (
+        "use a StrEnum instead of Literal outside strategies/ (see docs/standards.md §2):\n  " + "\n  ".join(hits)
+    )
+
+
 def test_fetch_only_in_fetchers_and_services():
     """fetch_* means a network read that never writes the DB: data/fetchers/ or services/ only."""
     violations = {

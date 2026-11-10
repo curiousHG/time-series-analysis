@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from core.enums import SourceStatus
 from services.stock.sync import (
     backfill_indices_history,
     list_unavailable_stocks,
@@ -112,7 +113,7 @@ def _render_unavailable() -> None:
         if go.button("Retry", key="stock_retry_btn", use_container_width=True):
             with st.spinner(f"Re-fetching {pick}…"):
                 status = retry_stock_ohlcv(pick)
-            if status == "available":
+            if status == SourceStatus.AVAILABLE:
                 watchlist = sorted({*load_selection("selected_stocks", []), pick})
                 save_selection("selected_stocks", watchlist)
                 load_stock_open_close.clear()

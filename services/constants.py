@@ -2,16 +2,36 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from enum import StrEnum
 
 from sqlalchemy import text
 
 from core.constants import TRADING_DAYS
 
-BackfillSource = Literal["nav", "metadata", "holdings"]
-SourceStatus = Literal["available", "pending", "unavailable"]
-FreshnessStatus = Literal["fresh", "stale", "missing"]
-FetchOutcome = Literal["updated", "skipped", "failed"]
+
+class BackfillSource(StrEnum):
+    NAV = "nav"
+    METADATA = "metadata"
+    HOLDINGS = "holdings"
+
+
+class FreshnessStatus(StrEnum):
+    FRESH = "fresh"
+    STALE = "stale"
+    MISSING = "missing"
+
+
+class FetchOutcome(StrEnum):
+    UPDATED = "updated"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+class RefreshScope(StrEnum):
+    NAV = "nav"
+    HOLDINGS = "holdings"
+    ALL = "all"
+
 
 BACKTEST_RISK_FREE = 0.065
 BACKTEST_RF_DAILY = BACKTEST_RISK_FREE / TRADING_DAYS

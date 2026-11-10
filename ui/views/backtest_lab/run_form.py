@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import streamlit as st
 
+from core.enums import RunStatus
 from services.backtest.config import BacktestConfig, UniverseSpec
 from services.backtest.costs import PRESET_LABELS, PRESETS
 from ui.components.chrome import section_header
@@ -198,7 +199,7 @@ def edit_dialog(run_id: int, catalog: dict[str, StrategySpec]) -> None:
     st.session_state[loaded_key] = run_id
     values = {**detail.config.to_dict(), "name": detail.name}
     config, name = _compose(catalog, prefix=EDIT_PREFIX, values=values, force=fresh)
-    is_draft = detail.status == "draft"
+    is_draft = detail.status == RunStatus.DRAFT
     st.caption("Saving rewrites this draft." if is_draft else "This run has results — saving creates a new draft.")
     if st.button("Save", key="bt_edit_save", type="primary", disabled=config is None, use_container_width=True):
         from services.backtest.runs import update_run  # noqa: PLC0415 — pulls the engine + quantstats in

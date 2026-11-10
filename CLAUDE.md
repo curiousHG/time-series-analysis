@@ -118,6 +118,7 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
               ↓
          core/
            database.py                 # SQLModel engine + Session factory
+           enums.py                    # StrEnums for DB-persisted/cross-layer states (SourceStatus, RunStatus, TaskStatus)
            models/                     # SQLModel ORM models (split by domain)
              mutual_fund.py            # MfNav, MfHolding, MfRegistry, etc.
              stock.py                  # StockOhlcv, StockRegistry

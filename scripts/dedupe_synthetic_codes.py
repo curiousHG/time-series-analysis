@@ -37,6 +37,7 @@ from sqlalchemy import text  # noqa: E402
 from core.database import engine  # noqa: E402
 from core.logging_config import setup_logging  # noqa: E402
 from data.repositories.holdings import clear_slug_cache  # noqa: E402
+from mutual_funds.constants import Plan  # noqa: E402
 from mutual_funds.display import detect_option, detect_plan  # noqa: E402
 
 # Tables that carry scheme_code FKs into amfi_schemes. mf_nav's composite PK (scheme_code,
@@ -198,7 +199,7 @@ def _propose_merges(conn, *, prefer_regular: bool = False) -> list[tuple[int, st
             if detect_plan(syn_name):
                 continue  # plan was detectable; pass 2 already had its shot
             opt = detect_option(syn_name) or ""
-            bucket = by_key.get((_stem(syn_name), "Regular", opt), [])
+            bucket = by_key.get((_stem(syn_name), Plan.REGULAR, opt), [])
             if len(bucket) == 1:
                 real_code, real_name = bucket[0]
                 ok, our_nav, amfi_nav = _nav_matches(conn, syn_code, real_code)

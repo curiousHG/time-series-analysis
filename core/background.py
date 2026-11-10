@@ -11,6 +11,8 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
+from core.enums import TaskStatus
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -21,7 +23,7 @@ LOG_CAPACITY = 400
 
 @dataclass
 class TaskState:
-    status: str = "idle"
+    status: TaskStatus = TaskStatus.IDLE
     started_at: float | None = None
     finished_at: float | None = None
     result: Any = None
@@ -38,20 +40,20 @@ def start_task(key: str, fn: Callable[[], Any], *, meta: dict | None = None) -> 
     """Run `fn()` on a daemon thread tracked under `key`. Returns False if already running."""
     with _LOCK:
         existing = _TASKS.get(key)
-        if existing and existing.status == "running":
+        if existing and existing.status == TaskStatus.RUNNING:
             return False
-        _TASKS[key] = TaskState(status="running", started_at=time.time(), meta=meta or {})
+        _TASKS[key] = TaskState(status=TaskStatus.RUNNING, started_at=time.time(), meta=meta or {})
 
     def _run() -> None:
         try:
             res = fn()
             with _LOCK:
-                _TASKS[key].status = "done"
+                _TASKS[key].status = TaskStatus.DONE
                 _TASKS[key].finished_at = time.time()
                 _TASKS[key].result = res
         except Exception as exc:
             with _LOCK:
-                _TASKS[key].status = "failed"
+                _TASKS[key].status = TaskStatus.FAILED
                 _TASKS[key].finished_at = time.time()
                 _TASKS[key].error = str(exc)
 
@@ -69,7 +71,7 @@ def task_state(key: str) -> TaskState:
 
 
 def is_running(key: str) -> bool:
-    return task_state(key).status == "running"
+    return task_state(key).status == TaskStatus.RUNNING
 
 
 def set_task_progress(key: str, **fields: Any) -> None:
@@ -77,7 +79,7 @@ def set_task_progress(key: str, **fields: Any) -> None:
     so a polling UI can show how far along a long background job is."""
     with _LOCK:
         state = _TASKS.get(key)
-        if state and state.status == "running":
+        if state and state.status == TaskStatus.RUNNING:
             state.meta.update(fields)
 
 
@@ -87,7 +89,7 @@ def append_task_log(key: str, line: str) -> None:
     failures — so the UI can show the run as it happens rather than only a progress bar."""
     with _LOCK:
         state = _TASKS.get(key)
-        if state and state.status == "running":
+        if state and state.status == TaskStatus.RUNNING:
             state.log.append((time.time(), line))
 
 
@@ -102,7 +104,7 @@ def consume_if_finished(key: str) -> TaskState | None:
     """If the task is done/failed, return its state and reset it to idle (one-shot). Else None."""
     with _LOCK:
         state = _TASKS.get(key)
-        if state and state.status in ("done", "failed"):
+        if state and state.status in (TaskStatus.DONE, TaskStatus.FAILED):
             _TASKS[key] = TaskState()
             _LAST[key] = state
             return state

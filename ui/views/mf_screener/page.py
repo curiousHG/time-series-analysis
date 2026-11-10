@@ -6,6 +6,7 @@ from __future__ import annotations
 import polars as pl
 import streamlit as st
 
+from core.enums import SourceStatus
 from data.repositories.amfi import get_scheme_count
 from services.mf.registry import list_tracked
 from services.mf.screener import apply_filters
@@ -24,9 +25,9 @@ def _render_universe_summary(amfi_count: int, filtered: pl.DataFrame) -> None:
 
     nav_count = metadata_count = holdings_count = 0
     if tracked_count:
-        nav_count = tracked_df.filter(pl.col("navStatus") == "available").height
-        metadata_count = tracked_df.filter(pl.col("metadataStatus") == "available").height
-        holdings_count = tracked_df.filter(pl.col("holdingsStatus") == "available").height
+        nav_count = tracked_df.filter(pl.col("navStatus") == SourceStatus.AVAILABLE).height
+        metadata_count = tracked_df.filter(pl.col("metadataStatus") == SourceStatus.AVAILABLE).height
+        holdings_count = tracked_df.filter(pl.col("holdingsStatus") == SourceStatus.AVAILABLE).height
 
     m1, m2, m3, m4 = st.columns([1, 1, 1, 2], vertical_alignment="bottom")
     m1.metric("All schemes (AMFI)", f"{amfi_count:,}", help="The full searchable AMFI universe.")

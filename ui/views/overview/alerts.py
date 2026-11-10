@@ -7,14 +7,15 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
+from services.overview.alerts import Severity
 from ui.state import navigation
 from ui.state.loaders import load_overview_alerts_cached
 
 if TYPE_CHECKING:
     from services.overview.alerts import Alert
 
-_DOT = {"critical": ":red[●]", "warn": ":orange[●]", "info": ":blue[●]"}
-_LABEL = {"critical": "critical", "warn": "warning", "info": "notice"}
+_DOT = {Severity.CRITICAL: ":red[●]", Severity.WARN: ":orange[●]", Severity.INFO: ":blue[●]"}
+_LABEL = {Severity.CRITICAL: "critical", Severity.WARN: "warning", Severity.INFO: "notice"}
 
 
 def _render_alert(alert: Alert, idx: int) -> None:
@@ -45,7 +46,7 @@ def render() -> None:
         st.caption("Nothing to flag. Funds are tracking their benchmarks and data is fresh.")
         return
 
-    counts = {s: sum(1 for a in alerts if a.severity == s) for s in ("critical", "warn", "info")}
+    counts = {s: sum(1 for a in alerts if a.severity == s) for s in (Severity.CRITICAL, Severity.WARN, Severity.INFO)}
     st.caption(" · ".join(f"{n} {_LABEL[s]}{'s' if n != 1 else ''}" for s, n in counts.items() if n))
     for i, alert in enumerate(alerts):
         _render_alert(alert, i)

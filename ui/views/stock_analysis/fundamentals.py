@@ -10,6 +10,7 @@ import contextlib
 import polars as pl
 import streamlit as st
 
+from core.enums import SourceStatus
 from services.stock.fundamentals import fundamentals_percentiles, momentum_stats, quarterly_trend
 from stocks.constants import is_nse_exchange, to_bare_symbol
 from ui.charts import theme
@@ -163,7 +164,7 @@ def _render_valuation(bare: str) -> None:
     from data.repositories.stock_fundamentals import ensure_stock_fundamentals, fundamentals_status_of  # noqa: PLC0415
 
     status = fundamentals_status_of(bare)
-    if status != "available":
+    if status != SourceStatus.AVAILABLE:
         if status is None:
             with st.spinner(f"Fetching {bare} fundamentals from screener.in…"), contextlib.suppress(Exception):
                 ensure_stock_fundamentals([bare])

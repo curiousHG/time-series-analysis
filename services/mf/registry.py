@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, delete, select
 
 from core.database import get_session
+from core.enums import SourceStatus
 from core.models import (
     AmfiScheme,
     MfAssetAllocation,
@@ -92,7 +93,7 @@ def resolve_scheme_code(scheme_name: str) -> int | None:
     return int(row) if row is not None else None
 
 
-def set_status(scheme_name: str, **statuses: str) -> None:
+def set_status(scheme_name: str, **statuses: SourceStatus) -> None:
     if not statuses:
         return
     code = resolve_scheme_code(scheme_name)
@@ -117,9 +118,9 @@ def upsert_registry(scheme_name: str, scheme_code: int | None = None) -> int:
             pg_insert(MfRegistry)
             .values(
                 scheme_code=code,
-                nav_status="pending",
-                holdings_status="pending",
-                metadata_status="pending",
+                nav_status=SourceStatus.PENDING,
+                holdings_status=SourceStatus.PENDING,
+                metadata_status=SourceStatus.PENDING,
                 added_at=datetime.now(UTC).replace(tzinfo=None),
             )
             .on_conflict_do_nothing(index_elements=["scheme_code"])
@@ -132,7 +133,7 @@ def upsert_registry(scheme_name: str, scheme_code: int | None = None) -> int:
 def mark_nav_unavailable(scheme_name: str) -> None:
     """Record that no source knows this fund's NAV. The routine refresh leaves 'unavailable'
     funds alone; the Settings retry picker is the way back."""
-    set_status(scheme_name, nav_status="unavailable")
+    set_status(scheme_name, nav_status=SourceStatus.UNAVAILABLE)
 
 
 def remove_fund(scheme_name: str) -> None:
@@ -181,9 +182,9 @@ def list_unavailable_funds() -> pl.DataFrame:
     if df.is_empty():
         return df
     return df.filter(
-        (pl.col("navStatus") == "unavailable")
-        | (pl.col("holdingsStatus") == "unavailable")
-        | (pl.col("metadataStatus") == "unavailable")
+        (pl.col("navStatus") == SourceStatus.UNAVAILABLE)
+        | (pl.col("holdingsStatus") == SourceStatus.UNAVAILABLE)
+        | (pl.col("metadataStatus") == SourceStatus.UNAVAILABLE)
     )
 
 
@@ -197,9 +198,9 @@ def reconcile_statuses() -> int:
 
         updated = 0
         for r in regs:
-            nav_s = "available" if r.scheme_code in nav_codes else r.nav_status
-            hold_s = "available" if r.scheme_code in codes_with_holdings else r.holdings_status
-            meta_s = "available" if r.scheme_code in meta_codes else r.metadata_status
+            nav_s = SourceStatus.AVAILABLE if r.scheme_code in nav_codes else r.nav_status
+            hold_s = SourceStatus.AVAILABLE if r.scheme_code in codes_with_holdings else r.holdings_status
+            meta_s = SourceStatus.AVAILABLE if r.scheme_code in meta_codes else r.metadata_status
             if (nav_s, hold_s, meta_s) != (r.nav_status, r.holdings_status, r.metadata_status):
                 r.nav_status = nav_s
                 r.holdings_status = hold_s

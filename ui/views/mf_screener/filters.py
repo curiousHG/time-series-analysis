@@ -10,6 +10,7 @@ import streamlit as st
 if TYPE_CHECKING:
     import polars as pl
 
+from mutual_funds.constants import FundOption, Plan
 from mutual_funds.metric_catalog import ALL_METRIC_COLS
 from ui.components.aggrid_theme import streamlit_dark_aggrid_theme
 from ui.constants import FILTER_DEFAULTS, SCREENER_PERSIST_KEY, SLIDER_DEFAULTS
@@ -65,10 +66,10 @@ def render_sidebar(df: pl.DataFrame) -> FilterState:
             sub_cats = st.multiselect(
                 "Sub-category", sub_cat_options, key="screener_sub_cats", on_change=_persist_filters
             )
-            plans = st.multiselect("Plan", ["Direct", "Regular"], key="screener_plans", on_change=_persist_filters)
+            plans = st.multiselect("Plan", list(Plan), key="screener_plans", on_change=_persist_filters)
             options = st.multiselect(
                 "Option",
-                ["Growth", "IDCW", "Bonus", "ETF", "Other"],
+                list(FundOption),
                 key="screener_options",
                 on_change=_persist_filters,
             )

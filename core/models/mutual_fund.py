@@ -5,6 +5,7 @@ import datetime
 from sqlmodel import Field, SQLModel
 
 from core.constants import TABLE_ARGS
+from core.enums import SourceStatus
 
 
 class MfNav(SQLModel, table=True):
@@ -71,9 +72,9 @@ class MfRegistry(SQLModel, table=True):
     __table_args__ = TABLE_ARGS
 
     scheme_code: int = Field(primary_key=True, foreign_key="amfi_schemes.scheme_code")
-    nav_status: str = Field(default="pending")
-    holdings_status: str = Field(default="pending")
-    metadata_status: str = Field(default="pending")
+    nav_status: str = Field(default=SourceStatus.PENDING)
+    holdings_status: str = Field(default=SourceStatus.PENDING)
+    metadata_status: str = Field(default=SourceStatus.PENDING)
     added_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
     last_attempted_at: datetime.datetime | None = None
     advisorkhoj_slug: str | None = None

@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from core.background import task_state
+from core.enums import RunStatus, TaskStatus
 from services.backtest.config import UniverseSpec
 from services.backtest.costs import PRESET_LABELS
 from ui.components.background_refresh import BackgroundRefresh, BackgroundRefreshGroup, progress_cb
@@ -34,8 +35,8 @@ HEAVY_CONCURRENT = 1
 GRID_KEY = "bt_run_grid"
 EDIT_OPEN_KEY = "bt_edit_open"
 POLL_EVERY = "3s"
-ACTIVE_STATUSES = ("queued", "running")
-STATUS_OPTIONS = ("draft", "queued", "running", "done", "failed")
+ACTIVE_STATUSES = (RunStatus.QUEUED, RunStatus.RUNNING)
+STATUS_OPTIONS = (RunStatus.DRAFT, RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.DONE, RunStatus.FAILED)
 _persist_filters = make_persist_callback(BACKTEST_PERSIST_KEY, BACKTEST_FILTER_DEFAULTS)
 
 
@@ -164,7 +165,7 @@ def launch(run_ids: list[int], rows: list[dict], catalog: dict[str, StrategySpec
     heavy = any(
         catalog[r["strategy"]].is_ml for r in rows if r["id"] in {*running, *run_ids} and r["strategy"] in catalog
     )
-    heavy = heavy or any(task_state(_opt_task_key(r["id"])).status == "running" for r in rows)
+    heavy = heavy or any(task_state(_opt_task_key(r["id"])).status == TaskStatus.RUNNING for r in rows)
     slots = max((HEAVY_CONCURRENT if heavy else MAX_CONCURRENT) - len(running), 0)
     started: list[int] = []
     for run_id in run_ids[:slots]:

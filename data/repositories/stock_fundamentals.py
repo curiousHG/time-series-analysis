@@ -13,6 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, select
 
 from core.database import get_session
+from core.enums import SourceStatus
 from core.models import StockMetrics, StockQuarterly, StockRegistry
 from data.fetchers.screener_in import fetch_company
 
@@ -133,13 +134,13 @@ def save_company_fundamentals(symbol: str, data: dict | None) -> bool:
     now = dt.datetime.now(dt.UTC).replace(tzinfo=None)
     with get_session() as session:
         if data is None:
-            _mark_status(session, symbol, "unavailable", now)
+            _mark_status(session, symbol, SourceStatus.UNAVAILABLE, now)
             session.commit()
             return False
 
         m_row = _metrics_row(symbol, data)
         if _carries_no_top_ratios(m_row):
-            _mark_status(session, symbol, "unavailable", now)
+            _mark_status(session, symbol, SourceStatus.UNAVAILABLE, now)
             session.commit()
             return False
 
@@ -158,12 +159,12 @@ def save_company_fundamentals(symbol: str, data: dict | None) -> bool:
             set_={c: mstmt.excluded[c] for c in m_row if c != "symbol"},
         )
         session.exec(mstmt)
-        _mark_status(session, symbol, "available", now, name=data.get("name"))
+        _mark_status(session, symbol, SourceStatus.AVAILABLE, now, name=data.get("name"))
         session.commit()
     return True
 
 
-def _mark_status(session, symbol: str, status: str, when: dt.datetime, *, name: str | None = None) -> None:
+def _mark_status(session, symbol: str, status: SourceStatus, when: dt.datetime, *, name: str | None = None) -> None:
     row = session.get(StockRegistry, symbol)
     if row is None:
         row = StockRegistry(symbol=symbol)
@@ -189,7 +190,7 @@ def ensure_stock_fundamentals(
             session.exec(
                 select(StockRegistry.symbol).where(
                     col(StockRegistry.symbol).in_(symbols),
-                    StockRegistry.fundamentals_status == "available",
+                    StockRegistry.fundamentals_status == SourceStatus.AVAILABLE,
                     col(StockRegistry.fundamentals_as_of) >= cutoff,
                 )
             ).all()
@@ -208,7 +209,7 @@ def ensure_stock_fundamentals(
     return load_stock_metrics(symbols)
 
 
-def fundamentals_status_of(symbol: str) -> str | None:
+def fundamentals_status_of(symbol: str) -> SourceStatus | None:
     """Registry fundamentals_status for a bare symbol: 'available' / 'unavailable' / None (never scraped)."""
     with get_session() as session:
         row = session.get(StockRegistry, symbol)

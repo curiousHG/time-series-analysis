@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 from services.backtest import metrics as result_metrics
-from services.backtest.costs import apply_costs, fill_price
+from services.backtest.costs import Instrument, Side, apply_costs, fill_price
 from strategies.basket import (
     ENTER,
     ENTER_TAG,
@@ -155,7 +155,7 @@ def size_order(
     preset: CostPreset,
     cash: float,
     *,
-    instrument: str = "equity",
+    instrument: Instrument = Instrument.EQUITY,
     max_shares: int | None = None,
 ) -> int:
     """Whole shares for `stake` at `price`, walked down until shares x price + entry costs fit in
@@ -165,7 +165,9 @@ def size_order(
     shares = int(min(stake, cash) // price)
     if max_shares is not None:
         shares = min(shares, int(max_shares))
-    while shares > 0 and shares * price + apply_costs("buy", shares, price, preset, instrument=instrument).total > cash:
+    while (
+        shares > 0 and shares * price + apply_costs(Side.BUY, shares, price, preset, instrument=instrument).total > cash
+    ):
         shares -= 1
     return max(shares, 0)
 
@@ -285,11 +287,11 @@ class _Book:
         self.trades: list[dict] = []
         self.pending_exits: dict[int, str] = {}
 
-    def kind(self, index: int) -> str:
-        return self.kinds.get(self.symbols[index], "equity")
+    def kind(self, index: int) -> Instrument:
+        return self.kinds.get(self.symbols[index], Instrument.EQUITY)
 
     def open(self, index: int, t: int, raw_price: float, stake: float, tag, stoploss: float, volume: float) -> bool:
-        price = fill_price(raw_price, "buy", self.config.slippage_bps)
+        price = fill_price(raw_price, Side.BUY, self.config.slippage_bps)
         max_shares = None
         if self.config.max_volume_share is not None and np.isfinite(volume):
             max_shares = int(volume * self.config.max_volume_share)
@@ -298,7 +300,7 @@ class _Book:
         )
         if shares <= 0:
             return False
-        costs = apply_costs("buy", shares, price, self.config.costs, instrument=self.kind(index)).total
+        costs = apply_costs(Side.BUY, shares, price, self.config.costs, instrument=self.kind(index)).total
         self.cash -= shares * price + costs
         self.positions[index] = _Position(
             symbol=self.symbols[index],
@@ -315,9 +317,9 @@ class _Book:
         return True
 
     def close(self, position: _Position, t: int, raw_price: float, reason: str, tag=None) -> None:
-        price = fill_price(raw_price, "sell", self.config.slippage_bps)
+        price = fill_price(raw_price, Side.SELL, self.config.slippage_bps)
         costs = apply_costs(
-            "sell", position.shares, price, self.config.costs, instrument=self.kind(position.index)
+            Side.SELL, position.shares, price, self.config.costs, instrument=self.kind(position.index)
         ).total
         self.cash += position.shares * price - costs
         profit_abs = position.shares * (price - position.open_rate) - position.entry_costs - costs

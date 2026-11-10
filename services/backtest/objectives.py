@@ -9,7 +9,8 @@ optimiser records as a pruned trial rather than a bad one.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Literal
+from enum import StrEnum
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -20,15 +21,23 @@ from services.constants import BACKTEST_RF_DAILY
 if TYPE_CHECKING:
     from services.backtest.engine import BacktestResult
 
-Objective = Literal["sharpe", "sortino", "calmar", "profit_factor", "expectancy", "total_return_dd"]
+
+class Objective(StrEnum):
+    SHARPE = "sharpe"
+    SORTINO = "sortino"
+    CALMAR = "calmar"
+    PROFIT_FACTOR = "profit_factor"
+    EXPECTANCY = "expectancy"
+    TOTAL_RETURN_DD = "total_return_dd"
+
 
 OBJECTIVE_LABELS = {
-    "sharpe": "Sharpe",
-    "sortino": "Sortino",
-    "calmar": "Calmar",
-    "profit_factor": "Profit factor",
-    "expectancy": "Expectancy",
-    "total_return_dd": "Return minus drawdown",
+    Objective.SHARPE: "Sharpe",
+    Objective.SORTINO: "Sortino",
+    Objective.CALMAR: "Calmar",
+    Objective.PROFIT_FACTOR: "Profit factor",
+    Objective.EXPECTANCY: "Expectancy",
+    Objective.TOTAL_RETURN_DD: "Return minus drawdown",
 }
 DEFAULT_MIN_TRADES = 20
 
@@ -110,16 +119,16 @@ def total_return_dd(result: BacktestResult, penalty: float = 1.0) -> float:
 
 
 OBJECTIVES = {
-    "sharpe": sharpe,
-    "sortino": sortino,
-    "calmar": calmar,
-    "profit_factor": profit_factor,
-    "expectancy": expectancy,
-    "total_return_dd": total_return_dd,
+    Objective.SHARPE: sharpe,
+    Objective.SORTINO: sortino,
+    Objective.CALMAR: calmar,
+    Objective.PROFIT_FACTOR: profit_factor,
+    Objective.EXPECTANCY: expectancy,
+    Objective.TOTAL_RETURN_DD: total_return_dd,
 }
 
 
-def score(result: BacktestResult, objective: str, *, min_trades: int = DEFAULT_MIN_TRADES) -> float | None:
+def score(result: BacktestResult, objective: Objective, *, min_trades: int = DEFAULT_MIN_TRADES) -> float | None:
     """The objective value, or None when the run has too few trades or the value is not finite."""
     if objective not in OBJECTIVES:
         raise KeyError(f"unknown objective {objective!r}")

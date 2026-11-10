@@ -47,6 +47,15 @@ the DB key lookup around the AdvisorKhoj fetch.
 A leading `_` means "used only in this module". A helper another module calls is public, even inside a
 private module such as `data/repositories/_ohlcv_io.py`; `test_no_private_imports` enforces it.
 
+### Closed value sets
+
+A closed set of strings is a `StrEnum`: states persisted in DB rows or shared across layers live in
+`core/enums.py`, the rest next to the service that owns them. DB columns stay `VARCHAR` (no native
+Postgres enums), so adding a member needs no migration. When a member becomes a Polars column value
+(`pl.DataFrame`, `pl.Series`, `pl.lit(...)` in `with_columns`) pass `.value`, or Polars builds an
+`Enum` dtype. `typing.Literal` is only for author-facing knobs under `strategies/`;
+`test_literal_aliases_only_in_strategies` enforces it.
+
 ## 3. Data correctness
 
 - **One source per datatype**, declared in `data/sources.py` — the routing registry is the single

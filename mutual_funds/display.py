@@ -54,7 +54,7 @@ def unique_short_names(names: Iterable[str]) -> dict[str, str]:
                 labels[n] = fn(n)
 
     qualify(lambda n: f"{short_scheme_name(n)} ({detect_option(n)})")
-    qualify(lambda n: f"{short_scheme_name(n)} ({detect_plan(n) or 'Regular'}, {detect_option(n)})")
+    qualify(lambda n: f"{short_scheme_name(n)} ({detect_plan(n) or Plan.REGULAR}, {detect_option(n)})")
     qualify(lambda n: n)
     return labels
 
@@ -69,9 +69,9 @@ def detect_plan(name: str) -> Plan | None:
     if not name:
         return None
     if DIRECT_RE.search(name):
-        return "Direct"
+        return Plan.DIRECT
     if REGULAR_RE.search(name):
-        return "Regular"
+        return Plan.REGULAR
     return None
 
 
@@ -81,16 +81,16 @@ def detect_option(name: str) -> FundOption:
     Checked in that order, so a name with both IDCW and Growth is IDCW.
     """
     if not name:
-        return "Other"
+        return FundOption.OTHER
     if IDCW_RE.search(name):
-        return "IDCW"
+        return FundOption.IDCW
     if GROWTH_PHRASE_RE.search(name) or GROWTH_BETWEEN_DASHES_RE.search(name) or CUMULATIVE_RE.search(name):
-        return "Growth"
+        return FundOption.GROWTH
     tail = re.sub(r"[\s\.\)\(]+$", "", name)
     if GROWTH_END_RE.search(tail):
-        return "Growth"
+        return FundOption.GROWTH
     if BONUS_RE.search(name):
-        return "Bonus"
+        return FundOption.BONUS
     if ETF_RE.search(name):
-        return "ETF"
-    return "Other"
+        return FundOption.ETF
+    return FundOption.OTHER

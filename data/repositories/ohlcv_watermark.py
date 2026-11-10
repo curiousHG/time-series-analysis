@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from sqlmodel import col, select
 
 from core.database import get_session
+from core.enums import SourceStatus
 from core.models import IndexRegistry, StockRegistry
 from core.notifications import push_notice
 from data.constants import EMPTY_OHLCV, MIN_FETCH_DAYS
@@ -32,7 +33,7 @@ _COLD_BACKFILL_DAYS = 365 * 10
 
 @dataclass
 class _Wm:
-    status: str | None = None
+    status: SourceStatus | None = None
     earliest: date | None = None
     streak: int = 0
 
@@ -46,7 +47,7 @@ def get_stock_watermark(symbol: str) -> _Wm:
 
 
 def set_stock_watermark(
-    symbol: str, *, status: str | None = None, earliest=_UNSET, empty_streak: int | None = None
+    symbol: str, *, status: SourceStatus | None = None, earliest=_UNSET, empty_streak: int | None = None
 ) -> None:
     with get_session() as session:
         row = session.get(StockRegistry, symbol)
@@ -72,7 +73,7 @@ def get_index_watermark(symbol: str) -> _Wm:
 
 
 def set_index_watermark(
-    symbol: str, *, status: str | None = None, earliest=_UNSET, empty_streak: int | None = None
+    symbol: str, *, status: SourceStatus | None = None, earliest=_UNSET, empty_streak: int | None = None
 ) -> None:
     with get_session() as session:
         row = session.get(IndexRegistry, symbol)
@@ -90,7 +91,7 @@ def set_index_watermark(
 def ensure_ohlcv(symbol, start, end, *, model, fill_fn, get_wm, set_wm, flag_unavailable) -> pl.DataFrame:
     """DB-first gap-fetch for `symbol` over [start, end] using the given table, fetcher and watermark accessors."""
     wm = get_wm(symbol)
-    if wm.status == "unavailable":
+    if wm.status == SourceStatus.UNAVAILABLE:
         return EMPTY_OHLCV.clone()
 
     existing = get_date_range(model, symbol)
@@ -104,23 +105,23 @@ def ensure_ohlcv(symbol, start, end, *, model, fill_fn, get_wm, set_wm, flag_una
             _empty_fetch_cache[symbol] = datetime.now()
             streak = wm.streak + 1
             if flag_unavailable and streak >= _UNAVAILABLE_EMPTY_STREAK:
-                set_wm(symbol, status="unavailable", empty_streak=streak)
+                set_wm(symbol, status=SourceStatus.UNAVAILABLE, empty_streak=streak)
                 push_notice(f"No price data for {symbol} — marked unavailable.", level="warning", key=f"ohlcv:{symbol}")
             else:
-                set_wm(symbol, status="pending", empty_streak=streak)
+                set_wm(symbol, status=SourceStatus.PENDING, empty_streak=streak)
             logger.info("no OHLCV for %s — negative-caching for %s (streak=%d)", symbol, _EMPTY_FETCH_TTL, streak)
         else:
             _empty_fetch_cache.pop(symbol, None)
-            set_wm(symbol, status="available", earliest=rng[0], empty_streak=0)
+            set_wm(symbol, status=SourceStatus.AVAILABLE, earliest=rng[0], empty_streak=0)
     else:
         db_min, db_max = existing
         if start < db_min and (db_min - start).days >= MIN_FETCH_DAYS and wm.earliest != db_min:
             fill_fn(symbol, start, db_min)
             new_min = get_date_range(model, symbol)[0]
             floor = db_min if new_min >= db_min else None
-            set_wm(symbol, status="available", earliest=floor, empty_streak=0)
-        elif wm.status != "available":
-            set_wm(symbol, status="available", empty_streak=0)
+            set_wm(symbol, status=SourceStatus.AVAILABLE, earliest=floor, empty_streak=0)
+        elif wm.status != SourceStatus.AVAILABLE:
+            set_wm(symbol, status=SourceStatus.AVAILABLE, empty_streak=0)
         if end > db_max and (end - db_max).days >= MIN_FETCH_DAYS:
             fill_fn(symbol, db_max, end)
 
@@ -142,7 +143,7 @@ def refresh_ohlcv_to_today(symbol, *, model, fill_fn) -> tuple[date, date | None
     return today, (new_range[1] if new_range else None)
 
 
-def get_stock_ohlcv_statuses(symbols: list[str]) -> dict[str, str]:
+def get_stock_ohlcv_statuses(symbols: list[str]) -> dict[str, SourceStatus]:
     """{bare_symbol: status} for the given symbols that carry an ohlcv_status."""
     bare = [to_bare_symbol(s) for s in symbols]
     if not bare:
@@ -157,7 +158,9 @@ def get_stock_ohlcv_statuses(symbols: list[str]) -> dict[str, str]:
 def list_unavailable_stock_symbols() -> list[str]:
     """Bare symbols whose price history was confirmed unavailable."""
     with get_session() as session:
-        rows = session.exec(select(StockRegistry.symbol).where(StockRegistry.ohlcv_status == "unavailable")).all()
+        rows = session.exec(
+            select(StockRegistry.symbol).where(StockRegistry.ohlcv_status == SourceStatus.UNAVAILABLE)
+        ).all()
     return list(rows)
 
 
@@ -169,7 +172,7 @@ def clear_stock_ohlcv_status(symbol: str) -> None:
     with get_session() as session:
         row = session.get(StockRegistry, sym)
         if row is not None:
-            row.ohlcv_status = "pending"
+            row.ohlcv_status = SourceStatus.PENDING
             row.ohlcv_earliest = None
             row.ohlcv_empty_streak = 0
             row.ohlcv_as_of = datetime.now()

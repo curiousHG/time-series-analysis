@@ -308,10 +308,12 @@ def reload_strategies() -> None:
 @st.cache_data(ttl=TTL_HOURLY, show_spinner=False)
 def load_universe_cached(kind: str, name: str, symbols: tuple[str, ...], watchlist: tuple[str, ...] = ()) -> list[str]:
     """Bare NSE symbols a universe spec resolves to: index constituents, the watchlist, or a list."""
-    from services.backtest.config import UniverseSpec  # noqa: PLC0415 — keeps the service off page boot
+    from services.backtest.config import UniverseKind, UniverseSpec  # noqa: PLC0415 — keeps the service off page boot
     from services.backtest.universe import resolve_universe  # noqa: PLC0415
 
-    return resolve_universe(UniverseSpec(kind=kind, name=name, symbols=tuple(symbols)), watchlist=list(watchlist))
+    return resolve_universe(
+        UniverseSpec(kind=UniverseKind(kind), name=name, symbols=tuple(symbols)), watchlist=list(watchlist)
+    )
 
 
 def clear_backtest_caches() -> None:

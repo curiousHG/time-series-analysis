@@ -10,6 +10,7 @@ import polars as pl
 from sqlmodel import col, delete, select
 
 from core.database import get_session
+from core.enums import RunStatus
 from core.frames import frame_from_rows
 from core.models.backtest import BacktestOptimization, BacktestRun, BacktestTrade, BacktestTrial
 
@@ -68,7 +69,7 @@ def save_backtest_run(
     start: datetime.date,
     end: datetime.date,
     init_cash: float,
-    status: str = "draft",
+    status: RunStatus = RunStatus.DRAFT,
 ) -> int:
     row = BacktestRun(
         name=name,
@@ -96,7 +97,7 @@ def update_backtest_run(run_id: int, *, name: str, config: dict, params: dict, u
         row = session.get(BacktestRun, run_id)
         if row is None:
             raise KeyError(run_id)
-        if row.status != "draft":
+        if row.status != RunStatus.DRAFT:
             raise ValueError(f"run {run_id} is {row.status}; only drafts can be edited")
         row.name = name
         row.config = config
@@ -111,16 +112,16 @@ def update_backtest_run(run_id: int, *, name: str, config: dict, params: dict, u
         session.commit()
 
 
-def save_backtest_run_status(run_id: int, status: str, *, error: str | None = None) -> None:
+def save_backtest_run_status(run_id: int, status: RunStatus, *, error: str | None = None) -> None:
     with get_session() as session:
         row = session.get(BacktestRun, run_id)
         if row is None:
             raise KeyError(run_id)
         row.status = status
         row.error = error
-        if status in ("done", "failed"):
+        if status in (RunStatus.DONE, RunStatus.FAILED):
             row.finished_at = _now()
-        if status == "queued":
+        if status == RunStatus.QUEUED:
             row.error = None
             row.finished_at = None
         session.add(row)
@@ -139,7 +140,7 @@ def save_backtest_result(
             session.add(BacktestTrade(run_id=run_id, **{k: trade.get(k) for k in TRADE_SCHEMA}))
         row.summary = summary
         row.equity = equity
-        row.status = "done"
+        row.status = RunStatus.DONE
         row.error = None
         row.finished_at = _now()
         row.duration_s = duration_s
@@ -193,7 +194,9 @@ def delete_backtest_run(run_id: int) -> None:
         session.commit()
 
 
-def save_optimization(*, run_id: int, objective: str, n_trials: int, spec: dict, status: str = "running") -> int:
+def save_optimization(
+    *, run_id: int, objective: str, n_trials: int, spec: dict, status: RunStatus = RunStatus.RUNNING
+) -> int:
     row = BacktestOptimization(
         run_id=run_id, created_at=_now(), objective=objective, n_trials=n_trials, spec=spec, status=status
     )
@@ -207,7 +210,7 @@ def save_optimization(*, run_id: int, objective: str, n_trials: int, spec: dict,
 def save_optimization_result(
     optimization_id: int,
     *,
-    status: str,
+    status: RunStatus,
     best_params: dict | None,
     best_value: float | None,
     param_importance: dict | None,

@@ -22,6 +22,7 @@ from data.repositories.stock_ohlcv import (
     load_stock_ohlcv_many,
     nse_trading_days,
 )
+from services.backtest.config import UniverseKind
 from services.price_adjust import adjust_ohlc_splits
 from services.stock.market_data import index_constituents
 from stocks.constants import NIFTY_50, to_bare_symbol
@@ -58,11 +59,11 @@ class BasketInputs:
 def resolve_universe(spec: UniverseSpec, watchlist: list[str] | None = None) -> list[str]:
     """Bare NSE symbols for a universe spec, deduplicated in order: index constituents (with the
     seeded Nifty 50 list as fallback), the caller's watchlist, or a pasted list."""
-    if spec.kind == "index":
+    if spec.kind == UniverseKind.INDEX:
         symbols = list(index_constituents(spec.name))
         if not symbols and spec.name.strip().upper() == "NIFTY 50":
             symbols = list(NIFTY_50)
-    elif spec.kind == "list":
+    elif spec.kind == UniverseKind.LIST:
         symbols = list(spec.symbols)
     else:
         symbols = list(watchlist or [])
@@ -104,7 +105,7 @@ def load_backtest_inputs(
         if frame is not None:
             informative[symbol] = frame
 
-    if config.universe.kind == "index":
+    if config.universe.kind == UniverseKind.INDEX:
         warnings.append(
             f"Universe is today's {config.universe.name} constituent list — results carry survivorship bias."
         )

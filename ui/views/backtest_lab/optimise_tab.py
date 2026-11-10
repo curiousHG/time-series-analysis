@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 import streamlit as st
 
+from core.enums import RunStatus
 from services.backtest.objectives import DEFAULT_MIN_TRADES, OBJECTIVE_LABELS
 from ui.charts import optimization as opt_charts
 from ui.components.background_refresh import BackgroundRefresh, progress_cb
@@ -202,7 +203,7 @@ def _render_results(run_id: int, detail: RunDetail, opt: OptimizationDetail) -> 
             Kpi("Trials kept", f"{len(complete)} of {len(trials)}"),
         ]
     )
-    if opt.status == "failed":
+    if opt.status == RunStatus.FAILED:
         st.error(f"The optimisation failed: {opt.error or 'no error text was recorded.'}")
     if trials.empty:
         st.caption("No trials stored yet.")

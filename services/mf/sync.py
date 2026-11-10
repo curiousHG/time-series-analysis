@@ -21,7 +21,7 @@ from data.repositories.holdings import replace_holdings_atomic, slug_to_code_map
 from data.repositories.nav import last_nav_date_by_code, save_nav_df
 from data.repositories.scheme_codes import resolve_codes
 from mutual_funds.display import make_slug, short_scheme_name
-from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS, FetchOutcome
+from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS, FetchOutcome, RefreshScope
 from services.mf.nav_sources import fetch_single_nav
 from services.mf.registry import mark_nav_unavailable
 
@@ -80,7 +80,7 @@ def _record_failure(result, kind: str, name: str, error: Exception) -> tuple[Fet
     logger.warning("%s refresh failed for %s: %s", kind, name, error)
     reason = failure_reason(error, name)
     result.failures.append((name, reason))
-    return "failed", reason
+    return FetchOutcome.FAILED, reason
 
 
 def update_nav_incremental(
@@ -119,15 +119,15 @@ def update_nav_incremental(
                 if df.height == 0:
                     result.skipped_count += 1
                     if api_max is None:
-                        outcome, detail = "skipped", "source returned no rows"
+                        outcome, detail = FetchOutcome.SKIPPED, "source returned no rows"
                     else:
-                        outcome, detail = "skipped", f"up to date ({api_max})"
+                        outcome, detail = FetchOutcome.SKIPPED, f"up to date ({api_max})"
                 else:
                     save_nav_df(df)
                     dates = df.select("date").to_series()
                     result.new_rows_total += df.height
                     result.updated_count += 1
-                    outcome = "updated"
+                    outcome = FetchOutcome.UPDATED
                     detail = f"{df.height} new rows ({dates.min()} → {dates.max()})"
             except SourceNotFound as e:
                 if name not in last_known_by_name:
@@ -173,7 +173,7 @@ def refresh_holdings_for_schemes(
                 replace_holdings_atomic(_slug, h, s, a, scheme_code=codes[_slug])
                 result.success_count += 1
                 result.total_holdings += h.height
-                outcome = "updated"
+                outcome = FetchOutcome.UPDATED
                 detail = f"{h.height} holdings · {s.height} sectors · {a.height} asset types"
             except Exception as e:
                 outcome, detail = _record_failure(result, "holdings", name, e)
@@ -187,7 +187,7 @@ def refresh_all_fund_data(
     scheme_names: list[str],
     *,
     name_to_code: dict[str, int] | None = None,
-    scope: str = "all",
+    scope: RefreshScope = RefreshScope.ALL,
     progress_cb: Callable[..., None] | None = None,
 ) -> dict:
     """Run NAV and/or holdings updates for a set of tracked funds, suitable for a background task.
@@ -197,7 +197,11 @@ def refresh_all_fund_data(
     per-phase counts plus `nav_failures` / `holdings_failures` as (scheme name, reason) pairs.
     """
     out: dict = {}
-    phases = [p for p in ("NAV", "Holdings") if scope in ("all", p.lower())]
+    phases = [
+        label
+        for label, phase_scope in (("NAV", RefreshScope.NAV), ("Holdings", RefreshScope.HOLDINGS))
+        if scope in (RefreshScope.ALL, phase_scope)
+    ]
     if progress_cb:
         progress_cb(
             message=f"Starting {scope} refresh for {len(scheme_names):,} tracked fund(s) — {' + '.join(phases)}."
@@ -205,12 +209,12 @@ def refresh_all_fund_data(
 
     def _log_event(phase: str, ev: FetchEvent) -> None:
         """Forward one fund's outcome to the UI log; up-to-date (skipped) funds are not logged."""
-        if progress_cb is None or ev.outcome == "skipped":
+        if progress_cb is None or ev.outcome == FetchOutcome.SKIPPED:
             return
-        icon = "✓" if ev.outcome == "updated" else "✗"
+        icon = "✓" if ev.outcome == FetchOutcome.UPDATED else "✗"
         progress_cb(message=f"{icon} [{phase} {ev.done}/{ev.total}] {short_scheme_name(ev.scheme_name)} — {ev.detail}")
 
-    if scope in ("all", "nav"):
+    if scope in (RefreshScope.ALL, RefreshScope.NAV):
 
         def _nav_cb(ev: FetchEvent) -> None:
             if progress_cb:
@@ -231,7 +235,7 @@ def refresh_all_fund_data(
                 f"{nav.skipped_count:,} already current, {len(nav.failures):,} failed."
             )
 
-    if scope in ("all", "holdings"):
+    if scope in (RefreshScope.ALL, RefreshScope.HOLDINGS):
 
         def _hold_cb(ev: FetchEvent) -> None:
             if progress_cb:

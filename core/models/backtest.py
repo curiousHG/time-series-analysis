@@ -6,6 +6,7 @@ from sqlalchemy import JSON, Column, ForeignKey, Integer
 from sqlmodel import Field, SQLModel
 
 from core.constants import TABLE_ARGS
+from core.enums import RunStatus
 
 
 class BacktestRun(SQLModel, table=True):
@@ -28,7 +29,7 @@ class BacktestRun(SQLModel, table=True):
     start: datetime.date
     end: datetime.date
     init_cash: float
-    status: str = "draft"
+    status: str = RunStatus.DRAFT
     error: str | None = None
     summary: dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     equity: dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))
@@ -67,7 +68,7 @@ class BacktestOptimization(SQLModel, table=True):
     finished_at: datetime.datetime | None = None
     objective: str
     n_trials: int
-    status: str = "running"
+    status: str = RunStatus.RUNNING
     error: str | None = None
     spec: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     best_params: dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))

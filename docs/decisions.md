@@ -348,6 +348,11 @@ Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep
   strings silently fall back to light, so dark must be a real `StAggridTheme`
   (`aggrid_theme.streamlit_dark_aggrid_theme`); the MF screener fixes to it. JsCode callbacks need
   `allow_unsafe_jscode=True`.
+- **StrEnum over `Literal`, VARCHAR columns** — `Literal` aliases were unchecked (`reportArgumentType` is
+  off), so a typo like `"availble"` silently matched nothing. A `StrEnum` member is a `str`, so it equals the
+  stored value and round-trips through JSON, pickling and Polars filters. Columns stay plain `VARCHAR`: a native
+  Postgres enum would need a migration for every new value.
+
 ## Logging and process lifecycle
 
 - **Idempotent setup on real state** (`core.logging_config.setup_logging`, `LOG_HANDLER_MARKER`) —

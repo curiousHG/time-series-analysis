@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import date
-from typing import Any, Literal
+from enum import StrEnum
+from typing import Any
 
 from services.backtest.costs import ZERODHA_DELIVERY, CostPreset
 
-UniverseKind = Literal["index", "list", "watchlist"]
+
+class UniverseKind(StrEnum):
+    INDEX = "index"
+    LIST = "list"
+    WATCHLIST = "watchlist"
 
 
 @dataclass(frozen=True)
@@ -18,9 +23,9 @@ class UniverseSpec:
     symbols: tuple[str, ...] = ()
 
     def label(self) -> str:
-        if self.kind == "index":
+        if self.kind == UniverseKind.INDEX:
             return self.name
-        if self.kind == "watchlist":
+        if self.kind == UniverseKind.WATCHLIST:
             return "Watchlist"
         count = len(self.symbols)
         return f"{count} symbol{'' if count == 1 else 's'}"
@@ -30,7 +35,9 @@ class UniverseSpec:
 
     @classmethod
     def from_dict(cls, payload: dict) -> UniverseSpec:
-        return cls(kind=payload["kind"], name=payload.get("name", ""), symbols=tuple(payload.get("symbols", ())))
+        return cls(
+            kind=UniverseKind(payload["kind"]), name=payload.get("name", ""), symbols=tuple(payload.get("symbols", ()))
+        )
 
 
 @dataclass

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import polars as pl
 import streamlit as st
 
+from core.enums import SourceStatus
 from data.repositories.holdings import load_assets, load_holdings, load_sectors
 from mutual_funds.display import make_slug
 from mutual_funds.holdings_stats import quick_stats
@@ -24,7 +25,7 @@ _TOP_OVERLAP = 15
 
 
 def render(ctx: FundContext) -> None:
-    if ctx.holdings_status == "unavailable":
+    if ctx.holdings_status == SourceStatus.UNAVAILABLE:
         st.warning("Holdings data is **unavailable** for this fund — common for ETFs and very new schemes.")
         return
 

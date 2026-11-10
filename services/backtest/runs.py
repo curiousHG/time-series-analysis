@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from core.enums import RunStatus
 from data.repositories import backtest_runs as repo
 from services.backtest.config import BacktestConfig
 from services.backtest.engine import run_engine
@@ -65,7 +66,7 @@ class StrategySpec:
 class RunDetail:
     run_id: int
     name: str
-    status: str
+    status: RunStatus
     config: BacktestConfig
     metrics: dict
     trades: pd.DataFrame
@@ -202,14 +203,14 @@ def start_run(run_id: int, *, progress_cb: Callable[..., None] | None = None) ->
     if row is None:
         raise KeyError(run_id)
     config = BacktestConfig.from_dict(row["config"])
-    repo.save_backtest_run_status(run_id, "queued")
-    repo.save_backtest_run_status(run_id, "running")
+    repo.save_backtest_run_status(run_id, RunStatus.QUEUED)
+    repo.save_backtest_run_status(run_id, RunStatus.RUNNING)
     started = time.perf_counter()
     try:
         result = run_backtest_basket(config, progress_cb=progress_cb)
     except Exception as exc:
         logger.exception("backtest run %s failed", run_id)
-        repo.save_backtest_run_status(run_id, "failed", error=str(exc))
+        repo.save_backtest_run_status(run_id, RunStatus.FAILED, error=str(exc))
         raise
     if progress_cb is not None:
         progress_cb(phase="Saving", done=1, total=1)
@@ -239,7 +240,7 @@ def load_run(run_id: int) -> RunDetail | None:
     return RunDetail(
         run_id=run_id,
         name=row["name"],
-        status=row["status"],
+        status=RunStatus(row["status"]),
         config=config,
         metrics=metrics,
         trades=trades,
@@ -330,7 +331,7 @@ OPT_TASK_PREFIX = "bt_opt_"
 class OptimizationDetail:
     optimization_id: int
     run_id: int
-    status: str
+    status: RunStatus
     objective: str
     n_trials: int
     best_params: dict
@@ -369,7 +370,7 @@ def start_optimization(
         logger.exception("optimisation for run %s failed", run_id)
         repo.save_optimization_result(
             optimization_id,
-            status="failed",
+            status=RunStatus.FAILED,
             best_params=None,
             best_value=None,
             param_importance=None,
@@ -381,7 +382,7 @@ def start_optimization(
         raise
     repo.save_optimization_result(
         optimization_id,
-        status="done",
+        status=RunStatus.DONE,
         best_params=result.best_params,
         best_value=result.best_value,
         param_importance=result.param_importance,
@@ -399,7 +400,7 @@ def load_optimization(optimization_id: int) -> OptimizationDetail | None:
     return OptimizationDetail(
         optimization_id=optimization_id,
         run_id=row["run_id"],
-        status=row["status"],
+        status=RunStatus(row["status"]),
         objective=row["objective"],
         n_trials=row["n_trials"],
         best_params=row.get("best_params") or {},

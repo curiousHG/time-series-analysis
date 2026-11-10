@@ -10,6 +10,7 @@ import streamlit as st
 
 from services.benchmarks import SUBCATEGORY_BENCHMARK, resolve_benchmark_symbol
 from services.mf.metrics_math import rolling_alpha
+from services.overview.alerts import Severity
 from ui.charts import theme
 from ui.components.metric_tiles import Kpi, render_kpi_row
 from ui.state.loaders import load_overview_alerts_cached
@@ -127,6 +128,6 @@ def _render_fund_alerts(ctx: FundContext) -> None:
     if not alerts:
         return
     st.subheader("Active alerts for this fund")
-    box = {"critical": st.error, "warn": st.warning, "info": st.info}
+    box = {Severity.CRITICAL: st.error, Severity.WARN: st.warning, Severity.INFO: st.info}
     for a in alerts:
         box[a.severity](a.message)

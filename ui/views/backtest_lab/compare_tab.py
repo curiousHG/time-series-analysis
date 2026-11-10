@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import streamlit as st
 
+from core.enums import RunStatus
 from services.backtest.config import UniverseSpec
 from ui.charts import backtest as charts
 from ui.components.chrome import section_header
@@ -108,7 +109,7 @@ def render() -> None:
         return
 
     details = [d for d in (load_backtest_run_cached(int(i)) for i in picked) if d is not None]
-    finished = [d for d in details if d.status == "done" and not d.equity.empty]
+    finished = [d for d in details if d.status == RunStatus.DONE and not d.equity.empty]
     if len(finished) < state.MIN_COMPARE:
         st.warning("At least two of the picked runs need results — launch them first.")
         return
