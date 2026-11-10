@@ -7,22 +7,18 @@ through `amfi_schemes`. Funds without an AMFI code get synthetic negative codes 
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 
 import polars as pl
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import col, delete, select
 
-from core.database import get_session
 from core.enums import SourceStatus
-from core.models import (
-    AmfiScheme,
-    MfAssetAllocation,
-    MfHolding,
-    MfMetadata,
-    MfNav,
-    MfRegistry,
-    MfSectorAllocation,
+from data.repositories.amfi import get_scheme_code
+from data.repositories.registry import (
+    delete_fund,
+    load_tracked_rows,
+    reconcile_registry_statuses,
+    save_registry_row,
+    set_registry_statuses,
 )
 from data.repositories.scheme_codes import resolve_or_mint_code
 from mutual_funds.display import make_slug, unique_short_names
@@ -33,23 +29,7 @@ logger = logging.getLogger(__name__)
 
 def list_tracked() -> pl.DataFrame:
     """All rows from mf_registry as a polars DataFrame, with scheme_name JOINed in."""
-    with get_session() as session:
-        rows = session.exec(
-            select(
-                AmfiScheme.scheme_name,
-                MfRegistry.scheme_code,
-                MfRegistry.nav_status,
-                MfRegistry.holdings_status,
-                MfRegistry.metadata_status,
-                MfRegistry.added_at,
-                MfRegistry.last_attempted_at,
-                AmfiScheme.nav_date,
-                MfRegistry.advisorkhoj_slug,
-                AmfiScheme.nav,
-            )
-            .join(AmfiScheme, MfRegistry.scheme_code == AmfiScheme.scheme_code)
-            .order_by(AmfiScheme.scheme_name)
-        ).all()
+    rows = load_tracked_rows()
     if not rows:
         return pl.DataFrame(
             schema={
@@ -88,9 +68,7 @@ def list_active() -> pl.DataFrame:
 
 def resolve_scheme_code(scheme_name: str) -> int | None:
     """Look up scheme_code in amfi_schemes by exact name match."""
-    with get_session() as session:
-        row = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)).first()
-    return int(row) if row is not None else None
+    return get_scheme_code(scheme_name)
 
 
 def set_status(scheme_name: str, **statuses: SourceStatus) -> None:
@@ -99,34 +77,13 @@ def set_status(scheme_name: str, **statuses: SourceStatus) -> None:
     code = resolve_scheme_code(scheme_name)
     if code is None:
         return
-    with get_session() as session:
-        row = session.get(MfRegistry, code)
-        if row is None:
-            return
-        for k, v in statuses.items():
-            setattr(row, k, v)
-        row.last_attempted_at = datetime.now(UTC).replace(tzinfo=None)
-        session.add(row)
-        session.commit()
+    set_registry_statuses(code, **statuses)
 
 
 def upsert_registry(scheme_name: str, scheme_code: int | None = None) -> int:
     """Insert (or update) an mf_registry row keyed on scheme_code. Returns the resolved code."""
     code = scheme_code if scheme_code is not None else resolve_or_mint_code(scheme_name)
-    with get_session() as session:
-        stmt = (
-            pg_insert(MfRegistry)
-            .values(
-                scheme_code=code,
-                nav_status=SourceStatus.PENDING,
-                holdings_status=SourceStatus.PENDING,
-                metadata_status=SourceStatus.PENDING,
-                added_at=datetime.now(UTC).replace(tzinfo=None),
-            )
-            .on_conflict_do_nothing(index_elements=["scheme_code"])
-        )
-        session.exec(stmt)
-        session.commit()
+    save_registry_row(code)
     return code
 
 
@@ -142,14 +99,7 @@ def remove_fund(scheme_name: str) -> None:
     if code is None:
         logger.warning("remove_fund: no scheme_code for %s — nothing to delete", scheme_name)
         return
-    with get_session() as session:
-        session.exec(delete(MfNav).where(col(MfNav.scheme_code) == code))
-        session.exec(delete(MfMetadata).where(col(MfMetadata.scheme_code) == code))
-        session.exec(delete(MfHolding).where(col(MfHolding.scheme_code) == code))
-        session.exec(delete(MfSectorAllocation).where(col(MfSectorAllocation.scheme_code) == code))
-        session.exec(delete(MfAssetAllocation).where(col(MfAssetAllocation.scheme_code) == code))
-        session.exec(delete(MfRegistry).where(col(MfRegistry.scheme_code) == code))
-        session.commit()
+    delete_fund(code)
     logger.info("Removed fund: %s (code %d)", scheme_name, code)
 
 
@@ -190,22 +140,4 @@ def list_unavailable_funds() -> pl.DataFrame:
 
 def reconcile_statuses() -> int:
     """Set nav/holdings/metadata statuses based on actual data presence."""
-    with get_session() as session:
-        regs = session.exec(select(MfRegistry)).all()
-        nav_codes = set(session.exec(select(MfNav.scheme_code).distinct()).all())
-        meta_codes = set(session.exec(select(MfMetadata.scheme_code)).all())
-        codes_with_holdings = set(session.exec(select(MfHolding.scheme_code).distinct()).all())
-
-        updated = 0
-        for r in regs:
-            nav_s = SourceStatus.AVAILABLE if r.scheme_code in nav_codes else r.nav_status
-            hold_s = SourceStatus.AVAILABLE if r.scheme_code in codes_with_holdings else r.holdings_status
-            meta_s = SourceStatus.AVAILABLE if r.scheme_code in meta_codes else r.metadata_status
-            if (nav_s, hold_s, meta_s) != (r.nav_status, r.holdings_status, r.metadata_status):
-                r.nav_status = nav_s
-                r.holdings_status = hold_s
-                r.metadata_status = meta_s
-                session.add(r)
-                updated += 1
-        session.commit()
-    return updated
+    return reconcile_registry_statuses()

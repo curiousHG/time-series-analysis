@@ -9,6 +9,7 @@ import logging
 import time
 
 import polars as pl
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, select
 
@@ -236,3 +237,31 @@ def load_quarterly(symbol: str) -> pl.DataFrame:
     if not rows:
         return pl.DataFrame()
     return pl.DataFrame([r.model_dump() for r in rows])
+
+
+def upsert_price_metrics(rows: list[dict]) -> None:
+    """Upsert price-metric rows (keyed on symbol) into stock_metrics in one transaction."""
+    with get_session() as session:
+        for row in rows:
+            stmt = pg_insert(StockMetrics).values(row)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["symbol"],
+                set_={k: stmt.excluded[k] for k in row if k != "symbol"},
+            )
+            session.exec(stmt)
+        session.commit()
+
+
+def load_symbols_missing_fundamentals() -> list[str]:
+    """Metric symbols on NSE/BSE (or with no registry row) whose fundamentals are not yet available."""
+    with get_session() as session:
+        return [
+            r[0]
+            for r in session.exec(
+                text(
+                    "SELECT m.symbol FROM stock_metrics m LEFT JOIN stock_registry r ON r.symbol = m.symbol "
+                    "WHERE coalesce(r.fundamentals_status, '') <> 'available' "
+                    "AND upper(coalesce(r.exchange, 'NSE')) IN ('NSE','NSI','BSE','BO') ORDER BY m.symbol"
+                )
+            ).all()
+        ]

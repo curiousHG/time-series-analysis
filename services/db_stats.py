@@ -2,8 +2,7 @@
 
 from dataclasses import dataclass
 
-from core.database import engine
-from services.constants import DB_SQL, TABLES_SQL
+from data.repositories.db_stats import get_database_size, load_table_sizes
 
 
 @dataclass
@@ -24,9 +23,8 @@ class DbStats:
 
 
 def get_db_stats() -> DbStats:
-    with engine.connect() as conn:
-        db_row = conn.execute(DB_SQL).one()
-        table_rows = conn.execute(TABLES_SQL).all()
+    db_row = get_database_size()
+    table_rows = load_table_sizes()
 
     tables = [
         TableStat(

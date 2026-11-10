@@ -86,11 +86,7 @@ def test_domain_packages_stay_leaf():
         if rel.split("/")[0] in DOMAIN_PACKAGES
         and any(mod.split(".")[0] in {"services", "data"} for mod, _ in _imports(tree))
     }
-    _ratchet(
-        "domain→services/data",
-        violations,
-        allowlist={"mutual_funds/holdings_stats.py"},  # imports holdings.get_scheme_code_for_slug
-    )
+    assert not violations, f"domain→services/data imports: {sorted(violations)}"
 
 
 def test_no_private_imports():
@@ -146,19 +142,26 @@ def test_views_import_data_via_seam():
 
 
 def test_upserts_only_in_repositories():
-    """pg_insert / ON CONFLICT belongs to data/repositories — nowhere else builds SQL writes.
-    Two services currently do (frozen below); the Wave-2 upsert-helper consolidation moves them."""
-    violations = {
+    """pg_insert / ON CONFLICT belongs to data/repositories — nowhere else builds SQL writes."""
+    violations = sorted(
         rel
         for rel, tree in FILES.items()
         if not rel.startswith("data/repositories/")
         and any(mod == "sqlalchemy.dialects.postgresql" and "insert" in names for mod, names in _imports(tree))
-    }
-    _ratchet(
-        "postgres upsert built outside data/repositories/",
-        violations,
-        allowlist={"services/mf/registry.py", "services/stock/metrics.py"},
     )
+    assert not violations, f"postgres upsert built outside data/repositories/: {violations}"
+
+
+def test_services_open_no_sessions():
+    """services call repositories; they never import core.database, sqlmodel or sqlalchemy."""
+    bad = sorted(
+        f"{rel} ← {mod}"
+        for rel, tree in FILES.items()
+        if rel.startswith("services/")
+        for mod, _ in _imports(tree)
+        if mod == "core.database" or mod.split(".")[0] in {"sqlmodel", "sqlalchemy"}
+    )
+    assert not bad, "services must not touch the database layer directly:\n  " + "\n  ".join(bad)
 
 
 # ---------------------------------------------------------------- naming

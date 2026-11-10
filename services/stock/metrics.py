@@ -8,12 +8,9 @@ import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import col, select
 
-from core.database import get_session
-from core.models import StockMetrics, StockRegistry
-from data.repositories.stock_ohlcv import ensure_stock_data
+from data.repositories.stock_fundamentals import upsert_price_metrics
+from data.repositories.stock_ohlcv import ensure_stock_data, load_registry_exchanges
 from services.constants import TRADING_DAYS
 from services.mf.metrics_math import compute_alpha_beta
 from services.price_adjust import adjust_splits
@@ -68,11 +65,7 @@ def compute_price_metrics(symbol: str, benchmark_returns: pd.Series) -> dict | N
 def recompute_price_metrics(symbols: list[str], *, max_workers: int = 8) -> int:
     """Compute price metrics for `symbols` in parallel and upsert into stock_metrics. Each symbol
     is benchmarked against its exchange's index (^NSEI or ^GSPC)."""
-    with get_session() as session:
-        rows_ = session.exec(
-            select(StockRegistry.symbol, StockRegistry.exchange).where(col(StockRegistry.symbol).in_(symbols))
-        ).all()
-    exchange_of = dict(rows_)
+    exchange_of = load_registry_exchanges(symbols)
 
     bench_of = {s: benchmark_symbol_for_exchange(exchange_of.get(s)) for s in symbols}
     bench_returns: dict[str, pd.Series] = {}
@@ -96,14 +89,6 @@ def recompute_price_metrics(symbols: list[str], *, max_workers: int = 8) -> int:
 
     if not rows:
         return 0
-    with get_session() as session:
-        for row in rows:
-            stmt = pg_insert(StockMetrics).values(row)
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["symbol"],
-                set_={k: stmt.excluded[k] for k in row if k != "symbol"},
-            )
-            session.exec(stmt)
-        session.commit()
+    upsert_price_metrics(rows)
     logger.info("upserted price metrics for %d symbols", len(rows))
     return len(rows)

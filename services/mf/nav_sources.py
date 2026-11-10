@@ -6,16 +6,13 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import polars as pl
-from sqlmodel import col, delete
 
-from core.database import get_session
-from core.models import MfNav
 from core.timing import timeit
 from data.exceptions import SourceThrottled
 from data.fetchers.advisorkhoj import fetch_nav_from_advisorkhoj
 from data.fetchers.mfapi import fetch_nav_from_mfapi, resolve_mfapi_code
 from data.repositories.amfi import lookup_scheme_code_by_exact_name
-from data.repositories.nav import load_nav_df, nav_json_to_df, save_nav_df, upsert_nav_rows
+from data.repositories.nav import load_nav_df, nav_json_to_df, replace_nav_data, save_nav_df
 from data.repositories.scheme_codes import resolve_codes, resolve_codes_with_synthetic
 from services.mf.metrics import recompute_metrics
 
@@ -105,13 +102,7 @@ def refresh_nav_data(scheme_names: list[str]) -> pl.DataFrame:
 
     name_to_code = resolve_codes_with_synthetic(fetched_schemes)
     codes = [name_to_code[n] for n in fetched_schemes if n in name_to_code]
-    with get_session() as session:
-        if codes:
-            session.exec(delete(MfNav).where(col(MfNav.scheme_code).in_(codes)))
-        for df in new_frames:
-            if df.height:
-                upsert_nav_rows(session, df, name_to_code)
-        session.commit()
+    replace_nav_data(codes, new_frames, name_to_code)
 
     _recompute_metrics_for(fetched_schemes)
     return load_nav_df(scheme_names)

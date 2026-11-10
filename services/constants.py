@@ -1,10 +1,8 @@
-"""Services-package constants: risk-free rates, freshness windows, fetch concurrency, SQL."""
+"""Services-package constants: risk-free rates, freshness windows, fetch concurrency."""
 
 from __future__ import annotations
 
 from enum import StrEnum
-
-from sqlalchemy import text
 
 from core.constants import TRADING_DAYS
 
@@ -45,23 +43,3 @@ DORMANT_AFTER_DAYS = 90
 
 NAV_FETCH_WORKERS = 4
 HOLDINGS_FETCH_WORKERS = 16
-
-TABLES_SQL = text("""
-    SELECT
-        c.relname AS name,
-        COALESCE(s.n_live_tup, 0) AS rows,
-        pg_total_relation_size(c.oid) AS total_bytes,
-        pg_size_pretty(pg_total_relation_size(c.oid)) AS total_pretty
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
-    WHERE c.relkind = 'r' AND n.nspname = 'public'
-    ORDER BY total_bytes DESC
-""")
-
-DB_SQL = text("""
-    SELECT
-        current_database() AS db,
-        pg_database_size(current_database()) AS bytes,
-        pg_size_pretty(pg_database_size(current_database())) AS pretty
-""")

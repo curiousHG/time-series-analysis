@@ -1,16 +1,10 @@
-"""Derivable stats from holdings / sector / asset-allocation tables. Pure math; UI caches inputs."""
+"""Derivable stats from a fund's holdings and asset-allocation rows. Pure math over loaded data."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import polars as pl
-from sqlmodel import func, select
-
-from core.database import get_session
-from core.frames import frame_from_rows
-from core.models import MfAssetAllocation, MfHolding
-from data.repositories.holdings import get_scheme_code_for_slug
 
 
 def _norm_to_pct(values: list[float]) -> list[float]:
@@ -25,22 +19,8 @@ def _norm_to_pct(values: list[float]) -> list[float]:
     return [v / total * 100.0 for v in values]
 
 
-def asset_breakdown(slug: str) -> dict[str, float]:
-    """Return {asset_class -> %} for a fund. Always normalised to 100%."""
-    code = get_scheme_code_for_slug(slug)
-    if code is None:
-        return {}
-    with get_session() as session:
-        latest_date_subq = (
-            select(func.max(MfAssetAllocation.portfolio_date))
-            .where(MfAssetAllocation.scheme_code == code)
-            .scalar_subquery()
-        )
-        rows = session.exec(
-            select(MfAssetAllocation.asset_class, MfAssetAllocation.weight)
-            .where(MfAssetAllocation.scheme_code == code)
-            .where(MfAssetAllocation.portfolio_date == latest_date_subq)
-        ).all()
+def asset_breakdown(rows: list[tuple]) -> dict[str, float]:
+    """Return {asset_class -> %} from (asset_class, weight) rows. Always normalised to 100%."""
     if not rows:
         return {}
     by_class: dict[str, float] = {}
@@ -51,41 +31,6 @@ def asset_breakdown(slug: str) -> dict[str, float]:
     weights = list(by_class.values())
     pct = _norm_to_pct(weights)
     return dict(zip(classes, pct, strict=False))
-
-
-_HOLDING_SCHEMA = {
-    "instrument_name": pl.Utf8,
-    "weight": pl.Float64,
-    "asset_class": pl.Utf8,
-    "market_cap": pl.Utf8,
-    "credit_rating": pl.Utf8,
-    "industry": pl.Utf8,
-}
-
-
-def holdings_for_slug(slug: str) -> pl.DataFrame:
-    """Load all `mf_holdings` rows for one slug as polars (used by helpers below)."""
-    code = get_scheme_code_for_slug(slug)
-    if code is None:
-        return pl.DataFrame(schema=_HOLDING_SCHEMA)
-    with get_session() as session:
-        latest_date_subq = (
-            select(func.max(MfHolding.portfolio_date)).where(MfHolding.scheme_code == code).scalar_subquery()
-        )
-        rows = session.exec(
-            select(
-                MfHolding.instrument_name,
-                MfHolding.weight,
-                MfHolding.asset_class,
-                MfHolding.market_cap,
-                MfHolding.credit_rating,
-                MfHolding.industry,
-            )
-            .where(MfHolding.scheme_code == code)
-            .where(MfHolding.portfolio_date == latest_date_subq)
-        ).all()
-    rows = [(r[0], float(r[1] or 0.0), *r[2:]) for r in rows]
-    return frame_from_rows(rows, _HOLDING_SCHEMA).unique(subset=["instrument_name"], keep="first")
 
 
 def market_cap_breakdown(holdings: pl.DataFrame) -> dict[str, float]:
@@ -162,10 +107,9 @@ class HoldingsQuickStats:
     pct_poor_rated: float
 
 
-def quick_stats(slug: str) -> HoldingsQuickStats:
-    """One-shot summary of derivable stats for a fund. Used in MF Analysis Holdings tab and screener."""
-    holdings = holdings_for_slug(slug)
-    asset = asset_breakdown(slug)
+def quick_stats(holdings: pl.DataFrame, asset_rows: list[tuple]) -> HoldingsQuickStats:
+    """One-shot summary of derivable stats from a fund's latest holdings and (asset_class, weight) rows."""
+    asset = asset_breakdown(asset_rows)
     mcap = market_cap_breakdown(holdings)
     credit = credit_breakdown(holdings)
 

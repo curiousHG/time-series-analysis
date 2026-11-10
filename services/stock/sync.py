@@ -189,63 +189,34 @@ def refresh_all_stock_data(*, progress_cb: Callable[..., None] | None = None) ->
 
 def stock_data_health() -> StockDataHealth:
     """Counts + last-updated dates + staleness for stock/index data (Settings data-health view)."""
-    from sqlmodel import text  # noqa: PLC0415
-
-    from core.database import get_session  # noqa: PLC0415
+    from data.repositories.stock_ohlcv import get_stock_data_counts  # noqa: PLC0415
     from services.mf.freshness import business_days_between  # noqa: PLC0415
 
-    def _q(session, sql: str):
-        return session.exec(text(sql)).one()[0]
-
-    with get_session() as session:
-        stocks = _q(session, "SELECT count(distinct symbol) FROM stock_ohlcv") or 0
-        stock_last = _q(session, "SELECT max(date) FROM stock_ohlcv")
-        indices = _q(session, "SELECT count(distinct symbol) FROM index_ohlcv") or 0
-        index_last = _q(session, "SELECT max(date) FROM index_ohlcv")
-        index_first = _q(session, "SELECT min(date) FROM index_ohlcv WHERE symbol = 'Nifty 50'")
-        with_metrics = _q(session, "SELECT count(*) FROM stock_metrics WHERE return_1y IS NOT NULL") or 0
-        with_fundamentals = (
-            _q(session, "SELECT count(*) FROM stock_registry WHERE fundamentals_status = 'available'") or 0
-        )
-        unavailable = _q(session, "SELECT count(*) FROM stock_registry WHERE ohlcv_status = 'unavailable'") or 0
-
+    counts = get_stock_data_counts()
     today = _date.today()
 
     def _bdays_old(d) -> int | None:
         return business_days_between(d, today) if d else None
 
     return StockDataHealth(
-        stocks=stocks,
-        stock_last=stock_last,
-        stock_stale_days=_bdays_old(stock_last),
-        indices=indices,
-        index_last=index_last,
-        index_stale_days=_bdays_old(index_last),
-        index_first=index_first,
-        with_metrics=with_metrics,
-        with_fundamentals=with_fundamentals,
-        unavailable=unavailable,
+        stocks=counts.stocks,
+        stock_last=counts.stock_last,
+        stock_stale_days=_bdays_old(counts.stock_last),
+        indices=counts.indices,
+        index_last=counts.index_last,
+        index_stale_days=_bdays_old(counts.index_last),
+        index_first=counts.index_first,
+        with_metrics=counts.with_metrics,
+        with_fundamentals=counts.with_fundamentals,
+        unavailable=counts.unavailable,
     )
 
 
 def find_corrupt_ohlcv_symbols(*, jump: float = 5.0) -> list[str]:
     """Symbols whose stored OHLCV has an adjacent-day close jump above `jump`x or below 1/`jump`."""
-    from sqlmodel import text  # noqa: PLC0415
+    from data.repositories.stock_ohlcv import load_corrupt_ohlcv_symbols  # noqa: PLC0415
 
-    from core.database import get_session  # noqa: PLC0415
-
-    with get_session() as session:
-        rows = session.exec(
-            text(
-                "WITH r AS (SELECT symbol, close, "
-                "LAG(close) OVER (PARTITION BY symbol ORDER BY date) AS prev "
-                "FROM stock_ohlcv WHERE close > 0) "
-                "SELECT DISTINCT symbol FROM r "
-                "WHERE prev > 0 AND (close / prev > :j OR close / prev < :inv) ORDER BY symbol"
-            ),
-            params={"j": jump, "inv": 1.0 / jump},
-        ).all()
-    return [r[0] for r in rows]
+    return load_corrupt_ohlcv_symbols(jump)
 
 
 def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] | None = None) -> OhlcvRepairResult:
@@ -303,23 +274,10 @@ def refetch_all_stocks(*, progress_cb: Callable[..., None] | None = None) -> int
 def sync_missing_fundamentals(*, progress_cb: Callable[..., None] | None = None) -> int:
     """Scrape screener.in fundamentals for NSE-listed universe stocks that lack them, then recompute metrics.
     Returns #symbols attempted."""
-    from sqlmodel import text  # noqa: PLC0415
-
-    from core.database import get_session  # noqa: PLC0415
-    from data.repositories.stock_fundamentals import ensure_stock_fundamentals  # noqa: PLC0415
+    from data.repositories.stock_fundamentals import load_symbols_missing_fundamentals  # noqa: PLC0415
     from services.stock.metrics import recompute_price_metrics  # noqa: PLC0415
 
-    with get_session() as session:
-        symbols = [
-            r[0]
-            for r in session.exec(
-                text(
-                    "SELECT m.symbol FROM stock_metrics m LEFT JOIN stock_registry r ON r.symbol = m.symbol "
-                    "WHERE coalesce(r.fundamentals_status, '') <> 'available' "
-                    "AND upper(coalesce(r.exchange, 'NSE')) IN ('NSE','NSI','BSE','BO') ORDER BY m.symbol"
-                )
-            ).all()
-        ]
+    symbols = load_symbols_missing_fundamentals()
     for i, sym in enumerate(symbols, 1):
         try:
             ensure_stock_fundamentals([sym])

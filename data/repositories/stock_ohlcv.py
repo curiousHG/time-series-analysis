@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
 import polars as pl
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, delete, select
 
@@ -426,4 +427,75 @@ def load_stock_registry() -> pl.DataFrame:
             "exchange": [r.exchange for r in rows],
             "quoteType": [r.quote_type for r in rows],
         }
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class StockDataCounts:
+    """Row counts and date bounds across the stock, index, metrics and registry tables."""
+
+    stocks: int
+    stock_last: date | None
+    indices: int
+    index_last: date | None
+    index_first: date | None
+    with_metrics: int
+    with_fundamentals: int
+    unavailable: int
+
+
+def get_stock_data_counts() -> StockDataCounts:
+    """Distinct-symbol counts, latest/first dates and status counts for the Settings data-health view."""
+
+    def _scalar(session, sql: str):
+        return session.exec(text(sql)).one()[0]
+
+    with get_session() as session:
+        return StockDataCounts(
+            stocks=_scalar(session, "SELECT count(distinct symbol) FROM stock_ohlcv") or 0,
+            stock_last=_scalar(session, "SELECT max(date) FROM stock_ohlcv"),
+            indices=_scalar(session, "SELECT count(distinct symbol) FROM index_ohlcv") or 0,
+            index_last=_scalar(session, "SELECT max(date) FROM index_ohlcv"),
+            index_first=_scalar(session, "SELECT min(date) FROM index_ohlcv WHERE symbol = 'Nifty 50'"),
+            with_metrics=_scalar(session, "SELECT count(*) FROM stock_metrics WHERE return_1y IS NOT NULL") or 0,
+            with_fundamentals=_scalar(
+                session, "SELECT count(*) FROM stock_registry WHERE fundamentals_status = 'available'"
+            )
+            or 0,
+            unavailable=_scalar(session, "SELECT count(*) FROM stock_registry WHERE ohlcv_status = 'unavailable'") or 0,
+        )
+
+
+def load_corrupt_ohlcv_symbols(jump: float) -> list[str]:
+    """Symbols whose stored closes jump above `jump`x or below 1/`jump` between adjacent days."""
+    with get_session() as session:
+        rows = session.exec(
+            text(
+                "WITH r AS (SELECT symbol, close, "
+                "LAG(close) OVER (PARTITION BY symbol ORDER BY date) AS prev "
+                "FROM stock_ohlcv WHERE close > 0) "
+                "SELECT DISTINCT symbol FROM r "
+                "WHERE prev > 0 AND (close / prev > :j OR close / prev < :inv) ORDER BY symbol"
+            ),
+            params={"j": jump, "inv": 1.0 / jump},
+        ).all()
+    return [r[0] for r in rows]
+
+
+def load_registry_exchanges(symbols: list[str]) -> dict[str, str | None]:
+    """{symbol: exchange} for the given registry symbols."""
+    with get_session() as session:
+        rows = session.exec(
+            select(StockRegistry.symbol, StockRegistry.exchange).where(col(StockRegistry.symbol).in_(symbols))
+        ).all()
+    return dict(rows)
+
+
+def load_registry_names() -> pl.DataFrame:
+    """symbol, stock_name for every registry row."""
+    with get_session() as session:
+        rows = session.exec(select(StockRegistry.symbol, StockRegistry.stock_name)).all()
+    return pl.DataFrame(
+        {"symbol": [r[0] for r in rows], "stock_name": [r[1] for r in rows]},
+        schema={"symbol": pl.Utf8, "stock_name": pl.Utf8},
     )

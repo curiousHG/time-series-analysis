@@ -4,21 +4,10 @@ and tags each row with its alpha category. Parallels services.mf.screener (MF)."
 from __future__ import annotations
 
 import polars as pl
-from sqlmodel import select
 
-from core.database import get_session
-from core.models import StockRegistry
 from data.repositories.stock_fundamentals import load_stock_metrics
+from data.repositories.stock_ohlcv import load_registry_names
 from stocks.metric_catalog import alpha_category
-
-
-def _registry_names() -> pl.DataFrame:
-    with get_session() as session:
-        rows = session.exec(select(StockRegistry.symbol, StockRegistry.stock_name)).all()
-    return pl.DataFrame(
-        {"symbol": [r[0] for r in rows], "stock_name": [r[1] for r in rows]},
-        schema={"symbol": pl.Utf8, "stock_name": pl.Utf8},
-    )
 
 
 def build_stock_screener_df() -> pl.DataFrame:
@@ -26,7 +15,7 @@ def build_stock_screener_df() -> pl.DataFrame:
     metrics = load_stock_metrics()
     if metrics.is_empty():
         return metrics
-    df = metrics.join(_registry_names(), on="symbol", how="left")
+    df = metrics.join(load_registry_names(), on="symbol", how="left")
     return df.with_columns(
         pl.struct(["alpha_1y", "beta_1y"])
         .map_elements(lambda s: alpha_category(s["alpha_1y"], s["beta_1y"]), return_dtype=pl.Utf8)

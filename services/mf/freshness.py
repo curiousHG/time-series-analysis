@@ -5,11 +5,9 @@ from datetime import date, datetime
 from enum import StrEnum
 
 import numpy as np
-from sqlmodel import func, select
 
-from core.database import get_session
-from core.models import AmfiScheme, MfHolding, MfNav
-from data.repositories.holdings import slug_to_code_map
+from data.repositories.holdings import load_latest_holdings_dates, slug_to_code_map
+from data.repositories.nav import last_nav_date_by_name
 from services.constants import HOLDINGS_STALE_DAYS, NAV_STALE_BUSINESS_DAYS, FreshnessStatus
 
 
@@ -112,18 +110,7 @@ def _build_report(
 def compute_nav_freshness(scheme_names: list[str], scheme_slugs: list[str]) -> FreshnessReport:
     """Report NAV freshness per scheme. Stale = > NAV_STALE_BUSINESS_DAYS business days behind today."""
     today = datetime.now().date()
-    last_by_name: dict[str, date] = {}
-
-    if scheme_names:
-        with get_session() as session:
-            stmt = (
-                select(AmfiScheme.scheme_name, func.max(MfNav.date))
-                .join(AmfiScheme, MfNav.scheme_code == AmfiScheme.scheme_code)
-                .where(AmfiScheme.scheme_name.in_(scheme_names))
-                .group_by(AmfiScheme.scheme_name)
-            )
-            for row in session.exec(stmt).all():
-                last_by_name[row[0]] = row[1]
+    last_by_name: dict[str, date] = last_nav_date_by_name(scheme_names)
 
     pairs = list(zip(scheme_names, scheme_slugs, strict=False))
     return _build_report(
@@ -146,15 +133,9 @@ def compute_holdings_freshness(scheme_names: list[str], scheme_slugs: list[str])
         code_to_slug = {slug_to_code[s]: s for s in scheme_slugs if s in slug_to_code}
         codes = list(code_to_slug.keys())
         if codes:
-            with get_session() as session:
-                stmt = (
-                    select(MfHolding.scheme_code, func.max(MfHolding.portfolio_date))
-                    .where(MfHolding.scheme_code.in_(codes))
-                    .group_by(MfHolding.scheme_code)
-                )
-                for row in session.exec(stmt).all():
-                    if row[1] is not None and row[0] in code_to_slug:
-                        last_by_slug[code_to_slug[row[0]]] = row[1]
+            for code, latest in load_latest_holdings_dates(codes).items():
+                if code in code_to_slug:
+                    last_by_slug[code_to_slug[code]] = latest
 
     pairs = list(zip(scheme_names, scheme_slugs, strict=False))
     return _build_report(

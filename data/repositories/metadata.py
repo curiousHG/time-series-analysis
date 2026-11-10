@@ -237,3 +237,14 @@ def count_metadata() -> int:
 def load_metadata_all() -> pl.DataFrame:
     """Load every mf_metadata row."""
     return load_metadata(None)
+
+
+def load_metadata_benchmarks(scheme_names: list[str]) -> dict[str, str | None]:
+    """{scheme_name: named benchmark} for schemes whose metadata names one."""
+    with get_session() as session:
+        rows = session.exec(
+            select(AmfiScheme.scheme_name, MfMetadata.benchmark)
+            .join(MfMetadata, MfMetadata.scheme_code == AmfiScheme.scheme_code)
+            .where(col(AmfiScheme.scheme_name).in_(scheme_names))
+        ).all()
+    return {r[0]: r[1] for r in rows if r[1]}

@@ -367,3 +367,19 @@ def load_amfi_df() -> pl.DataFrame:
             "nav_date": pl.Date,
         },
     )
+
+
+def get_scheme_code(scheme_name: str) -> int | None:
+    """Exact-name lookup → scheme_code, or None if not found."""
+    with get_session() as session:
+        row = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)).first()
+    return int(row) if row is not None else None
+
+
+def load_sub_categories(scheme_names: list[str]) -> dict[str, str | None]:
+    """{scheme_name: AMFI sub_category} for the named schemes."""
+    with get_session() as session:
+        rows = session.exec(
+            select(AmfiScheme.scheme_name, AmfiScheme.sub_category).where(col(AmfiScheme.scheme_name).in_(scheme_names))
+        ).all()
+    return {r[0]: r[1] for r in rows}

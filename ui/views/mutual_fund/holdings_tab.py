@@ -8,7 +8,13 @@ import polars as pl
 import streamlit as st
 
 from core.enums import SourceStatus
-from data.repositories.holdings import load_assets, load_holdings, load_sectors
+from data.repositories.holdings import (
+    load_assets,
+    load_holdings,
+    load_latest_asset_allocation,
+    load_latest_holdings,
+    load_sectors,
+)
 from mutual_funds.display import make_slug
 from mutual_funds.holdings_stats import quick_stats
 from services.mf.registry import load_registry
@@ -37,7 +43,7 @@ def render(ctx: FundContext) -> None:
         st.info("No holdings data fetched yet. Refresh from **Settings → Update All Holdings**.")
         return
 
-    stats = quick_stats(slug)
+    stats = quick_stats(load_latest_holdings(slug), load_latest_asset_allocation(slug))
 
     st.subheader("Asset & cap breakdown")
     render_kpi_row(

@@ -23,6 +23,7 @@ ui/views  →  ui/state/loaders.py  →  services/  →  data/repositories  → 
 - ⚙ `_`-prefixed names are module-internal. Never import them across top-level packages — promote a
   public accessor instead.
 - ⚙ `pg_insert` / `ON CONFLICT` writes are built **only in `data/repositories/`**.
+- ⚙ Services never open sessions — they call repositories (no `core.database`, `sqlmodel` or `sqlalchemy` imports under `services/`).
 - Deferred imports (`# noqa: PLC0415`) are for **heavy deps** (plotly, quantstats, vectorbt,
   jugaad_data, yfinance) and cycle-breaks only — never for stdlib modules.
 

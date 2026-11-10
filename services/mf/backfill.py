@@ -9,13 +9,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from core.database import get_session
 from core.enums import SourceStatus
-from core.models import MfRegistry
 from data.repositories.advisorkhoj_keys import fetch_holdings_for_scheme
 from data.repositories.holdings import save_assets, save_holdings, save_sectors
 from data.repositories.metadata import refresh_metadata
 from data.repositories.nav import save_nav_df
+from data.repositories.registry import get_registry_statuses
 from services.constants import BackfillSource
 from services.mf.nav_sources import fetch_single_nav
 from services.mf.registry import list_tracked, resolve_scheme_code, set_status, upsert_registry
@@ -71,15 +70,14 @@ def retry_unavailable(scheme_name: str) -> dict[str, SourceStatus]:
     code = resolve_scheme_code(scheme_name)
     if code is None:
         return {}
-    with get_session() as session:
-        row = session.get(MfRegistry, code)
-        if row is None:
-            return {}
-        targets = {
-            "nav_status": row.nav_status,
-            "holdings_status": row.holdings_status,
-            "metadata_status": row.metadata_status,
-        }
+    row = get_registry_statuses(code)
+    if row is None:
+        return {}
+    targets = {
+        "nav_status": row.nav_status,
+        "holdings_status": row.holdings_status,
+        "metadata_status": row.metadata_status,
+    }
 
     results: dict[str, SourceStatus] = {}
     if targets["nav_status"] == SourceStatus.UNAVAILABLE:

@@ -5,11 +5,13 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 import polars as pl
 from sqlmodel import col, delete, func, select
 
 from core.database import get_session
+from core.frames import frame_from_rows
 from core.models import AmfiScheme, MfAssetAllocation, MfHolding, MfSectorAllocation
 from data.constants import HOLDINGS_FIELD_MAP
 from data.repositories.advisorkhoj_keys import fetch_holdings_for_scheme
@@ -21,7 +23,19 @@ from mutual_funds.table_schema import (
     empty_df,
 )
 
+if TYPE_CHECKING:
+    from datetime import date
+
 logger = logging.getLogger(__name__)
+
+_LATEST_HOLDINGS_SCHEMA = {
+    "instrument_name": pl.Utf8,
+    "weight": pl.Float64,
+    "asset_class": pl.Utf8,
+    "market_cap": pl.Utf8,
+    "credit_rating": pl.Utf8,
+    "industry": pl.Utf8,
+}
 
 
 @lru_cache(maxsize=1)
@@ -342,3 +356,71 @@ def refresh_holdings_data(slugs: list[str]) -> tuple[pl.DataFrame, pl.DataFrame,
         replace_holdings_atomic(slug, h, s, a, scheme_code=code)
 
     return load_holdings(slugs), load_sectors(slugs), load_assets(slugs)
+
+
+def load_holding_weights(scheme_code: int) -> list[tuple]:
+    """(weight, asset_class, portfolio_date) rows across all snapshots, latest date then heaviest first."""
+    with get_session() as session:
+        return list(
+            session.exec(
+                select(MfHolding.weight, MfHolding.asset_class, MfHolding.portfolio_date)
+                .where(MfHolding.scheme_code == scheme_code)
+                .order_by(col(MfHolding.portfolio_date).desc(), col(MfHolding.weight).desc())
+            ).all()
+        )
+
+
+def load_latest_holdings_dates(scheme_codes: list[int]) -> dict[int, date]:
+    """{scheme_code: latest portfolio_date} for codes that have holdings."""
+    with get_session() as session:
+        rows = session.exec(
+            select(MfHolding.scheme_code, func.max(MfHolding.portfolio_date))
+            .where(MfHolding.scheme_code.in_(scheme_codes))
+            .group_by(MfHolding.scheme_code)
+        ).all()
+    return {code: latest for code, latest in rows if latest is not None}
+
+
+def load_latest_asset_allocation(slug: str) -> list[tuple]:
+    """(asset_class, weight) rows of a fund's newest asset-allocation snapshot; empty if the slug is unknown."""
+    code = get_scheme_code_for_slug(slug)
+    if code is None:
+        return []
+    with get_session() as session:
+        latest_date_subq = (
+            select(func.max(MfAssetAllocation.portfolio_date))
+            .where(MfAssetAllocation.scheme_code == code)
+            .scalar_subquery()
+        )
+        return list(
+            session.exec(
+                select(MfAssetAllocation.asset_class, MfAssetAllocation.weight)
+                .where(MfAssetAllocation.scheme_code == code)
+                .where(MfAssetAllocation.portfolio_date == latest_date_subq)
+            ).all()
+        )
+
+
+def load_latest_holdings(slug: str) -> pl.DataFrame:
+    """A fund's newest holdings snapshot, one row per instrument; empty if the slug is unknown."""
+    code = get_scheme_code_for_slug(slug)
+    if code is None:
+        return pl.DataFrame(schema=_LATEST_HOLDINGS_SCHEMA)
+    with get_session() as session:
+        latest_date_subq = (
+            select(func.max(MfHolding.portfolio_date)).where(MfHolding.scheme_code == code).scalar_subquery()
+        )
+        rows = session.exec(
+            select(
+                MfHolding.instrument_name,
+                MfHolding.weight,
+                MfHolding.asset_class,
+                MfHolding.market_cap,
+                MfHolding.credit_rating,
+                MfHolding.industry,
+            )
+            .where(MfHolding.scheme_code == code)
+            .where(MfHolding.portfolio_date == latest_date_subq)
+        ).all()
+    rows = [(r[0], float(r[1] or 0.0), *r[2:]) for r in rows]
+    return frame_from_rows(rows, _LATEST_HOLDINGS_SCHEMA).unique(subset=["instrument_name"], keep="first")

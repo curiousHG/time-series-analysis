@@ -10,11 +10,12 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 import quantstats as qs
-from sqlmodel import col, select
 
-from core.database import get_session
-from core.models import AmfiScheme, MfHolding, MfMetadata, MfNav
 from core.timing import timed, timeit
+from data.repositories.amfi import get_scheme_code, load_sub_categories
+from data.repositories.holdings import load_holding_weights
+from data.repositories.metadata import load_metadata_benchmarks
+from data.repositories.nav import load_nav_points, load_scheme_names_with_nav
 from data.repositories.scheme_codes import resolve_codes
 from data.repositories.scheme_metrics import clear_metrics, find_stale_schemes, load_metrics, upsert_metrics
 from data.repositories.stock_ohlcv import ensure_stock_data, refresh_stock_to_today
@@ -42,15 +43,7 @@ _PERCENT_SCALE_MIN_TOTAL = 1.5
 def nav_series(scheme_name: str) -> pd.Series:
     """Daily NAV as a date-indexed pd.Series, read by the resolved scheme_code (empty if none)."""
     code = resolve_codes([scheme_name]).get(scheme_name)
-    with get_session() as session:
-        stmt = select(MfNav.date, MfNav.nav).order_by(MfNav.date)
-        if code is not None:
-            stmt = stmt.where(MfNav.scheme_code == code)
-        else:
-            stmt = stmt.join(AmfiScheme, MfNav.scheme_code == AmfiScheme.scheme_code).where(
-                AmfiScheme.scheme_name == scheme_name
-            )
-        rows = session.exec(stmt).all()
+    rows = load_nav_points(scheme_name, code)
     if not rows:
         return pd.Series(dtype=float)
     s = pd.Series({pd.Timestamp(d): float(v) for d, v in rows})
@@ -60,16 +53,10 @@ def nav_series(scheme_name: str) -> pd.Series:
 def _holdings_composition(scheme_name: str) -> dict[str, float]:
     """Composition + concentration weights from the latest mf_holdings snapshot; floats in [0, 1], NaN if absent."""
     nan = dict.fromkeys(("pct_equity", "pct_debt", "pct_cash", "pct_top3", "pct_top5", "pct_top10"), math.nan)  # fmt: skip
-    with get_session() as session:
-        code_row = session.exec(select(AmfiScheme.scheme_code).where(AmfiScheme.scheme_name == scheme_name)).first()
-        if code_row is None:
-            return nan
-        code = int(code_row) if not isinstance(code_row, tuple) else int(code_row[0])
-        rows = session.exec(
-            select(MfHolding.weight, MfHolding.asset_class, MfHolding.portfolio_date)
-            .where(MfHolding.scheme_code == code)
-            .order_by(col(MfHolding.portfolio_date).desc(), col(MfHolding.weight).desc())
-        ).all()
+    code = get_scheme_code(scheme_name)
+    if code is None:
+        return nan
+    rows = load_holding_weights(code)
     if not rows:
         return nan
 
@@ -296,26 +283,6 @@ def _load_benchmark_returns(symbol: str) -> pd.Series:
     return daily_returns_from_ohlcv(df, symbol)
 
 
-def _subcategories(scheme_names: list[str]) -> dict[str, str | None]:
-    """scheme_name -> AMFI sub_category, for choosing each fund's benchmark."""
-    with get_session() as session:
-        rows = session.exec(
-            select(AmfiScheme.scheme_name, AmfiScheme.sub_category).where(col(AmfiScheme.scheme_name).in_(scheme_names))
-        ).all()
-    return {r[0]: r[1] for r in rows}
-
-
-def _metadata_benchmarks(scheme_names: list[str]) -> dict[str, str | None]:
-    """scheme_name -> its named metadata benchmark (e.g. 'Russell 3000 Growth TRI'), when known."""
-    with get_session() as session:
-        rows = session.exec(
-            select(AmfiScheme.scheme_name, MfMetadata.benchmark)
-            .join(MfMetadata, MfMetadata.scheme_code == AmfiScheme.scheme_code)
-            .where(col(AmfiScheme.scheme_name).in_(scheme_names))
-        ).all()
-    return {r[0]: r[1] for r in rows if r[1]}
-
-
 @timeit("mf_metrics.recompute_metrics")
 def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int = 4) -> int:
     """Recompute and persist metrics for `scheme_names` (or every scheme with NAV); returns rows upserted.
@@ -323,19 +290,14 @@ def recompute_metrics(scheme_names: list[str] | None = None, *, max_workers: int
     Schemes that compute to None (corrupt NAV, short history) get their stale cache row evicted.
     """
     if scheme_names is None:
-        with get_session() as session:
-            scheme_names = list(
-                session.exec(
-                    select(AmfiScheme.scheme_name).join(MfNav, MfNav.scheme_code == AmfiScheme.scheme_code).distinct()
-                ).all()
-            )
+        scheme_names = load_scheme_names_with_nav()
 
     scheme_names = list(dict.fromkeys(scheme_names))
     if not scheme_names:
         return 0
 
-    subcats = _subcategories(scheme_names)
-    meta_bench = _metadata_benchmarks(scheme_names)
+    subcats = load_sub_categories(scheme_names)
+    meta_bench = load_metadata_benchmarks(scheme_names)
     bench_sym_by_name = {n: benchmark_for_fund(subcats.get(n), meta_bench.get(n)) for n in scheme_names}
     distinct_syms = sorted({s for s in bench_sym_by_name.values() if s})
     logger.info("recompute: %d funds across %d benchmark(s): %s", len(scheme_names), len(distinct_syms), distinct_syms)

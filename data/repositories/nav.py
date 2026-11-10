@@ -10,7 +10,7 @@ import logging
 
 import polars as pl
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import col, func, select
+from sqlmodel import col, delete, func, select
 
 from core.database import get_session
 from core.frames import frame_from_rows
@@ -141,3 +141,37 @@ def last_nav_date_by_name(scheme_names: list[str]) -> dict:
             .group_by(AmfiScheme.scheme_name)
         ).all()
     return {r[0]: r[1] for r in rows if r[1] is not None}
+
+
+def load_nav_points(scheme_name: str, scheme_code: int | None) -> list[tuple]:
+    """(date, nav) rows oldest first, by `scheme_code` when known, else joined on the exact scheme name."""
+    with get_session() as session:
+        stmt = select(MfNav.date, MfNav.nav).order_by(MfNav.date)
+        if scheme_code is not None:
+            stmt = stmt.where(MfNav.scheme_code == scheme_code)
+        else:
+            stmt = stmt.join(AmfiScheme, MfNav.scheme_code == AmfiScheme.scheme_code).where(
+                AmfiScheme.scheme_name == scheme_name
+            )
+        return list(session.exec(stmt).all())
+
+
+def load_scheme_names_with_nav() -> list[str]:
+    """Names of every AMFI scheme that has NAV history."""
+    with get_session() as session:
+        return list(
+            session.exec(
+                select(AmfiScheme.scheme_name).join(MfNav, MfNav.scheme_code == AmfiScheme.scheme_code).distinct()
+            ).all()
+        )
+
+
+def replace_nav_data(codes: list[int], frames: list[pl.DataFrame], name_to_code: dict[str, int]) -> None:
+    """Delete NAV rows for `codes` and upsert `frames` in one transaction."""
+    with get_session() as session:
+        if codes:
+            session.exec(delete(MfNav).where(col(MfNav.scheme_code).in_(codes)))
+        for df in frames:
+            if df.height:
+                upsert_nav_rows(session, df, name_to_code)
+        session.commit()
