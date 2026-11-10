@@ -56,6 +56,13 @@ Postgres enums), so adding a member needs no migration. When a member becomes a 
 `Enum` dtype. `typing.Literal` is only for author-facing knobs under `strategies/`;
 `test_literal_aliases_only_in_strategies` enforces it.
 
+### Records
+
+A fixed-key result is a module-level dataclass next to its producer, frozen unless it is built up
+incrementally; `st.cache_data` pickles return values, so never nest the class. Dicts are for mappings,
+DB rows, JSON payloads and library options. `test_record_dicts_shrink` ratchets bare `-> dict` returns
+in `services/`, `data/`, `mutual_funds/` and `stocks/`.
+
 ## 3. Data correctness
 
 - **One source per datatype**, declared in `data/sources.py` — the routing registry is the single

@@ -9,6 +9,8 @@ import streamlit as st
 
 from core.enums import SourceStatus
 from services.stock.sync import (
+    StockDataHealth,
+    StockRefreshSummary,
     backfill_indices_history,
     list_unavailable_stocks,
     recompute_all_stock_metrics,
@@ -28,7 +30,7 @@ _STALE_BDAYS = 2
 
 
 @st.cache_data(ttl=120, show_spinner=False)
-def _health() -> dict:
+def _health() -> StockDataHealth:
     return stock_data_health()
 
 
@@ -44,9 +46,7 @@ _REFRESH = BackgroundRefresh(
     "Price refresh",
     cache_clearers=(_clear_caches,),
     summarize=lambda r: (
-        f"{r.get('stock_rows', 0):,} stock + {r.get('index_rows', 0):,} index rows"
-        if isinstance(r, dict)
-        else f"{r:,} rows"
+        f"{r.stock_rows:,} stock + {r.index_rows:,} index rows" if isinstance(r, StockRefreshSummary) else f"{r:,} rows"
     ),
 )
 _BACKFILL = BackgroundRefresh(
@@ -93,12 +93,12 @@ def render_status() -> None:
 
     h = _health()
     st.markdown(
-        f"{plural(h['stocks'], 'stock')} {_freshness(h['stock_last'], h['stock_stale_days'])}; "
-        f"{plural(h['indices'], 'index').replace('indexs', 'indices')} {_freshness(h['index_last'], h['index_stale_days'])}."
+        f"{plural(h.stocks, 'stock')} {_freshness(h.stock_last, h.stock_stale_days)}; "
+        f"{plural(h.indices, 'index').replace('indexs', 'indices')} {_freshness(h.index_last, h.index_stale_days)}."
     )
     st.caption(
-        f"{h['with_metrics']:,} stocks have price metrics and {h['with_fundamentals']:,} have fundamentals"
-        + (f". Index history starts {fmt_date(h['index_first'])}." if h["index_first"] else ".")
+        f"{h.with_metrics:,} stocks have price metrics and {h.with_fundamentals:,} have fundamentals"
+        + (f". Index history starts {fmt_date(h.index_first)}." if h.index_first else ".")
     )
     _render_unavailable()
 

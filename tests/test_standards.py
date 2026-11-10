@@ -213,6 +213,61 @@ def test_fetch_only_in_fetchers_and_services():
     )
 
 
+# ---------------------------------------------------------------- types
+
+
+def test_record_dicts_shrink():
+    """Record-shaped returns are dataclasses; the allowlist is JSON/row/payload dicts and only shrinks."""
+    violations = {
+        f"{rel}::{node.name}"
+        for rel, tree in FILES.items()
+        if rel.startswith(("services/", "data/", "mutual_funds/", "stocks/"))
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.returns is not None
+        and ast.unparse(node.returns) in {"dict", "dict | None"}
+    }
+    _ratchet(
+        "bare `-> dict` return",
+        violations,
+        allowlist={
+            "data/fetchers/advisorkhoj.py::build_nav_params",
+            "data/fetchers/advisorkhoj.py::fetch_fund_metadata",
+            "data/fetchers/advisorkhoj.py::fetch_nav_from_advisorkhoj",
+            "data/fetchers/kuvera.py::fetch_fund_metadata_kuvera",
+            "data/fetchers/screener_in.py::_parse_company_page",
+            "data/fetchers/screener_in.py::fetch_company",
+            "data/fetchers/stock.py::fetch_global_fundamentals",
+            "data/repositories/amfi.py::_prepare_sync_row",
+            "data/repositories/amfi.py::find_direct_sibling",
+            "data/repositories/amfi.py::get_scheme_details_by_name",
+            "data/repositories/backtest_runs.py::get_backtest_run",
+            "data/repositories/backtest_runs.py::get_optimization",
+            "data/repositories/metadata.py::_attach_amfi_fields",
+            "data/repositories/metadata.py::_from_direct_sibling",
+            "data/repositories/metadata.py::refresh_metadata",
+            "data/repositories/nav.py::last_nav_date_by_name",
+            "data/repositories/stock_fundamentals.py::_metrics_row",
+            "services/backtest/metrics.py::_benchmark_summary",
+            "services/backtest/metrics.py::drawdown_stats",
+            "services/backtest/metrics.py::summarize_result",
+            "services/backtest/optimizer.py::_compact",
+            "services/backtest/optimizer.py::suggest_params",
+            "services/backtest/runs.py::_json_safe",
+            "services/backtest/runs.py::_transition_payload",
+            "services/backtest/runs.py::diagnostics_payload",
+            "services/backtest/runs.py::equity_payload",
+            "services/backtest/runs.py::start_run",
+            "services/mf/metrics.py::compute_metrics_for_scheme",
+            "services/mf/metrics_math.py::compute_metrics_from_returns",
+            "services/mf/metrics_math.py::portfolio_axis_metrics",
+            "services/stock/market_data.py::global_fundamentals",
+            "services/stock/metrics.py::compute_price_metrics",
+            "services/stock/strategy_backtest.py::compute_metrics",
+        },
+    )
+
+
 # ---------------------------------------------------------------- caching
 
 

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
 import polars as pl
@@ -162,7 +163,18 @@ def load_index_ohlcv(symbol: str, start_date: datetime | date, end_date: datetim
     return df if df.is_empty() else df.with_columns(pl.lit(symbol).alias("Symbol"))
 
 
-def get_latest_index_valuation(symbol: str) -> dict | None:
+@dataclass(frozen=True, slots=True)
+class IndexValuation:
+    """An index's latest valuation row: P/E, P/B, dividend yield and turnover (₹ cr)."""
+
+    date: date
+    pe: float | None
+    pb: float | None
+    div_yield: float | None
+    turnover_cr: float | None
+
+
+def get_latest_index_valuation(symbol: str) -> IndexValuation | None:
     """Latest P/E, P/B, Div Yield and turnover (₹ cr) for an index, or None if it has no valuation rows."""
     with get_session() as session:
         row = session.exec(
@@ -179,7 +191,7 @@ def get_latest_index_valuation(symbol: str) -> dict | None:
         ).first()
     if row is None:
         return None
-    return {"date": row[0], "pe": row[1], "pb": row[2], "div_yield": row[3], "turnover_cr": row[4]}
+    return IndexValuation(date=row[0], pe=row[1], pb=row[2], div_yield=row[3], turnover_cr=row[4])
 
 
 def list_index_symbols() -> list[str]:

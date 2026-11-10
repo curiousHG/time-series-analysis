@@ -42,40 +42,40 @@ def render(ctx: FundContext) -> None:
     st.subheader("Asset & cap breakdown")
     render_kpi_row(
         [
-            Kpi("% Equity", f"{stats['pct_equity']:.1f}%" if stats["pct_equity"] else None),
-            Kpi("% Debt", f"{stats['pct_debt']:.1f}%" if stats["pct_debt"] else None),
-            Kpi("% Cash", f"{stats['pct_cash']:.1f}%" if stats["pct_cash"] else None),
-            Kpi("# Holdings", f"{stats['n_holdings']:,}"),
+            Kpi("% Equity", f"{stats.pct_equity:.1f}%" if stats.pct_equity else None),
+            Kpi("% Debt", f"{stats.pct_debt:.1f}%" if stats.pct_debt else None),
+            Kpi("% Cash", f"{stats.pct_cash:.1f}%" if stats.pct_cash else None),
+            Kpi("# Holdings", f"{stats.n_holdings:,}"),
         ]
     )
 
-    if stats["pct_largecap"] or stats["pct_midcap"] or stats["pct_smallcap"]:
+    if stats.pct_largecap or stats.pct_midcap or stats.pct_smallcap:
         render_kpi_row(
             [
-                Kpi("% Largecap", f"{stats['pct_largecap']:.1f}%"),
-                Kpi("% Midcap", f"{stats['pct_midcap']:.1f}%"),
-                Kpi("% Smallcap", f"{stats['pct_smallcap']:.1f}%"),
-                Kpi("% Other (eq.)", f"{stats['pct_other_mcap']:.1f}%"),
+                Kpi("% Largecap", f"{stats.pct_largecap:.1f}%"),
+                Kpi("% Midcap", f"{stats.pct_midcap:.1f}%"),
+                Kpi("% Smallcap", f"{stats.pct_smallcap:.1f}%"),
+                Kpi("% Other (eq.)", f"{stats.pct_other_mcap:.1f}%"),
             ]
         )
 
     st.subheader("Concentration")
     render_kpi_row(
         [
-            Kpi("Top 3 holdings", f"{stats['pct_top3']:.1f}%" if stats["pct_top3"] is not None else None),
-            Kpi("Top 5 holdings", f"{stats['pct_top5']:.1f}%" if stats["pct_top5"] is not None else None),
-            Kpi("Top 10 holdings", f"{stats['pct_top10']:.1f}%" if stats["pct_top10"] is not None else None),
+            Kpi("Top 3 holdings", f"{stats.pct_top3:.1f}%" if stats.pct_top3 is not None else None),
+            Kpi("Top 5 holdings", f"{stats.pct_top5:.1f}%" if stats.pct_top5 is not None else None),
+            Kpi("Top 10 holdings", f"{stats.pct_top10:.1f}%" if stats.pct_top10 is not None else None),
         ]
     )
 
-    if any(stats["credit_breakdown"].values()):
+    if any(stats.credit_breakdown.values()):
         st.subheader("Credit-rating breakdown (debt slice)")
         render_kpi_row(
             [
-                Kpi("% Sovereign", f"{stats['pct_sovereign']:.1f}%"),
-                Kpi("% AAA / High-grade corp.", f"{stats['pct_corporate_high_grade']:.1f}%"),
-                Kpi("% BBB & below (B-rated)", f"{stats['pct_b_rated']:.1f}%"),
-                Kpi("% Poor / Unrated", f"{stats['pct_poor_rated']:.1f}%"),
+                Kpi("% Sovereign", f"{stats.pct_sovereign:.1f}%"),
+                Kpi("% AAA / High-grade corp.", f"{stats.pct_corporate_high_grade:.1f}%"),
+                Kpi("% BBB & below (B-rated)", f"{stats.pct_b_rated:.1f}%"),
+                Kpi("% Poor / Unrated", f"{stats.pct_poor_rated:.1f}%"),
             ]
         )
 

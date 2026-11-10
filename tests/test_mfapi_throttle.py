@@ -127,5 +127,6 @@ def test_refresh_returns_the_failures_for_the_result_panel(monkeypatch):
 
     out = sync.refresh_all_fund_data(["Ok Fund", "Slow Fund"], name_to_code={"Ok Fund": 1, "Slow Fund": 2}, scope="nav")
 
-    assert (out["nav_updated"], out["nav_skipped"], out["nav_failed"]) == (1, 0, 1)
-    assert [name for name, _ in out["nav_failures"]] == ["Slow Fund"]
+    assert out.nav is not None
+    assert (out.nav.updated_count, out.nav.skipped_count, len(out.nav.failures)) == (1, 0, 1)
+    assert [name for name, _ in out.nav.failures] == ["Slow Fund"]

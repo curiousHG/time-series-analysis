@@ -34,17 +34,17 @@ def render() -> None:
         _upload()
 
     stats = get_tradebook_stats()
-    if stats["total_trades"] == 0:
+    if stats.total_trades == 0:
         st.markdown("No trades yet. Upload your Kite or Zerodha tradebook to unlock the Portfolio page.")
         return
 
     tb = load_tradebook_from_db()
     resolved = tb.select(["symbol", "isin", "schemeName", "scheme_code"]).rename({"schemeName": "scheme_name"}).unique()
     unmatched = resolved.filter(pl.col("scheme_name").is_null())
-    first, last = stats["first_date"], stats["last_date"]
+    first, last = stats.first_date, stats.last_date
     st.markdown(
-        f"{plural(stats['total_trades'], 'trade')} across {plural(stats['symbols'], 'fund')}, "
-        f"{first:%b %Y} to {last:%b %Y} ({stats['buys']} buys, {stats['sells']} sells). "
+        f"{plural(stats.total_trades, 'trade')} across {plural(stats.symbols, 'fund')}, "
+        f"{first:%b %Y} to {last:%b %Y} ({stats.buys} buys, {stats.sells} sells). "
         + (
             "All ISINs resolved to AMFI schemes."
             if unmatched.is_empty()

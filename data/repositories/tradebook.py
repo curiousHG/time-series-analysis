@@ -1,6 +1,8 @@
 """Tradebook DB operations — import CSVs with deduplication."""
 
 import logging
+from dataclasses import dataclass
+from datetime import date
 
 import polars as pl
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -124,24 +126,36 @@ def load_tradebook_from_db() -> pl.DataFrame:
     )
 
 
-def get_tradebook_stats() -> dict:
+@dataclass(frozen=True, slots=True)
+class TradebookStats:
+    """Trade counts, distinct symbols and date span of the stored tradebook."""
+
+    total_trades: int
+    symbols: int
+    buys: int = 0
+    sells: int = 0
+    first_date: date | None = None
+    last_date: date | None = None
+
+
+def get_tradebook_stats() -> TradebookStats:
     """Summary counts and date range for the tradebook."""
     with get_session() as session:
         rows = session.exec(select(MfTradebook)).all()
 
     if not rows:
-        return {"total_trades": 0, "symbols": 0, "date_range": None}
+        return TradebookStats(total_trades=0, symbols=0)
 
     dates = [r.trade_date for r in rows]
     symbols = set(r.symbol for r in rows)
     buys = sum(1 for r in rows if r.trade_type.lower() == "buy")
     sells = len(rows) - buys
 
-    return {
-        "total_trades": len(rows),
-        "buys": buys,
-        "sells": sells,
-        "symbols": len(symbols),
-        "first_date": min(dates),
-        "last_date": max(dates),
-    }
+    return TradebookStats(
+        total_trades=len(rows),
+        symbols=len(symbols),
+        buys=buys,
+        sells=sells,
+        first_date=min(dates),
+        last_date=max(dates),
+    )

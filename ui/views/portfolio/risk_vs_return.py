@@ -151,9 +151,9 @@ def render(mapped: pl.DataFrame, portfolio_nav: pl.DataFrame):
                 if ab is None:
                     insufficient.append(name)
                 else:
-                    row["alpha"] = ab["alpha"] * 100
-                    row["beta"] = ab["beta"]
-                    row["r2"] = ab["r2"]
+                    row["alpha"] = ab.alpha * 100
+                    row["beta"] = ab.beta
+                    row["r2"] = ab.r2
                     row["has_capm"] = True
 
             rows.append(row)
@@ -223,9 +223,9 @@ def _portfolio_metrics(
         last_year = pf_returns.iloc[-252:] if len(pf_returns) >= 252 else pf_returns
         ab = compute_alpha_beta(last_year, bench_returns)
         if ab is not None:
-            point["alpha"] = ab["alpha"] * 100
-            point["beta"] = ab["beta"]
-            point["r2"] = ab["r2"]
+            point["alpha"] = ab.alpha * 100
+            point["beta"] = ab.beta
+            point["r2"] = ab.r2
             point["has_capm"] = True
     return point
 

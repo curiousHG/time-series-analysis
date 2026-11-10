@@ -59,9 +59,9 @@ def compute_price_metrics(symbol: str, benchmark_returns: pd.Series) -> dict | N
         out["return_1y"] = (cum - 1.0) * 100
     ab = compute_alpha_beta(returns, benchmark_returns)
     if ab:
-        out["alpha_1y"] = ab["alpha"] * 100
-        out["beta_1y"] = ab["beta"]
-        out["r2_1y"] = ab["r2"]
+        out["alpha_1y"] = ab.alpha * 100
+        out["beta_1y"] = ab.beta
+        out["r2_1y"] = ab.r2
     return out
 
 

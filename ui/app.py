@@ -34,11 +34,12 @@ def _kickoff_background_refresh() -> bool:
     import logging  # noqa: PLC0415
 
     from core.background import start_task  # noqa: PLC0415
+    from services.stock.sync import StockRefreshSummary  # noqa: PLC0415
 
     if _boot_refreshed_today():
         return True
 
-    def _work() -> dict:
+    def _work() -> StockRefreshSummary:
         from services.stock.sync import refresh_all_stock_data, seed_nifty500  # noqa: PLC0415
 
         seed_nifty500()

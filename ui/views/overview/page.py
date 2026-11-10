@@ -5,6 +5,7 @@ from datetime import date
 import streamlit as st
 
 from services.portfolio.value import build_portfolio_value_series, get_mapped_data
+from services.stock.sync import StockRefreshSummary
 from ui.components.background_refresh import BackgroundRefresh, progress_cb
 from ui.components.chrome import page_header
 from ui.state import navigation
@@ -21,7 +22,7 @@ from ui.views.overview import alerts, indexes, market_pulse, movers, snapshot
 _REFRESH_KEY = "overview_refresh"
 
 
-def _overview_refresh_task() -> dict:
+def _overview_refresh_task() -> StockRefreshSummary:
     """Refresh what the Overview shows: stock prices + all NSE indices (bhavcopy) + the board's
     ^-indices (market pulse + international) to today. Runs on a background task."""
     from core.background import set_task_progress  # noqa: PLC0415 — defer off boot
@@ -55,8 +56,8 @@ _REFRESH = BackgroundRefresh(
     _REFRESH_KEY,
     "Data refresh",
     cache_clearers=(_clear_overview_caches,),
-    summarize=lambda r: f"{r.get('index_rows', 0):,} index + {r.get('stock_rows', 0):,} stock rows"
-    if isinstance(r, dict)
+    summarize=lambda r: f"{r.index_rows:,} index + {r.stock_rows:,} stock rows"
+    if isinstance(r, StockRefreshSummary)
     else str(r),
 )
 

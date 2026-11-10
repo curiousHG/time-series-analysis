@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import polars as pl
@@ -23,6 +24,9 @@ from services.mf.nav_sources import ensure_nav_data
 from services.mf.nav_sources import refresh_nav_data as _refresh_nav
 from services.mf.screener import build_screener_df
 from stocks.constants import to_bare_symbol
+
+if TYPE_CHECKING:
+    from data.repositories.index_ohlcv import IndexValuation
 
 TTL_FAST = 300
 TTL_INTRADAY = 900
@@ -187,7 +191,7 @@ def load_index_chart_ohlcv(symbol: str, start: datetime | None = None, end: date
 
 
 @st.cache_data(ttl=TTL_INTRADAY, show_spinner=False)
-def load_index_valuation_cached(symbol: str) -> dict | None:
+def load_index_valuation_cached(symbol: str) -> "IndexValuation | None":
     """Latest P/E, P/B, Div Yield, turnover (₹ cr) for an index (from the bhavcopy)."""
     from data.repositories.index_ohlcv import get_latest_index_valuation  # noqa: PLC0415 — defer off boot
 

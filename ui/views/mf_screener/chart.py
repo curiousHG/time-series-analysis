@@ -211,7 +211,7 @@ def _portfolio_return_value(metrics: dict, return_choice: str, pf_returns) -> fl
         except Exception:
             return None
         ab = compute_alpha_beta(pf_returns.iloc[-252:], nifty)
-        return ab["alpha"] if ab is not None else None
+        return ab.alpha if ab is not None else None
     return None
 
 

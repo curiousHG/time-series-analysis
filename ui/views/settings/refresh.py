@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import time
 from collections import Counter
+from dataclasses import dataclass
 
 import pandas as pd
 import polars as pl
@@ -32,7 +33,7 @@ from services.mf.registry import (
     list_tracked,
     list_unavailable_funds,
 )
-from services.mf.sync import refresh_all_fund_data
+from services.mf.sync import FundRefreshSummary, refresh_all_fund_data
 from ui.components.background_refresh import BackgroundRefresh, progress_cb
 from ui.components.chrome import section_header
 from ui.components.freshness_banner import clear_freshness_cache
@@ -45,22 +46,34 @@ def _color_status(val: str) -> str:
     return STATUS_STYLES.get(val, "")
 
 
+@dataclass(frozen=True, slots=True)
+class FundFreshness:
+    """Tracked funds with their NAV and holdings freshness reports."""
+
+    names: list[str]
+    nav_names: list[str]
+    name_to_code: dict[str, int]
+    slugs: list[str]
+    nav: FreshnessReport
+    holdings: FreshnessReport
+
+
 @st.cache_data(ttl=300, show_spinner="Computing fund freshness…")
-def _fund_freshness() -> dict:
+def _fund_freshness() -> FundFreshness:
     """Freshness reports for every tracked fund — cached so the view keeps showing the last-known
     state while a background refresh runs (cleared when the refresh finishes)."""
     active = list_active()
     names = active["schemeName"].to_list()
     name_to_code = dict(zip(names, active["schemeCode"].to_list(), strict=True))
     slugs = [make_slug(n) for n in names]
-    return {
-        "names": names,
-        "nav_names": active.filter(pl.col("navStatus") != SourceStatus.UNAVAILABLE)["schemeName"].to_list(),
-        "name_to_code": name_to_code,
-        "slugs": slugs,
-        "nav": compute_nav_freshness(names, slugs),
-        "holdings": compute_holdings_freshness(names, slugs),
-    }
+    return FundFreshness(
+        names=names,
+        nav_names=active.filter(pl.col("navStatus") != SourceStatus.UNAVAILABLE)["schemeName"].to_list(),
+        name_to_code=name_to_code,
+        slugs=slugs,
+        nav=compute_nav_freshness(names, slugs),
+        holdings=compute_holdings_freshness(names, slugs),
+    )
 
 
 def _clear_fund_caches() -> None:
@@ -72,12 +85,12 @@ def _clear_fund_caches() -> None:
 
 def _fund_summary(r: object) -> str:
     parts = []
-    if isinstance(r, dict):
-        if "nav_updated" in r:
-            parts.append(f"NAV {r['nav_updated']:,} updated (+{r.get('nav_new_rows', 0):,} rows)")
-        if "holdings_updated" in r:
-            parts.append(f"holdings {r['holdings_updated']:,} updated")
-        failed = r.get("nav_failed", 0) + r.get("holdings_failed", 0)
+    if isinstance(r, FundRefreshSummary):
+        if r.nav is not None:
+            parts.append(f"NAV {r.nav.updated_count:,} updated (+{r.nav.new_rows_total:,} rows)")
+        if r.holdings is not None:
+            parts.append(f"holdings {r.holdings.success_count:,} updated")
+        failed = (len(r.nav.failures) if r.nav else 0) + (len(r.holdings.failures) if r.holdings else 0)
         if failed:
             parts.append(f"{failed:,} failed, see Last refresh")
     return ", ".join(parts) if parts else "no changes"
@@ -114,13 +127,13 @@ def render_status() -> None:
         return
 
     fr = _fund_freshness()
-    names = fr["names"]
+    names = fr.names
     dormant = int(tracked["dormant"].sum())
 
     def _run(scope: RefreshScope):
-        scoped = fr["nav_names"] if scope == RefreshScope.NAV else names
+        scoped = fr.nav_names if scope == RefreshScope.NAV else names
         return lambda: refresh_all_fund_data(
-            scoped, name_to_code=fr["name_to_code"], scope=scope, progress_cb=progress_cb(_REFRESH.key)
+            scoped, name_to_code=fr.name_to_code, scope=scope, progress_cb=progress_cb(_REFRESH.key)
         )
 
     with actions:
@@ -136,8 +149,8 @@ def render_status() -> None:
     else:
         _render_last_run()
 
-    st.markdown(_nav_line(fr["nav"]))
-    holdings_latest = _latest(fr["holdings"])
+    st.markdown(_nav_line(fr.nav))
+    holdings_latest = _latest(fr.holdings)
     if holdings_latest is None:
         st.markdown("No holdings stored yet.")
     else:
@@ -146,25 +159,27 @@ def render_status() -> None:
     _render_unresolved()
 
 
-def _phase_lines(result: dict) -> list[tuple[str, str, list[tuple[str, str]]]]:
+def _phase_lines(result: FundRefreshSummary) -> list[tuple[str, str, list[tuple[str, str]]]]:
     """(phase, one-line outcome, failures) for each phase the run covered."""
     lines = []
-    if "nav_updated" in result:
+    if result.nav is not None:
+        nav = result.nav
         lines.append(
             (
                 "NAV",
-                f"{plural(result['nav_updated'], 'fund')} updated (+{result.get('nav_new_rows', 0):,} rows), "
-                f"{result.get('nav_skipped', 0):,} already current, {result.get('nav_failed', 0):,} failed.",
-                result.get("nav_failures", []),
+                f"{plural(nav.updated_count, 'fund')} updated (+{nav.new_rows_total:,} rows), "
+                f"{nav.skipped_count:,} already current, {len(nav.failures):,} failed.",
+                nav.failures,
             )
         )
-    if "holdings_updated" in result:
+    if result.holdings is not None:
+        holdings = result.holdings
         lines.append(
             (
                 "Holdings",
-                f"{plural(result['holdings_updated'], 'fund')} updated ({result.get('holdings_rows', 0):,} rows), "
-                f"{result.get('holdings_failed', 0):,} failed.",
-                result.get("holdings_failures", []),
+                f"{plural(holdings.success_count, 'fund')} updated ({holdings.total_holdings:,} rows), "
+                f"{len(holdings.failures):,} failed.",
+                holdings.failures,
             )
         )
     return lines
@@ -183,7 +198,9 @@ def _render_last_run() -> None:
         if last.status == TaskStatus.FAILED:
             st.error(f"The refresh stopped with an error: {last.error}")
             return
-        for phase, line, failures in _phase_lines(last.result if isinstance(last.result, dict) else {}):
+        for phase, line, failures in _phase_lines(
+            last.result if isinstance(last.result, FundRefreshSummary) else FundRefreshSummary()
+        ):
             st.markdown(f"{phase}: {line}")
             if failures:
                 _render_failures(phase, failures)
@@ -239,9 +256,9 @@ def render_per_fund_status() -> None:
         return
     with st.expander("Per-fund NAV and holdings status"):
         fr = _fund_freshness()
-        names = fr["names"]
+        names = fr.names
         short_by_name = get_short_names(tuple(names))
-        nav_report, holdings_report = fr["nav"], fr["holdings"]
+        nav_report, holdings_report = fr.nav, fr.holdings
         _status_table(
             title="NAV",
             note=f"{nav_report.stale_count} of {nav_report.total} funds are behind the freshness threshold.",

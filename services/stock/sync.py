@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import date as _date
 from datetime import timedelta as _timedelta
 from typing import TYPE_CHECKING
@@ -137,7 +138,41 @@ def backfill_indices_history(*, years: int = 12, progress_cb: Callable[..., None
     return total
 
 
-def refresh_all_stock_data(*, progress_cb: Callable[..., None] | None = None) -> dict:
+@dataclass(frozen=True, slots=True)
+class StockRefreshSummary:
+    """Row counts from one full stock and index refresh."""
+
+    stock_rows: int
+    index_rows: int
+    etfs: int
+    metrics: int
+
+
+@dataclass(frozen=True, slots=True)
+class StockDataHealth:
+    """Counts, last-updated dates and staleness of stored stock and index data."""
+
+    stocks: int
+    stock_last: _date | None
+    stock_stale_days: int | None
+    indices: int
+    index_last: _date | None
+    index_stale_days: int | None
+    index_first: _date | None
+    with_metrics: int
+    with_fundamentals: int
+    unavailable: int
+
+
+@dataclass(frozen=True, slots=True)
+class OhlcvRepairResult:
+    """Symbols whose corrupt OHLCV was re-fetched, and those that failed."""
+
+    repaired: list[str]
+    failed: list[str]
+
+
+def refresh_all_stock_data(*, progress_cb: Callable[..., None] | None = None) -> StockRefreshSummary:
     """Full stock + index refresh for the background task, then recompute stock metrics. Returns per-step counts."""
     from data.repositories.stock_ohlcv import sync_nse_etf_universe  # noqa: PLC0415 — defer off boot
 
@@ -149,10 +184,10 @@ def refresh_all_stock_data(*, progress_cb: Callable[..., None] | None = None) ->
     _report(progress_cb, phase="Metrics", done=0, total=1)
     metrics = recompute_all_stock_metrics()
     _report(progress_cb, phase="Metrics", done=1, total=1)
-    return {"stock_rows": stock_rows, "index_rows": index_rows, "etfs": etfs, "metrics": metrics}
+    return StockRefreshSummary(stock_rows=stock_rows, index_rows=index_rows, etfs=etfs, metrics=metrics)
 
 
-def stock_data_health() -> dict:
+def stock_data_health() -> StockDataHealth:
     """Counts + last-updated dates + staleness for stock/index data (Settings data-health view)."""
     from sqlmodel import text  # noqa: PLC0415
 
@@ -179,18 +214,18 @@ def stock_data_health() -> dict:
     def _bdays_old(d) -> int | None:
         return business_days_between(d, today) if d else None
 
-    return {
-        "stocks": stocks,
-        "stock_last": stock_last,
-        "stock_stale_days": _bdays_old(stock_last),
-        "indices": indices,
-        "index_last": index_last,
-        "index_stale_days": _bdays_old(index_last),
-        "index_first": index_first,
-        "with_metrics": with_metrics,
-        "with_fundamentals": with_fundamentals,
-        "unavailable": unavailable,
-    }
+    return StockDataHealth(
+        stocks=stocks,
+        stock_last=stock_last,
+        stock_stale_days=_bdays_old(stock_last),
+        indices=indices,
+        index_last=index_last,
+        index_stale_days=_bdays_old(index_last),
+        index_first=index_first,
+        with_metrics=with_metrics,
+        with_fundamentals=with_fundamentals,
+        unavailable=unavailable,
+    )
 
 
 def find_corrupt_ohlcv_symbols(*, jump: float = 5.0) -> list[str]:
@@ -213,9 +248,9 @@ def find_corrupt_ohlcv_symbols(*, jump: float = 5.0) -> list[str]:
     return [r[0] for r in rows]
 
 
-def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] | None = None) -> dict:
+def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] | None = None) -> OhlcvRepairResult:
     """Re-fetch full history for `find_corrupt_ohlcv_symbols` hits (UPSERT, no delete), then recompute their
-    metrics. Returns {'repaired': [...], 'failed': [...]}."""
+    metrics. Returns the repaired and failed symbols."""
     from data.repositories.ohlcv_watermark import clear_stock_ohlcv_status  # noqa: PLC0415
     from data.repositories.stock_ohlcv import refetch_stock_full  # noqa: PLC0415
     from services.stock.metrics import recompute_price_metrics  # noqa: PLC0415
@@ -237,7 +272,7 @@ def repair_corrupt_ohlcv(*, jump: float = 5.0, progress_cb: Callable[..., None] 
     if repaired:
         recompute_price_metrics(repaired)
     logger.info("repair_corrupt_ohlcv: repaired %d, failed %d", len(repaired), len(failed))
-    return {"repaired": repaired, "failed": failed}
+    return OhlcvRepairResult(repaired=repaired, failed=failed)
 
 
 def refetch_all_stocks(*, progress_cb: Callable[..., None] | None = None) -> int:

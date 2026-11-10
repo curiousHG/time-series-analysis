@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import pandas as pd
 import quantstats as qs
@@ -99,12 +100,22 @@ def absolute_return_or_nan(nav: pd.Series, days_back: int) -> float:
     return end / start - 1.0
 
 
+@dataclass(frozen=True, slots=True)
+class AlphaBeta:
+    """Jensen alpha (annualised), beta and R-squared against a benchmark, over `n_overlap` aligned days."""
+
+    alpha: float
+    beta: float
+    r2: float
+    n_overlap: int
+
+
 def compute_alpha_beta(
     fund_returns: pd.Series,
     benchmark_returns: pd.Series,
     *,
     min_overlap: int = 60,
-) -> dict | None:
+) -> AlphaBeta | None:
     """Jensen alpha/beta of fund vs benchmark daily returns (decimals).
 
     None when < `min_overlap` aligned days or benchmark variance is zero.
@@ -119,7 +130,7 @@ def compute_alpha_beta(
     beta = float(cov / var)
     alpha = float((common["f"].mean() - beta * common["b"].mean()) * TRADING_DAYS)
     r2 = float(common["f"].corr(common["b"]) ** 2)
-    return {"alpha": alpha, "beta": beta, "r2": r2, "n_overlap": len(common)}
+    return AlphaBeta(alpha=alpha, beta=beta, r2=r2, n_overlap=len(common))
 
 
 def compute_metrics_from_returns(returns: pd.Series) -> dict:

@@ -20,13 +20,13 @@ def render_valuation(symbol: str) -> None:
     """Latest P/E · P/B · Div Yield · turnover for an NSE index (from the bhavcopy). Foreign `^`
     indices have none — the row is simply skipped."""
     val = load_index_valuation_cached(symbol)
-    if not val:
+    if val is None:
         return
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("P/E", f"{val['pe']:.1f}" if val.get("pe") is not None else EM_DASH)
-    c2.metric("P/B", f"{val['pb']:.2f}" if val.get("pb") is not None else EM_DASH)
-    c3.metric("Div Yield", f"{val['div_yield']:.2f}%" if val.get("div_yield") is not None else EM_DASH)
-    c4.metric("Turnover", f"₹{val['turnover_cr']:,.0f} Cr" if val.get("turnover_cr") is not None else EM_DASH)
+    c1.metric("P/E", f"{val.pe:.1f}" if val.pe is not None else EM_DASH)
+    c2.metric("P/B", f"{val.pb:.2f}" if val.pb is not None else EM_DASH)
+    c3.metric("Div Yield", f"{val.div_yield:.2f}%" if val.div_yield is not None else EM_DASH)
+    c4.metric("Turnover", f"₹{val.turnover_cr:,.0f} Cr" if val.turnover_cr is not None else EM_DASH)
 
 
 def render_trailing(idf: pl.DataFrame) -> None:

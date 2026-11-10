@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import defaultdict
+from dataclasses import dataclass
 
 import polars as pl
 from sqlalchemy import text
@@ -46,8 +47,26 @@ def detect_nav_glitches(nav: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class NavGlitchRepair:
+    """Spike rows removed (or found, on a dry run), the schemes they sit in and a sample of them."""
+
+    rows_removed: int
+    schemes_affected: int
+    samples: list[dict]
+
+
+@dataclass(frozen=True, slots=True)
+class NavScaleBreakRepair:
+    """Funds and rows rescaled (or found, on a dry run) and the funds skipped by the CAGR sanity gate."""
+
+    funds_rescaled: int
+    rows_rescaled: int
+    skipped: list[dict]
+
+
 @timeit("nav.repair_nav_glitches")
-def repair_nav_glitches(scheme_codes: list[int] | None = None, dry_run: bool = False) -> dict:
+def repair_nav_glitches(scheme_codes: list[int] | None = None, dry_run: bool = False) -> NavGlitchRepair:
     """Delete spurious single-day NAV spikes from mf_nav (the bad point only). `dry_run=True` reports without
     deleting."""
     with get_session() as session:
@@ -56,29 +75,29 @@ def repair_nav_glitches(scheme_codes: list[int] | None = None, dry_run: bool = F
             stmt = stmt.where(col(MfNav.scheme_code).in_(scheme_codes))
         rows = session.exec(stmt).all()
     if not rows:
-        return {"rows_removed": 0, "schemes_affected": 0, "samples": []}
+        return NavGlitchRepair(rows_removed=0, schemes_affected=0, samples=[])
 
     nav = pl.DataFrame({"scheme_code": [r[0] for r in rows], "date": [r[1] for r in rows], "nav": [r[2] for r in rows]})
     glitches = detect_nav_glitches(nav)
     if glitches.height == 0:
-        return {"rows_removed": 0, "schemes_affected": 0, "samples": []}
+        return NavGlitchRepair(rows_removed=0, schemes_affected=0, samples=[])
 
-    summary = {
-        "rows_removed": glitches.height,
-        "schemes_affected": int(glitches["scheme_code"].n_unique()),
-        "samples": glitches.head(10).to_dicts(),
-    }
+    summary = NavGlitchRepair(
+        rows_removed=glitches.height,
+        schemes_affected=int(glitches["scheme_code"].n_unique()),
+        samples=glitches.head(10).to_dicts(),
+    )
     if dry_run:
-        logger.info("repair_nav_glitches dry-run: %(rows_removed)d row(s), %(schemes_affected)d scheme(s)", summary)
+        logger.info(
+            "repair_nav_glitches dry-run: %d row(s), %d scheme(s)", summary.rows_removed, summary.schemes_affected
+        )
         return summary
 
     with get_session() as session:
         for (code,), grp in glitches.group_by("scheme_code"):
             session.exec(delete(MfNav).where(MfNav.scheme_code == code, col(MfNav.date).in_(grp["date"].to_list())))
         session.commit()
-    logger.warning(
-        "Repaired %d glitch NAV row(s) across %d scheme(s)", summary["rows_removed"], summary["schemes_affected"]
-    )
+    logger.warning("Repaired %d glitch NAV row(s) across %d scheme(s)", summary.rows_removed, summary.schemes_affected)
     return summary
 
 
@@ -98,7 +117,7 @@ def _scale_break_factor(ratio: float) -> float | None:
 
 
 @timeit("nav.repair_nav_scale_breaks")
-def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool = False) -> dict:
+def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool = False) -> NavScaleBreakRepair:
     """Rescale wrong-scale NAV segments so each fund's history is one continuous scale.
 
     Per non-segregated fund, multiply pre-break NAVs by the (compounded) break factor. A post-fix
@@ -152,7 +171,7 @@ def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool
             continue
         fixes.append((code, [(d, f) for d, f, _ in brks]))
 
-    summary = {"funds_rescaled": len(fixes), "rows_rescaled": 0, "skipped": skipped}
+    summary = NavScaleBreakRepair(funds_rescaled=len(fixes), rows_rescaled=0, skipped=skipped)
     if dry_run or not fixes:
         if dry_run:
             logger.info("repair_nav_scale_breaks dry-run: %d fund(s), %d skipped", len(fixes), len(skipped))
@@ -169,6 +188,5 @@ def repair_nav_scale_breaks(scheme_codes: list[int] | None = None, dry_run: bool
                 )
                 total += result.rowcount
         session.commit()
-    summary["rows_rescaled"] = total
     logger.warning("Rescaled %d scale-break NAV row(s) across %d fund(s)", total, len(fixes))
-    return summary
+    return NavScaleBreakRepair(funds_rescaled=len(fixes), rows_rescaled=total, skipped=skipped)

@@ -135,26 +135,26 @@ def _render_momentum(symbol: str) -> None:
     if m is None:
         st.info("No price history cached for this symbol.")
         return
-    pos = m["pos_52w"]
+    pos = m.pos_52w
     render_kpi_row(
         [
-            Kpi("Last close", f"₹{m['last_close']:,.1f}", help=f"As of {m['as_of']:%d %b %Y}"),
+            Kpi("Last close", f"₹{m.last_close:,.1f}", help=f"As of {m.as_of:%d %b %Y}"),
             Kpi(
                 "52w range position",
                 f"{pos * 100:.0f}%" if pos is not None else None,
-                help=f"52w low ₹{m['low_52w']:,.0f} · high ₹{m['high_52w']:,.0f}",
+                help=f"52w low ₹{m.low_52w:,.0f} · high ₹{m.high_52w:,.0f}",
             ),
-            Kpi("From 52w high", m["dist_from_high"], fmt="pct"),
-            Kpi("vs 50-DMA", m["vs_dma_50"], fmt="pct"),
-            Kpi("vs 200-DMA", m["vs_dma_200"], fmt="pct"),
+            Kpi("From 52w high", m.dist_from_high, fmt="pct"),
+            Kpi("vs 50-DMA", m.vs_dma_50, fmt="pct"),
+            Kpi("vs 200-DMA", m.vs_dma_200, fmt="pct"),
         ]
     )
     render_kpi_row(
         [
-            Kpi("1M", m["ret_1m"], fmt="pct"),
-            Kpi("3M", m["ret_3m"], fmt="pct"),
-            Kpi("6M", m["ret_6m"], fmt="pct"),
-            Kpi("1Y", m["ret_1y"], fmt="pct"),
+            Kpi("1M", m.ret_1m, fmt="pct"),
+            Kpi("3M", m.ret_3m, fmt="pct"),
+            Kpi("6M", m.ret_6m, fmt="pct"),
+            Kpi("1Y", m.ret_1y, fmt="pct"),
         ]
     )
 

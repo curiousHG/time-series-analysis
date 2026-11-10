@@ -57,6 +57,14 @@ class HoldingsRefreshResult:
     failures: list[tuple[str, str]] = field(default_factory=list)
 
 
+@dataclass(frozen=True, slots=True)
+class FundRefreshSummary:
+    """Outcome of a fund refresh; a phase the scope did not cover is None."""
+
+    nav: NavUpdateResult | None = None
+    holdings: HoldingsRefreshResult | None = None
+
+
 def _emit(progress_cb: ProgressCb | None, event: FetchEvent) -> None:
     if progress_cb is None:
         return
@@ -189,14 +197,15 @@ def refresh_all_fund_data(
     name_to_code: dict[str, int] | None = None,
     scope: RefreshScope = RefreshScope.ALL,
     progress_cb: Callable[..., None] | None = None,
-) -> dict:
+) -> FundRefreshSummary:
     """Run NAV and/or holdings updates for a set of tracked funds, suitable for a background task.
 
     `scope` is 'nav', 'holdings', or 'all'. `progress_cb(**fields)` receives live phase/done/total
-    (e.g. phase='NAV', done=12, total=99) so a polling UI can show progress. Returns a summary dict:
-    per-phase counts plus `nav_failures` / `holdings_failures` as (scheme name, reason) pairs.
+    (e.g. phase='NAV', done=12, total=99) so a polling UI can show progress. Returns a summary holding
+    each covered phase's result, whose `failures` are (scheme name, reason) pairs.
     """
-    out: dict = {}
+    nav: NavUpdateResult | None = None
+    holdings: HoldingsRefreshResult | None = None
     phases = [
         label
         for label, phase_scope in (("NAV", RefreshScope.NAV), ("Holdings", RefreshScope.HOLDINGS))
@@ -222,13 +231,6 @@ def refresh_all_fund_data(
             _log_event("NAV", ev)
 
         nav = update_nav_incremental(scheme_names, name_to_code=name_to_code, progress_cb=_nav_cb)
-        out |= {
-            "nav_updated": nav.updated_count,
-            "nav_skipped": nav.skipped_count,
-            "nav_new_rows": nav.new_rows_total,
-            "nav_failed": len(nav.failures),
-            "nav_failures": nav.failures,
-        }
         if progress_cb:
             progress_cb(
                 message=f"NAV done — {nav.updated_count:,} updated (+{nav.new_rows_total:,} rows), "
@@ -243,19 +245,25 @@ def refresh_all_fund_data(
             _log_event("Holdings", ev)
 
         holdings = refresh_holdings_for_schemes(scheme_names, progress_cb=_hold_cb)
-        out |= {
-            "holdings_updated": holdings.success_count,
-            "holdings_rows": holdings.total_holdings,
-            "holdings_failed": len(holdings.failures),
-            "holdings_failures": holdings.failures,
-        }
         if progress_cb:
             progress_cb(
                 message=f"Holdings done — {holdings.success_count:,} updated "
                 f"({holdings.total_holdings:,} rows), {len(holdings.failures):,} failed."
             )
 
-    logger.info(
-        "refresh_all_fund_data(scope=%s): %s", scope, {k: v for k, v in out.items() if not k.endswith("_failures")}
-    )
-    return out
+    counts: dict[str, int] = {}
+    if nav is not None:
+        counts |= {
+            "nav_updated": nav.updated_count,
+            "nav_skipped": nav.skipped_count,
+            "nav_new_rows": nav.new_rows_total,
+            "nav_failed": len(nav.failures),
+        }
+    if holdings is not None:
+        counts |= {
+            "holdings_updated": holdings.success_count,
+            "holdings_rows": holdings.total_holdings,
+            "holdings_failed": len(holdings.failures),
+        }
+    logger.info("refresh_all_fund_data(scope=%s): %s", scope, counts)
+    return FundRefreshSummary(nav=nav, holdings=holdings)

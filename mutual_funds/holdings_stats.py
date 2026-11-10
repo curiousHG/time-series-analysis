@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import polars as pl
 from sqlmodel import func, select
 
@@ -136,7 +138,31 @@ def credit_breakdown(holdings: pl.DataFrame) -> dict[str, float]:
     return {row["credit_rating"]: float(row["w"]) / total * 100.0 for row in grouped.iter_rows(named=True)}
 
 
-def quick_stats(slug: str) -> dict:
+@dataclass(frozen=True, slots=True)
+class HoldingsQuickStats:
+    """Asset, market-cap, concentration and credit-rating stats derived from a fund's holdings."""
+
+    n_holdings: int
+    asset_breakdown: dict[str, float]
+    market_cap_breakdown: dict[str, float]
+    credit_breakdown: dict[str, float]
+    pct_equity: float
+    pct_debt: float
+    pct_cash: float
+    pct_largecap: float
+    pct_midcap: float
+    pct_smallcap: float
+    pct_other_mcap: float
+    pct_top3: float | None
+    pct_top5: float | None
+    pct_top10: float | None
+    pct_sovereign: float
+    pct_corporate_high_grade: float
+    pct_b_rated: float
+    pct_poor_rated: float
+
+
+def quick_stats(slug: str) -> HoldingsQuickStats:
     """One-shot summary of derivable stats for a fund. Used in MF Analysis Holdings tab and screener."""
     holdings = holdings_for_slug(slug)
     asset = asset_breakdown(slug)
@@ -164,23 +190,23 @@ def quick_stats(slug: str) -> dict:
     pct_b_rated = _sum_matching(credit, "bbb", "bb", "b-", "b+", "b ")
     pct_poor = _sum_matching(credit, "below", "unrated", "default", "d ", "ccc", "c-rated")
 
-    return {
-        "n_holdings": holdings.height,
-        "asset_breakdown": asset,
-        "market_cap_breakdown": mcap,
-        "credit_breakdown": credit,
-        "pct_equity": pct_equity,
-        "pct_debt": pct_debt,
-        "pct_cash": pct_cash,
-        "pct_largecap": pct_largecap,
-        "pct_midcap": pct_midcap,
-        "pct_smallcap": pct_smallcap,
-        "pct_other_mcap": pct_other_mcap,
-        "pct_top3": concentration(holdings, 3),
-        "pct_top5": concentration(holdings, 5),
-        "pct_top10": concentration(holdings, 10),
-        "pct_sovereign": pct_sovereign,
-        "pct_corporate_high_grade": pct_corporate,
-        "pct_b_rated": pct_b_rated,
-        "pct_poor_rated": pct_poor,
-    }
+    return HoldingsQuickStats(
+        n_holdings=holdings.height,
+        asset_breakdown=asset,
+        market_cap_breakdown=mcap,
+        credit_breakdown=credit,
+        pct_equity=pct_equity,
+        pct_debt=pct_debt,
+        pct_cash=pct_cash,
+        pct_largecap=pct_largecap,
+        pct_midcap=pct_midcap,
+        pct_smallcap=pct_smallcap,
+        pct_other_mcap=pct_other_mcap,
+        pct_top3=concentration(holdings, 3),
+        pct_top5=concentration(holdings, 5),
+        pct_top10=concentration(holdings, 10),
+        pct_sovereign=pct_sovereign,
+        pct_corporate_high_grade=pct_corporate,
+        pct_b_rated=pct_b_rated,
+        pct_poor_rated=pct_poor,
+    )

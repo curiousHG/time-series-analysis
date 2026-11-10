@@ -7,6 +7,7 @@ labelling matters: "P75 vs screened universe", not "vs sector".
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import polars as pl
@@ -46,7 +47,25 @@ def fundamentals_percentiles(df: pl.DataFrame, cols: dict[str, bool] | None = No
     return df.select("symbol", *exprs)
 
 
-def momentum_stats(symbol: str) -> dict | None:
+@dataclass(frozen=True, slots=True)
+class MomentumStats:
+    """Price momentum: 52-week range, trailing returns and position against the 50/200-day averages."""
+
+    last_close: float
+    as_of: datetime
+    high_52w: float
+    low_52w: float
+    pos_52w: float | None
+    dist_from_high: float | None
+    ret_1m: float | None
+    ret_3m: float | None
+    ret_6m: float | None
+    ret_1y: float | None
+    vs_dma_50: float | None
+    vs_dma_200: float | None
+
+
+def momentum_stats(symbol: str) -> MomentumStats | None:
     """Price momentum for one stock (yfinance or bare NSE form) from stock_ohlcv.
 
     Returns 52-week high/low/position, distance from high, trailing 1M/3M/6M/1Y returns,
@@ -74,20 +93,20 @@ def momentum_stats(symbol: str) -> dict | None:
 
     dma_50 = float(close.iloc[-50:].mean()) if len(close) >= 50 else None
     dma_200 = float(close.iloc[-200:].mean()) if len(close) >= 200 else None
-    return {
-        "last_close": last,
-        "as_of": close.index[-1],
-        "high_52w": hi52,
-        "low_52w": lo52,
-        "pos_52w": (last - lo52) / (hi52 - lo52) if hi52 > lo52 else None,
-        "dist_from_high": last / hi52 - 1 if hi52 > 0 else None,
-        "ret_1m": _trailing(21),
-        "ret_3m": _trailing(63),
-        "ret_6m": _trailing(126),
-        "ret_1y": _trailing(252),
-        "vs_dma_50": last / dma_50 - 1 if dma_50 else None,
-        "vs_dma_200": last / dma_200 - 1 if dma_200 else None,
-    }
+    return MomentumStats(
+        last_close=last,
+        as_of=close.index[-1],
+        high_52w=hi52,
+        low_52w=lo52,
+        pos_52w=(last - lo52) / (hi52 - lo52) if hi52 > lo52 else None,
+        dist_from_high=last / hi52 - 1 if hi52 > 0 else None,
+        ret_1m=_trailing(21),
+        ret_3m=_trailing(63),
+        ret_6m=_trailing(126),
+        ret_1y=_trailing(252),
+        vs_dma_50=last / dma_50 - 1 if dma_50 else None,
+        vs_dma_200=last / dma_200 - 1 if dma_200 else None,
+    )
 
 
 def quarterly_trend(symbol: str) -> pl.DataFrame:

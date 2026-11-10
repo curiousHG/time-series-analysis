@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import polars as pl
 import streamlit as st
 
@@ -16,7 +18,14 @@ from ui.views.portfolio import flows_tab, overview_tab, positions_tab, risk_tab
 _REFRESH_KEY = "portfolio_refresh"
 
 
-def _portfolio_refresh_task(names: list[str], slugs: list[str]) -> dict:
+@dataclass(frozen=True, slots=True)
+class PortfolioRefreshOutcome:
+    """Labels of the refresh steps that raised."""
+
+    failed: list[str]
+
+
+def _portfolio_refresh_task(names: list[str], slugs: list[str]) -> PortfolioRefreshOutcome:
     """Refetch NAV + holdings for the portfolio's active funds and recompute metrics. Runs on a
     background task; a failing source is recorded, not fatal."""
     from core.background import set_task_progress  # noqa: PLC0415 — defer off boot
@@ -37,7 +46,7 @@ def _portfolio_refresh_task(names: list[str], slugs: list[str]) -> dict:
         except Exception:
             failed.append(label)
     set_task_progress(_REFRESH_KEY, phase="Done", done=len(steps), total=len(steps))
-    return {"failed": failed}
+    return PortfolioRefreshOutcome(failed=failed)
 
 
 def _clear_portfolio_caches() -> None:
@@ -49,11 +58,7 @@ _REFRESH = BackgroundRefresh(
     _REFRESH_KEY,
     "Portfolio refresh",
     cache_clearers=(_clear_portfolio_caches,),
-    summarize=lambda r: (
-        f"issues — {', '.join(r['failed'])} failed"
-        if isinstance(r, dict) and r.get("failed")
-        else "NAV, holdings & metrics updated"
-    ),
+    summarize=lambda r: (f"issues — {', '.join(r.failed)} failed" if r.failed else "NAV, holdings & metrics updated"),
 )
 
 

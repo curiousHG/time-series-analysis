@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import streamlit as st
 
 from core.background import set_task_progress
-from services.mf.backfill import backfill_missing
+from services.mf.backfill import BackfillResult, backfill_missing
 from ui.components.background_refresh import BackgroundRefresh
 from ui.constants import BACKFILL_HELP_TEXT
 from ui.state.loaders import load_metrics_cached, load_screener_df_cached
@@ -20,7 +20,9 @@ _REFRESH = BackgroundRefresh(
     _BACKFILL_KEY,
     "MF backfill",
     cache_clearers=(load_screener_df_cached.clear, load_metrics_cached.clear),
-    summarize=lambda r: f"fetched {len(r['fetched'])}, failed {len(r['failed'])}" if isinstance(r, dict) else str(r),
+    summarize=lambda r: f"fetched {len(r.fetched)}, failed {len(r.failed)}"
+    if isinstance(r, BackfillResult)
+    else str(r),
 )
 
 DISPLAY_ORDER_KEY = "screener_display_order"
@@ -55,7 +57,7 @@ def render_inline_backfill(filtered: pl.DataFrame, n_col, btn_col) -> None:
             disabled=not has_rows or _REFRESH.is_running(),
         )
 
-    def _task() -> dict:
+    def _task() -> BackfillResult:
         names = pick_backfill_names(filtered, st.session_state.get(DISPLAY_ORDER_KEY), int(batch))
         return backfill_missing(
             scheme_names=names,

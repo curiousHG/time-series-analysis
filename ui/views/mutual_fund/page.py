@@ -3,6 +3,7 @@
 Orchestrates fund selection, one FundContext load and the per-tab renderers.
 """
 
+from dataclasses import dataclass
 from datetime import date
 
 import polars as pl
@@ -34,7 +35,16 @@ from ui.views.mutual_fund import selector as selector_view
 from ui.views.mutual_fund.context import FundContext
 
 
-def _held_position(scheme_name: str) -> dict | None:
+@dataclass(frozen=True, slots=True)
+class HeldPosition:
+    """Value, portfolio weight and XIRR of the user's stake in a fund."""
+
+    value: float
+    weight_pct: float
+    xirr: float | None
+
+
+def _held_position(scheme_name: str) -> HeldPosition | None:
     """Value / portfolio weight / XIRR of the user's stake in this fund, or None."""
     try:
         from services.portfolio.analytics import compute_xirr, fund_values_from_nav  # noqa: PLC0415 — off boot path
@@ -50,11 +60,11 @@ def _held_position(scheme_name: str) -> dict | None:
             return None
         flows = signed_flows(mapped, scheme_name).to_pandas()
         as_of = portfolio_nav.filter(pl.col("schemeName") == scheme_name)["date"].max()
-        return {
-            "value": values[scheme_name],
-            "weight_pct": values[scheme_name] / sum(values.values()) * 100,
-            "xirr": compute_xirr(flows, values[scheme_name], as_of),
-        }
+        return HeldPosition(
+            value=values[scheme_name],
+            weight_pct=values[scheme_name] / sum(values.values()) * 100,
+            xirr=compute_xirr(flows, values[scheme_name], as_of),
+        )
     except Exception:
         return None
 
@@ -165,7 +175,7 @@ if meta.get("riskLevel"):
     _rc = _RISK_CHIP_COLOR.get(meta["riskLevel"], "green")
     chips.append(f":{_rc}-background[**{meta['riskLevel']} risk**]")
 if held:
-    chips.append(f":green-background[**Held · {held['weight_pct']:.1f}% of portfolio**]")
+    chips.append(f":green-background[**Held · {held.weight_pct:.1f}% of portfolio**]")
 
 _identity_bits = [amc]
 if benchmark:
@@ -220,8 +230,8 @@ render_kpi_row(
     ]
 )
 if held:
-    xirr_part = f" · XIRR **{held['xirr'] * 100:+.1f}%**" if held.get("xirr") is not None else ""
-    st.caption(f"Your position: **₹{held['value']:,.0f}**{xirr_part}")
+    xirr_part = f" · XIRR **{held.xirr * 100:+.1f}%**" if held.xirr is not None else ""
+    st.caption(f"Your position: **₹{held.value:,.0f}**{xirr_part}")
 
 ctx = FundContext(
     scheme_name=selected,

@@ -53,13 +53,13 @@ def main() -> int:
 
     if args.repair:
         g = repair_nav_glitches()
-        log.info("NAV repair: removed %d glitch row(s) across %d scheme(s).", g["rows_removed"], g["schemes_affected"])
+        log.info("NAV repair: removed %d glitch row(s) across %d scheme(s).", g.rows_removed, g.schemes_affected)
         sb = repair_nav_scale_breaks()
         log.info(
             "NAV repair: rescaled %d scale-break row(s) across %d fund(s) (%d skipped).",
-            sb["rows_rescaled"],
-            sb["funds_rescaled"],
-            len(sb["skipped"]),
+            sb.rows_rescaled,
+            sb.funds_rescaled,
+            len(sb.skipped),
         )
 
     if args.all:

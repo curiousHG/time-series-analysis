@@ -6,6 +6,7 @@ import contextlib
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from core.database import get_session
@@ -93,6 +94,15 @@ def retry_unavailable(scheme_name: str) -> dict[str, SourceStatus]:
     return results
 
 
+@dataclass(frozen=True, slots=True)
+class BackfillResult:
+    """Tagged `source: scheme name` entries fetched, failed or skipped by a backfill run."""
+
+    fetched: list[str]
+    failed: list[str]
+    skipped: list[str]
+
+
 def backfill_missing(
     *,
     scheme_names: list[str] | None = None,
@@ -101,15 +111,15 @@ def backfill_missing(
     submit_delay: float = 0.05,
     max_workers: int = 8,
     progress_cb: Callable[[int, int, str, str], None] | None = None,
-) -> dict[str, list[str]]:
-    """Fetch missing nav/metadata/holdings for tracked funds, rate limited; returns {fetched, failed, skipped}."""
+) -> BackfillResult:
+    """Fetch missing nav/metadata/holdings for tracked funds, rate limited; returns what was fetched and failed."""
     if scheme_names is not None:
         for name in scheme_names:
             upsert_registry(name)
 
     tracked = list_tracked()
     if tracked.is_empty():
-        return {"fetched": [], "failed": [], "skipped": []}
+        return BackfillResult(fetched=[], failed=[], skipped=[])
 
     rows_by_name = {row["schemeName"]: row for row in tracked.iter_rows(named=True)}
 
@@ -143,7 +153,7 @@ def backfill_missing(
     todo = todo[:max_per_run]
 
     if not todo:
-        return {"fetched": [], "failed": [], "skipped": []}
+        return BackfillResult(fetched=[], failed=[], skipped=[])
 
     def _do_one(scheme_name: str, source: BackfillSource) -> tuple[str, BackfillSource, SourceStatus]:
         try:
@@ -183,4 +193,4 @@ def backfill_missing(
                 failed.append(tag)
 
     logger.info("Backfill done — fetched %d, failed %d", len(fetched), len(failed))
-    return {"fetched": fetched, "failed": failed, "skipped": []}
+    return BackfillResult(fetched=fetched, failed=failed, skipped=[])

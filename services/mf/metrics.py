@@ -190,7 +190,7 @@ def compute_metrics_for_scheme(
     if benchmark_returns is not None and not benchmark_returns.empty:
         ab = compute_alpha_beta(last_year, benchmark_returns)
         if ab is not None:
-            alpha, beta, r2 = ab["alpha"], ab["beta"], ab["r2"]
+            alpha, beta, r2 = ab.alpha, ab.beta, ab.r2
         te = compute_tracking_error(scheme_name, benchmark_returns)
         if te is not None:
             tracking_err = te
