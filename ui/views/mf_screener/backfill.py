@@ -10,7 +10,7 @@ from core.background import set_task_progress
 from services.mf.backfill import BackfillResult, backfill_missing
 from ui.components.background_refresh import BackgroundRefresh
 from ui.constants import BACKFILL_HELP_TEXT
-from ui.state.loaders import load_metrics_cached, load_screener_df_cached
+from ui.state.loaders import clear_fund_data_caches
 
 if TYPE_CHECKING:
     import polars as pl
@@ -19,7 +19,7 @@ _BACKFILL_KEY = "mf_screener_backfill"
 _REFRESH = BackgroundRefresh(
     _BACKFILL_KEY,
     "MF backfill",
-    cache_clearers=(load_screener_df_cached.clear, load_metrics_cached.clear),
+    cache_clearers=(clear_fund_data_caches,),
     summarize=lambda r: f"fetched {len(r.fetched)}, failed {len(r.failed)}"
     if isinstance(r, BackfillResult)
     else str(r),

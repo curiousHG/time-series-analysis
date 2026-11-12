@@ -8,13 +8,6 @@ import polars as pl
 import streamlit as st
 
 from core.enums import SourceStatus
-from data.repositories.holdings import (
-    load_assets,
-    load_holdings,
-    load_latest_asset_allocation,
-    load_latest_holdings,
-    load_sectors,
-)
 from mutual_funds.display import make_slug
 from mutual_funds.holdings_stats import quick_stats
 from services.mf.registry import load_registry
@@ -22,7 +15,7 @@ from services.portfolio.analytics import fund_values_from_nav, lookthrough_expos
 from services.portfolio.value import get_mapped_data
 from ui.components.metric_tiles import Kpi, render_kpi_row
 from ui.components.mutual_fund_holdings import render_holdings_table
-from ui.state.loaders import load_txn_data
+from ui.state.loaders import load_fund_holdings_detail_cached, load_holdings_db_cached, load_txn_data
 
 if TYPE_CHECKING:
     from ui.views.mutual_fund.context import FundContext
@@ -36,14 +29,13 @@ def render(ctx: FundContext) -> None:
         return
 
     slug = make_slug(ctx.scheme_name)
-    h = load_holdings([slug])
-    s = load_sectors([slug])
-    a = load_assets([slug])
+    h = load_holdings_db_cached((slug,))
     if h.is_empty():
         st.info("No holdings data fetched yet. Refresh from **Settings → Update All Holdings**.")
         return
 
-    stats = quick_stats(load_latest_holdings(slug), load_latest_asset_allocation(slug))
+    detail = load_fund_holdings_detail_cached(slug)
+    stats = quick_stats(detail.latest_holdings, detail.latest_allocation)
 
     st.subheader("Asset & cap breakdown")
     render_kpi_row(
@@ -86,7 +78,7 @@ def render(ctx: FundContext) -> None:
         )
 
     st.divider()
-    render_holdings_table(h, s, a, slug, display_name=ctx.short_name)
+    render_holdings_table(h, detail.sectors, detail.assets, slug, display_name=ctx.short_name)
 
     st.divider()
     _render_portfolio_overlap(ctx, h)
@@ -110,7 +102,7 @@ def _render_portfolio_overlap(ctx: FundContext, fund_holdings: pl.DataFrame) -> 
     registry = load_registry()
     name_to_slug = dict(zip(registry["schemeName"].to_list(), registry["schemeSlug"].to_list(), strict=False))
     slugs = [s for n in fund_values if (s := name_to_slug.get(n))]
-    exposure = lookthrough_exposure(load_holdings(slugs), fund_values)
+    exposure = lookthrough_exposure(load_holdings_db_cached(tuple(slugs)), fund_values)
     if exposure.is_empty():
         st.caption("No holdings data for your active funds yet — refresh holdings from Settings.")
         return

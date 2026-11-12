@@ -18,6 +18,7 @@ from ui.state.loaders import (
     load_index_chart_ohlcv,
     load_stock_open_close,
     load_stock_screener_df_cached,
+    register_global_stock,
 )
 from ui.views.stock_analysis import chart as chart_tab
 from ui.views.stock_analysis import fundamentals as fundamentals_tab
@@ -36,11 +37,7 @@ def _chart_pdf(frame: pl.DataFrame, sym: str) -> pd.DataFrame:
 
 def _refresh_stock_on_open(ticker: str, frame: pl.DataFrame) -> None:
     """On first open per session: forward-fill OHLCV, ensure price metrics exist, reload if new bars arrived."""
-    import contextlib  # noqa: PLC0415
-
-    from data.repositories.stock_fundamentals import load_stock_metrics  # noqa: PLC0415
-    from data.repositories.stock_ohlcv import refresh_stock_to_today  # noqa: PLC0415 — defer off boot
-    from services.stock.metrics import recompute_price_metrics  # noqa: PLC0415
+    from services.stock.sync import refresh_stock_on_open  # noqa: PLC0415
 
     bare = to_bare_symbol(ticker)
     opened = st.session_state.setdefault("_sa_opened", set())
@@ -49,18 +46,11 @@ def _refresh_stock_on_open(ticker: str, frame: pl.DataFrame) -> None:
     opened.add(bare)
     shown = frame.filter(pl.col("Symbol") == bare)
     shown_max = shown.select(pl.col("Date").max()).item() if shown.height else None
-    new_max = None
-    metrics_added = False
     with st.spinner(f"Refreshing {ticker}…"):
-        with contextlib.suppress(Exception):
-            _, new_max = refresh_stock_to_today(bare)
-        with contextlib.suppress(Exception):
-            if load_stock_metrics([bare]).is_empty():
-                recompute_price_metrics([bare])
-                metrics_added = True
-    if metrics_added:
+        outcome = refresh_stock_on_open(bare)
+    if outcome.metrics_added:
         load_stock_screener_df_cached.clear()
-    if new_max is not None and (shown_max is None or new_max > shown_max):
+    if outcome.new_max is not None and (shown_max is None or outcome.new_max > shown_max):
         load_stock_open_close.clear()
         st.rerun()
 
@@ -177,10 +167,9 @@ def _render_add_international() -> None:
             key="sa_intl_pick",
         )
         if st.button("Add & open", type="primary", key="sa_intl_add"):
-            from data.repositories.stock_ohlcv import register_stock  # noqa: PLC0415 — defer off boot
-
-            register_stock(pick["symbol"], name=pick["name"], exchange=pick["exchange"], quote_type=pick["quote_type"])
-            load_analysis_catalog_cached.clear()
+            register_global_stock(
+                pick["symbol"], name=pick["name"], exchange=pick["exchange"], quote_type=pick["quote_type"]
+            )
             st.session_state.sa_ticker_pending = pick["symbol"]
             st.toast(f"Added {pick['symbol']} ({pick['exchange']}).", icon="🌍")
             st.rerun()

@@ -17,12 +17,12 @@ import polars as pl
 
 from data.exceptions import SourceNotFound, SourceThrottled
 from data.repositories.advisorkhoj_keys import fetch_holdings_for_scheme
-from data.repositories.holdings import replace_holdings_atomic, slug_to_code_map
+from data.repositories.holdings import refresh_holdings_data, replace_holdings_atomic, slug_to_code_map
 from data.repositories.nav import last_nav_date_by_code, save_nav_df
 from data.repositories.scheme_codes import resolve_codes
 from mutual_funds.display import make_slug, short_scheme_name
 from services.constants import HOLDINGS_FETCH_WORKERS, NAV_FETCH_WORKERS, FetchOutcome, RefreshScope
-from services.mf.nav_sources import fetch_single_nav
+from services.mf.nav_sources import fetch_single_nav, refresh_nav_data
 from services.mf.registry import mark_nav_unavailable
 
 logger = logging.getLogger(__name__)
@@ -267,3 +267,41 @@ def refresh_all_fund_data(
         }
     logger.info("refresh_all_fund_data(scope=%s): %s", scope, counts)
     return FundRefreshSummary(nav=nav, holdings=holdings)
+
+
+def refresh_funds(
+    names: list[str],
+    slugs: list[str],
+    *,
+    include_metadata: bool = False,
+    progress_cb: Callable[..., None] | None = None,
+) -> list[str]:
+    """Refetch NAV, holdings, optionally metadata, then recompute metrics for `names`. A failing step is
+    recorded, not fatal; returns the labels of the steps that raised."""
+    from data.repositories.metadata import refresh_metadata  # noqa: PLC0415
+    from services.mf.metrics import recompute_metrics  # noqa: PLC0415
+
+    def _refresh_all_metadata() -> None:
+        for name in names:
+            refresh_metadata(name)
+
+    steps = [
+        ("NAV", lambda: refresh_nav_data(names)),
+        ("Holdings", lambda: refresh_holdings_data(slugs)),
+    ]
+    if include_metadata:
+        steps.append(("Metadata", _refresh_all_metadata))
+    steps.append(("Metrics", lambda: recompute_metrics(names)))
+
+    failed: list[str] = []
+    for i, (label, step) in enumerate(steps):
+        if progress_cb is not None:
+            progress_cb(phase=label, done=i, total=len(steps))
+        try:
+            step()
+        except Exception:
+            logger.warning("refresh_funds: %s step failed", label, exc_info=True)
+            failed.append(label)
+    if progress_cb is not None:
+        progress_cb(phase="Done", done=len(steps), total=len(steps))
+    return failed

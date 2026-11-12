@@ -23,7 +23,7 @@ from services.stock.sync import (
 from ui.components.background_refresh import BackgroundRefresh, BackgroundRefreshGroup, progress_cb
 from ui.components.chrome import section_header
 from ui.persistence.selections import load_selection, save_selection
-from ui.state.loaders import load_analysis_catalog_cached, load_stock_open_close, load_stock_screener_df_cached
+from ui.state.loaders import clear_stock_data_caches, load_stock_open_close
 from ui.views.settings.format import fmt_date, plural
 
 _STALE_BDAYS = 2
@@ -36,9 +36,7 @@ def _health() -> StockDataHealth:
 
 def _clear_caches() -> None:
     _health.clear()
-    load_stock_open_close.clear()
-    load_stock_screener_df_cached.clear()
-    load_analysis_catalog_cached.clear()
+    clear_stock_data_caches()
 
 
 _REFRESH = BackgroundRefresh(

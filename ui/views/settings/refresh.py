@@ -14,9 +14,6 @@ import polars as pl
 import streamlit as st
 
 from core.enums import SourceStatus, TaskStatus
-from data.repositories.amfi import get_latest_amfi_nav_date
-from data.repositories.holdings import holdings_count_by_scheme
-from data.repositories.nav import nav_record_stats
 from mutual_funds.display import make_slug
 from services.constants import RefreshScope
 from services.mf.backfill import retry_unavailable
@@ -38,7 +35,13 @@ from ui.components.background_refresh import BackgroundRefresh, progress_cb
 from ui.components.chrome import section_header
 from ui.components.freshness_banner import clear_freshness_cache
 from ui.constants import STATUS_STYLES
-from ui.state.loaders import get_short_names, load_holdings_data, load_nav_data
+from ui.state.loaders import (
+    clear_fund_data_caches,
+    get_short_names,
+    load_amfi_status_cached,
+    load_holdings_counts_cached,
+    load_nav_record_stats_cached,
+)
 from ui.views.settings.format import fmt_date, plural
 
 
@@ -78,8 +81,7 @@ def _fund_freshness() -> FundFreshness:
 
 def _clear_fund_caches() -> None:
     _fund_freshness.clear()
-    load_nav_data.clear()
-    load_holdings_data.clear()
+    clear_fund_data_caches()
     clear_freshness_cache()
 
 
@@ -110,7 +112,7 @@ def _nav_line(report: FreshnessReport) -> str:
     latest = _latest(report)
     if latest is None:
         return "No NAV history stored yet."
-    amfi = get_latest_amfi_nav_date()
+    amfi = load_amfi_status_cached().latest_nav_date
     if amfi is None or amfi <= latest:
         return f"NAV as of {fmt_date(latest)}, level with AMFI."
     lag = business_days_between(latest, amfi)
@@ -242,6 +244,8 @@ def _render_unresolved() -> None:
         if go.button("Retry", use_container_width=True):
             with st.spinner(f"Retrying {short_by_name.get(sel, sel)}…"):
                 results = retry_unavailable(sel)
+            clear_fund_data_caches()
+            clear_freshness_cache()
             if results:
                 st.toast(" · ".join(f"{k}: {v}" for k, v in results.items()))
             else:
@@ -262,12 +266,12 @@ def render_per_fund_status() -> None:
         _status_table(
             title="NAV",
             note=f"{nav_report.stale_count} of {nav_report.total} funds are behind the freshness threshold.",
-            rows=build_nav_status_rows(nav_report, nav_record_stats(names), short_by_name),
+            rows=build_nav_status_rows(nav_report, load_nav_record_stats_cached(tuple(names)), short_by_name),
         )
         _status_table(
             title="Holdings",
             note=f"{holdings_report.stale_count} of {holdings_report.total} funds are behind the freshness threshold.",
-            rows=build_holdings_status_rows(holdings_report, holdings_count_by_scheme(names), short_by_name),
+            rows=build_holdings_status_rows(holdings_report, load_holdings_counts_cached(tuple(names)), short_by_name),
         )
 
 

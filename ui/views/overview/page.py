@@ -9,14 +9,7 @@ from services.stock.sync import StockRefreshSummary
 from ui.components.background_refresh import BackgroundRefresh, progress_cb
 from ui.components.chrome import page_header
 from ui.state import navigation
-from ui.state.loaders import (
-    load_fund_movers_cached,
-    load_index_performance_cached,
-    load_international_pulse_cached,
-    load_market_pulse_cached,
-    load_overview_alerts_cached,
-    load_txn_data,
-)
+from ui.state.loaders import clear_market_caches, load_txn_data
 from ui.views.overview import alerts, indexes, market_pulse, movers, snapshot
 
 _REFRESH_KEY = "overview_refresh"
@@ -25,37 +18,15 @@ _REFRESH_KEY = "overview_refresh"
 def _overview_refresh_task() -> StockRefreshSummary:
     """Refresh what the Overview shows: stock prices + all NSE indices (bhavcopy) + the board's
     ^-indices (market pulse + international) to today. Runs on a background task."""
-    from core.background import set_task_progress  # noqa: PLC0415 — defer off boot
-    from data.repositories.index_ohlcv import refresh_index_to_today  # noqa: PLC0415
-    from services.overview.market import INTERNATIONAL_PULSE_SYMBOLS, MARKET_PULSE_SYMBOLS  # noqa: PLC0415
-    from services.stock.sync import refresh_all_stock_data  # noqa: PLC0415
+    from services.overview.market import refresh_overview_data  # noqa: PLC0415
 
-    result = refresh_all_stock_data(progress_cb=progress_cb(_REFRESH_KEY))
-    board = sorted(set(MARKET_PULSE_SYMBOLS) | set(INTERNATIONAL_PULSE_SYMBOLS))
-    for i, sym in enumerate(board, 1):
-        try:
-            refresh_index_to_today(sym)
-        except Exception:
-            continue
-        set_task_progress(_REFRESH_KEY, phase="Board indices", done=i, total=len(board))
-    return result
-
-
-def _clear_overview_caches() -> None:
-    for loader in (
-        load_market_pulse_cached,
-        load_index_performance_cached,
-        load_international_pulse_cached,
-        load_overview_alerts_cached,
-        load_fund_movers_cached,
-    ):
-        loader.clear()
+    return refresh_overview_data(progress_cb=progress_cb(_REFRESH_KEY))
 
 
 _REFRESH = BackgroundRefresh(
     _REFRESH_KEY,
     "Data refresh",
-    cache_clearers=(_clear_overview_caches,),
+    cache_clearers=(clear_market_caches,),
     summarize=lambda r: f"{r.index_rows:,} index + {r.stock_rows:,} stock rows"
     if isinstance(r, StockRefreshSummary)
     else str(r),

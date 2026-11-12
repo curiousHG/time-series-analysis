@@ -5,11 +5,10 @@ from __future__ import annotations
 import polars as pl
 import streamlit as st
 
-from data.repositories.amfi import load_amfi_df
-from data.repositories.scheme_metrics import load_metrics
 from mutual_funds.display import detect_option, detect_plan, unique_short_names
 from ui.persistence.selections import load_selection, save_selection
 from ui.state.filter_persistence import hydrate_filters, make_persist_callback
+from ui.state.loaders import load_amfi_df_cached, load_metrics_cached, load_txn_data
 
 _MF_PERSIST_KEY = "mf_analysis_filters"
 _MF_FILTER_DEFAULTS = {"mf_analysis_fund": None}
@@ -30,7 +29,6 @@ def _portfolio_fund_names() -> list[str]:
     try:
         from services.portfolio.analytics import fund_values_from_nav  # noqa: PLC0415 — defer heavy import off boot
         from services.portfolio.value import get_mapped_data  # noqa: PLC0415
-        from ui.state.loaders import load_txn_data  # noqa: PLC0415
 
         txn = load_txn_data()
         result = get_mapped_data(txn) if txn is not None else None
@@ -100,14 +98,14 @@ def _load_tracked_enriched(names: tuple[str, ...]) -> pl.DataFrame:
     if not names:
         return pl.DataFrame(schema=empty_schema)
 
-    _m = load_metrics(list(names))
+    _m = load_metrics_cached().filter(pl.col("scheme_name").is_in(list(names)))
     inc = (
         _m.select(["scheme_name", "inception_date"])
         if "inception_date" in _m.columns
         else pl.DataFrame(schema={"scheme_name": pl.Utf8, "inception_date": pl.Date})
     )
 
-    amfi = load_amfi_df().filter(pl.col("scheme_name").is_in(list(names)))
+    amfi = load_amfi_df_cached().filter(pl.col("scheme_name").is_in(list(names)))
     if amfi.is_empty():
         return (
             pl.DataFrame({"scheme_name": list(names)})

@@ -6,10 +6,13 @@ from __future__ import annotations
 import polars as pl
 import streamlit as st
 
-from data.repositories.amfi import get_scheme_count
-from data.repositories.tradebook import get_tradebook_stats, import_tradebook_bytes, load_tradebook_from_db
 from ui.components.chrome import section_header
-from ui.state.loaders import load_txn_data
+from ui.state.loaders import (
+    import_tradebook,
+    load_amfi_status_cached,
+    load_tradebook_cached,
+    load_tradebook_stats_cached,
+)
 from ui.views.settings.format import plural
 
 
@@ -18,10 +21,9 @@ def _upload() -> None:
     if uploaded is None:
         return
     with st.spinner("Importing tradebook…"):
-        new_count, skipped = import_tradebook_bytes(uploaded.getvalue())
+        new_count, skipped = import_tradebook(uploaded.getvalue())
     if new_count > 0:
         st.success(f"Imported {plural(new_count, 'new trade')}, skipped {plural(skipped, 'duplicate')}.")
-        load_txn_data.clear()
     elif skipped > 0:
         st.warning(f"All {skipped} trades were already imported.")
     else:
@@ -33,12 +35,12 @@ def render() -> None:
     with actions, st.popover("Upload tradebook CSV", use_container_width=True):
         _upload()
 
-    stats = get_tradebook_stats()
+    stats = load_tradebook_stats_cached()
     if stats.total_trades == 0:
         st.markdown("No trades yet. Upload your Kite or Zerodha tradebook to unlock the Portfolio page.")
         return
 
-    tb = load_tradebook_from_db()
+    tb = load_tradebook_cached()
     resolved = tb.select(["symbol", "isin", "schemeName", "scheme_code"]).rename({"schemeName": "scheme_name"}).unique()
     unmatched = resolved.filter(pl.col("scheme_name").is_null())
     first, last = stats.first_date, stats.last_date
@@ -52,7 +54,7 @@ def render() -> None:
         )
     )
     if not unmatched.is_empty():
-        if get_scheme_count() == 0:
+        if load_amfi_status_cached().scheme_count == 0:
             st.warning("The AMFI master is empty. Sync it below so ISINs can resolve.")
         with st.expander("Unresolved ISINs"):
             st.dataframe(unmatched.to_pandas(), use_container_width=True, hide_index=True)

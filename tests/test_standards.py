@@ -107,35 +107,16 @@ _PURE_DATA_MODULES = {"data.constants", "data.sources"}
 
 
 def test_views_import_data_via_seam():
-    """Views reach data through ui/state/loaders.py or a service — not data.* directly. Frozen at
-    today's 15 files; route each through the seam and delete its entry."""
-    violations = {
-        rel
+    """Views reach data through ui/state/loaders.py or a service — never data.* directly (the pure
+    constant modules data.constants and data.sources aside)."""
+    bad = sorted(
+        f"{rel} ← {mod}"
         for rel, tree in FILES.items()
-        if rel.startswith("ui/")
-        and rel != "ui/state/loaders.py"  # the sanctioned seam
-        and any(mod.split(".")[0] == "data" and mod not in _PURE_DATA_MODULES for mod, _ in _imports(tree))
-    }
-    _ratchet(
-        "ui→data bypasses the loaders/services seam",
-        violations,
-        allowlist={
-            "ui/views/mf_screener/page.py",
-            "ui/views/mutual_fund/holdings_tab.py",
-            "ui/views/mutual_fund/page.py",
-            "ui/views/mutual_fund/selector.py",
-            "ui/views/overview/indexes.py",
-            "ui/views/overview/page.py",
-            "ui/views/portfolio/growth.py",
-            "ui/views/portfolio/page.py",
-            "ui/views/settings/amfi.py",
-            "ui/views/settings/refresh.py",
-            "ui/views/settings/tradebook.py",
-            "ui/views/stock_analysis/fundamentals.py",
-            "ui/views/stock_analysis/page.py",
-            "ui/views/stock_screener/page.py",
-        },
+        if rel.startswith("ui/") and rel != "ui/state/loaders.py"
+        for mod, _ in _imports(tree)
+        if mod.split(".")[0] == "data" and mod not in _PURE_DATA_MODULES
     )
+    assert not bad, "ui bypasses the loaders/services seam:\n  " + "\n  ".join(bad)
 
 
 # ---------------------------------------------------------------- data writes
@@ -333,7 +314,7 @@ def test_no_suppress_exception_in_views():
     _ratchet(
         "contextlib.suppress(Exception) in ui/",
         violations,
-        allowlist={"ui/views/stock_analysis/fundamentals.py", "ui/views/stock_analysis/page.py"},
+        allowlist={"ui/views/stock_analysis/fundamentals.py"},
     )
 
 

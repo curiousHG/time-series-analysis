@@ -5,10 +5,10 @@ import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
 
-from data.repositories.stock_ohlcv import ensure_stock_data
 from mutual_funds.tradebook import daily_net_invested
 from services.portfolio.value import get_signed_invested
 from ui.charts import theme
+from ui.state.loaders import load_stock_open_close
 
 
 def render_invested_over_time(mapped: pl.DataFrame):
@@ -52,7 +52,7 @@ def render_growth_comparison(mapped: pl.DataFrame, pv: pd.DataFrame):
     merged = pd.merge_asof(pv.sort_values("date"), ci.sort_values("date"), on="date", direction="backward")
     merged["cum_invested"] = merged["cum_invested"].ffill().fillna(0)
 
-    nifty = ensure_stock_data("^NSEI", start_dt, end_dt)
+    nifty = load_stock_open_close(["^NSEI"], start_dt, end_dt)
     nifty_pd = (
         nifty.select(["Date", "Close"])
         .to_pandas()

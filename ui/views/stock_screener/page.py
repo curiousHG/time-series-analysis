@@ -17,7 +17,13 @@ from ui.components.screener_grid import clicked_cell_value, render_screener_grid
 from ui.constants import STOCK_FILTER_DEFAULTS, STOCK_SCREENER_PERSIST_KEY
 from ui.persistence.selections import load_selection, save_selection
 from ui.state.filter_persistence import hydrate_filters, make_persist_callback
-from ui.state.loaders import cached_search_stock, load_stock_open_close, load_stock_screener_df_cached
+from ui.state.loaders import (
+    add_index,
+    add_stocks,
+    cached_search_stock,
+    clear_stock_data_caches,
+    load_stock_screener_df_cached,
+)
 from ui.state.navigation import open_stock_in_analysis
 from ui.views.stock_screener import chart as chart_view
 
@@ -39,12 +45,9 @@ def _populate_task(symbols: list[str]) -> int:
 _POPULATE = BackgroundRefresh(
     "stock_screener_populate",
     "Stock populate",
-    cache_clearers=(load_stock_screener_df_cached.clear,),
+    cache_clearers=(clear_stock_data_caches,),
     summarize=lambda r: f"{r:,} stocks synced" if isinstance(r, int) else "synced",
 )
-
-
-_NSE_EXCHANGES = {"NSE", "NSI", "BSE", "BO"}
 
 
 def _add_stocks(picks: list[tuple[str, str, str]]) -> None:
@@ -52,43 +55,20 @@ def _add_stocks(picks: list[tuple[str, str, str]]) -> None:
 
     NSE stocks get OHLCV + screener.in fundamentals + CAPM; global stocks get OHLCV only.
     """
-    from data.repositories.stock_ohlcv import ensure_stock_data, register_stock  # noqa: PLC0415 — defer off boot
-    from services.stock.sync import sync_stocks  # noqa: PLC0415
-
-    wide_start = pd.to_datetime("2000-01-01")
-    today = pd.Timestamp.today().normalize()
-    nse_bare: list[str] = []
-    global_syms: list[str] = []
-    for sym, name, exch in picks:
-        if sym.endswith(".NS") or (exch or "").upper() in _NSE_EXCHANGES:
-            nse_bare.append(to_bare_symbol(sym))
-        else:
-            register_stock(sym, name=name, exchange=exch or "GLOBAL", quote_type="equity")
-            global_syms.append(sym)
-
-    with st.spinner(f"Pulling full history for {len(nse_bare) + len(global_syms)} stock(s)…"):
-        for sym in nse_bare + global_syms:
-            ensure_stock_data(sym, wide_start, today)
-        if nse_bare:
-            sync_stocks(nse_bare)
+    with st.spinner(f"Pulling full history for {len(picks)} stock(s)…"):
+        added = add_stocks(picks)
 
     existing = {to_bare_symbol(s) for s in load_selection("selected_stocks")}
-    watchlist = sorted(existing | set(nse_bare) | set(global_syms))
+    watchlist = sorted(existing | set(added.nse_symbols) | set(added.global_symbols))
     save_selection("selected_stocks", watchlist)
     st.session_state.selected_stocks = watchlist
-    load_stock_screener_df_cached.clear()
-    load_stock_open_close.clear()
     st.toast(f"Added {len(picks)} stock(s).", icon="✅")
 
 
 def _add_index(symbol: str, label: str) -> None:
     """Fetch a market index's full history into index_ohlcv so it's chartable in Stock Analysis."""
-    from data.repositories.index_ohlcv import ensure_index_data  # noqa: PLC0415 — defer heavy import off boot
-    from ui.state.loaders import load_index_ohlcv  # noqa: PLC0415
-
     with st.spinner(f"Fetching {label}…"):
-        ensure_index_data(symbol, pd.to_datetime("2000-01-01"), pd.Timestamp.today().normalize())
-    load_index_ohlcv.clear()
+        add_index(symbol)
     st.toast(f"Added index {label}.", icon="✅")
 
 

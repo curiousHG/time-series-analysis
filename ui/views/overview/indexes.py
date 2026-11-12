@@ -7,14 +7,17 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
-from data.repositories.index_ohlcv import list_bhavcopy_index_names
 from indicators import INDICATOR_REGISTRY, compute_indicators
 from services.benchmarks import index_display_name
 from services.overview.market import INTERNATIONAL_INDEX_SYMBOLS
 from ui.components import index_detail
 from ui.components.metric_tiles import EM_DASH, fmt_pct
 from ui.state.filter_persistence import hydrate_filters, make_persist_callback
-from ui.state.loaders import load_index_chart_ohlcv, load_international_pulse_cached
+from ui.state.loaders import (
+    load_bhavcopy_index_names_cached,
+    load_index_chart_ohlcv,
+    load_international_pulse_cached,
+)
 from ui.views.overview import sector_performance
 from ui.views.stock_analysis import chart as chart_tab
 
@@ -55,7 +58,7 @@ def _render_international() -> None:
 
 def _render_chart() -> str | None:
     st.subheader("Index chart")
-    nse = list_bhavcopy_index_names()
+    nse = load_bhavcopy_index_names_cached()
     intl = [s for s, _, _ in INTERNATIONAL_INDEX_SYMBOLS]
     options = nse + intl
     if not options:

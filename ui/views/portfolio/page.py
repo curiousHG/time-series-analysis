@@ -9,10 +9,10 @@ import streamlit as st
 
 from services.mf.registry import load_registry
 from services.portfolio.value import build_portfolio_value_series, get_mapped_data
-from ui.components.background_refresh import BackgroundRefresh
+from ui.components.background_refresh import BackgroundRefresh, progress_cb
 from ui.components.chrome import page_header
 from ui.components.freshness_banner import clear_freshness_cache, is_fund_stale
-from ui.state.loaders import load_holdings_data, load_txn_data
+from ui.state.loaders import clear_fund_data_caches, load_holdings_data, load_txn_data
 from ui.views.portfolio import flows_tab, overview_tab, positions_tab, risk_tab
 
 _REFRESH_KEY = "portfolio_refresh"
@@ -28,30 +28,15 @@ class PortfolioRefreshOutcome:
 def _portfolio_refresh_task(names: list[str], slugs: list[str]) -> PortfolioRefreshOutcome:
     """Refetch NAV + holdings for the portfolio's active funds and recompute metrics. Runs on a
     background task; a failing source is recorded, not fatal."""
-    from core.background import set_task_progress  # noqa: PLC0415 — defer off boot
-    from data.repositories.holdings import refresh_holdings_data  # noqa: PLC0415
-    from services.mf.metrics import recompute_metrics  # noqa: PLC0415
-    from services.mf.nav_sources import refresh_nav_data  # noqa: PLC0415
+    from services.mf.sync import refresh_funds  # noqa: PLC0415
 
-    steps = (
-        ("NAV", lambda: refresh_nav_data(names)),
-        ("Holdings", lambda: refresh_holdings_data(slugs)),
-        ("Metrics", lambda: recompute_metrics(names)),
-    )
-    failed: list[str] = []
-    for i, (label, step) in enumerate(steps):
-        set_task_progress(_REFRESH_KEY, phase=label, done=i, total=len(steps))
-        try:
-            step()
-        except Exception:
-            failed.append(label)
-    set_task_progress(_REFRESH_KEY, phase="Done", done=len(steps), total=len(steps))
+    failed = refresh_funds(names, slugs, progress_cb=progress_cb(_REFRESH_KEY))
     return PortfolioRefreshOutcome(failed=failed)
 
 
 def _clear_portfolio_caches() -> None:
     clear_freshness_cache()
-    load_holdings_data.clear()
+    clear_fund_data_caches()
 
 
 _REFRESH = BackgroundRefresh(

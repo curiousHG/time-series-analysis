@@ -10,18 +10,24 @@ import polars as pl
 import streamlit as st
 
 from core.enums import SourceStatus
-from data.repositories.amfi import get_scheme_details_by_name
-from data.repositories.nav import load_nav_df
 from mutual_funds.display import make_slug, short_scheme_name
 from mutual_funds.tradebook import signed_flows
 from services.constants import BackfillSource
 from services.mf.backfill import backfill_missing
 from services.mf.metrics_math import absolute_return
 from services.mf.registry import list_tracked
+from services.mf.sync import refresh_funds
 from ui.components.chrome import page_header
 from ui.components.freshness_banner import clear_freshness_cache, is_fund_stale
 from ui.components.metric_tiles import Kpi, render_kpi_row
-from ui.state.loaders import load_metadata_cached, load_metrics_cached, load_txn_data
+from ui.state.loaders import (
+    clear_fund_data_caches,
+    load_metadata_cached,
+    load_metrics_cached,
+    load_nav_df_cached,
+    load_scheme_details_cached,
+    load_txn_data,
+)
 from ui.views.mutual_fund import (
     about_tab,
     benchmark_tab,
@@ -72,30 +78,10 @@ def _held_position(scheme_name: str) -> HeldPosition | None:
 def _refresh_fund(name: str) -> None:
     """Refetch NAV + holdings + metadata and recompute metrics for one fund; stash an outcome
     toast (shown after the rerun). A failing source is recorded, not fatal."""
-    from data.repositories.holdings import refresh_holdings_data  # noqa: PLC0415 — defer heavy import off boot
-    from data.repositories.metadata import refresh_metadata  # noqa: PLC0415
-    from services.mf.metrics import recompute_metrics  # noqa: PLC0415
-    from services.mf.nav_sources import refresh_nav_data  # noqa: PLC0415
-    from ui.state.loaders import load_holdings_data  # noqa: PLC0415
-
-    slug = make_slug(name)
-    steps = (
-        ("NAV", lambda: refresh_nav_data([name])),
-        ("Holdings", lambda: refresh_holdings_data([slug])),
-        ("Metadata", lambda: refresh_metadata(name)),
-        ("Metrics", lambda: recompute_metrics([name])),
-    )
-    failed: list[str] = []
     with st.spinner(f"Refreshing {short_scheme_name(name)}…"):
-        for label, step in steps:
-            try:
-                step()
-            except Exception:
-                failed.append(label)
+        failed = refresh_funds([name], [make_slug(name)], include_metadata=True)
     clear_freshness_cache()
-    load_metadata_cached.clear()
-    load_metrics_cached.clear()
-    load_holdings_data.clear()
+    clear_fund_data_caches()
     short = short_scheme_name(name)
     st.session_state["_mf_refresh_msg"] = (
         ("⚠️", f"Refreshed {short} with issues — {', '.join(failed)} failed.")
@@ -140,6 +126,7 @@ if pending_sources:
             max_per_run=len(pending_sources),
             submit_delay=0.0,
         )
+    clear_fund_data_caches()
     st.rerun()
 
 if nav_status == SourceStatus.UNAVAILABLE:
@@ -148,7 +135,7 @@ if nav_status == SourceStatus.UNAVAILABLE:
 if metadata_status == SourceStatus.UNAVAILABLE:
     st.warning("Metadata not available for this fund — header AMC/AUM/TER/benchmark fields will be partial.")
 
-nav_df = load_nav_df([selected]).sort("date")
+nav_df = load_nav_df_cached((selected,)).sort("date")
 if nav_df.is_empty():
     st.warning("No NAV history for this fund.")
     st.stop()
@@ -159,7 +146,7 @@ _metrics = load_metrics_cached().filter(pl.col("scheme_name") == selected)
 _enriched_row = enriched.filter(pl.col("scheme_name") == selected)
 _sub_category = _enriched_row["sub_category"][0] if _enriched_row.height else None
 
-amfi_row = get_scheme_details_by_name(selected)
+amfi_row = load_scheme_details_cached(selected)
 
 meta_df = load_metadata_cached((selected,))
 meta = meta_df.row(0, named=True) if meta_df.height else {}

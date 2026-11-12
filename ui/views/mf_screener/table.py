@@ -23,6 +23,7 @@ from services.constants import BackfillSource
 from services.mf.backfill import backfill_missing
 from services.mf.screener import status_cell
 from ui.components.screener_grid import clicked_cell_value, render_screener_grid
+from ui.state.loaders import clear_fund_data_caches
 from ui.state.navigation import open_fund_in_analysis
 
 __all__ = ["render_open_action", "render_table"]
@@ -84,4 +85,5 @@ def render_open_action(grid_response: dict) -> None:
             max_per_run=2,
             submit_delay=0.0,
         )
+    clear_fund_data_caches()
     open_fund_in_analysis(scheme_name)

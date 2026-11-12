@@ -15,7 +15,12 @@ from services.stock.fundamentals import fundamentals_percentiles, momentum_stats
 from stocks.constants import is_nse_exchange, to_bare_symbol
 from ui.charts import theme
 from ui.components.metric_tiles import EM_DASH, Kpi, fmt_pct, render_kpi_row
-from ui.state.loaders import load_global_fundamentals_cached, load_stock_screener_df_cached
+from ui.state.loaders import (
+    load_fundamentals_status_cached,
+    load_global_fundamentals_cached,
+    load_stock_screener_df_cached,
+    sync_fundamentals,
+)
 
 
 def render(symbol: str, *, exchange: str | None = None) -> None:
@@ -161,20 +166,16 @@ def _render_momentum(symbol: str) -> None:
 
 def _render_valuation(bare: str) -> None:
     st.subheader("Valuation & quality")
-    from data.repositories.stock_fundamentals import ensure_stock_fundamentals, fundamentals_status_of  # noqa: PLC0415
-
-    status = fundamentals_status_of(bare)
+    status = load_fundamentals_status_cached(bare)
     if status != SourceStatus.AVAILABLE:
         if status is None:
             with st.spinner(f"Fetching {bare} fundamentals from screener.in…"), contextlib.suppress(Exception):
-                ensure_stock_fundamentals([bare])
-            load_stock_screener_df_cached.clear()
+                sync_fundamentals(bare)
             st.rerun()
         st.info(f"Fundamentals aren't available for **{bare}** on screener.in.")
         if st.button("Retry fundamentals sync", key="sync-fundamentals"):
             with st.spinner(f"Scraping screener.in for {bare}…"), contextlib.suppress(Exception):
-                ensure_stock_fundamentals([bare])
-            load_stock_screener_df_cached.clear()
+                sync_fundamentals(bare)
             st.rerun()
         return
 

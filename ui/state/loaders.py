@@ -1,22 +1,44 @@
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 import pandas as pd
 import polars as pl
 import streamlit as st
 
+from core.enums import SourceStatus
 from core.timing import timeit
 from data.fetchers.stock import search_stocks
-from data.repositories.amfi import search_amfi
+from data.repositories.amfi import (
+    get_latest_amfi_nav_date,
+    get_scheme_count,
+    get_scheme_details_by_name,
+    load_amfi_df,
+    search_amfi,
+    sync_amfi_master,
+)
 from data.repositories.holdings import (
     ensure_holdings_data,
+    holdings_count_by_scheme,
+    load_assets,
+    load_holdings,
+    load_latest_asset_allocation,
+    load_latest_holdings,
+    load_sectors,
 )
 from data.repositories.holdings import (
     refresh_holdings_data as _refresh_holdings,
 )
 from data.repositories.metadata import load_metadata
-from data.repositories.stock_ohlcv import ensure_stock_data
-from data.repositories.tradebook import load_tradebook_from_db
+from data.repositories.nav import load_nav_df, nav_record_stats
+from data.repositories.stock_fundamentals import ensure_stock_fundamentals, fundamentals_status_of
+from data.repositories.stock_ohlcv import ensure_stock_data, register_stock
+from data.repositories.tradebook import (
+    TradebookStats,
+    get_tradebook_stats,
+    import_tradebook_bytes,
+    load_tradebook_from_db,
+)
 from mutual_funds.display import unique_short_names
 from mutual_funds.tradebook import normalize_transactions
 from services.benchmarks import daily_returns_from_ohlcv
@@ -27,11 +49,30 @@ from stocks.constants import to_bare_symbol
 
 if TYPE_CHECKING:
     from data.repositories.index_ohlcv import IndexValuation
+    from services.stock.sync import AddedStocks
 
 TTL_FAST = 300
 TTL_INTRADAY = 900
 TTL_HOURLY = 3600
 TTL_DAILY = 24 * 3600
+
+
+@dataclass(frozen=True, slots=True)
+class AmfiStatus:
+    """Size and freshness of the AMFI master."""
+
+    scheme_count: int
+    latest_nav_date: date | None
+
+
+@dataclass(frozen=True, slots=True)
+class FundHoldingsDetail:
+    """Sector and asset allocation plus the newest holdings and asset-allocation snapshots of one fund."""
+
+    sectors: pl.DataFrame
+    assets: pl.DataFrame
+    latest_holdings: pl.DataFrame
+    latest_allocation: list[tuple]
 
 
 @st.cache_data(show_spinner=False)
@@ -245,6 +286,197 @@ def load_fund_movers_cached() -> pl.DataFrame:
     from services.overview.market import fund_movers  # noqa: PLC0415 — defer heavy import off boot
 
     return fund_movers()
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_amfi_status_cached() -> AmfiStatus:
+    """AMFI master scheme count and latest NAV date; cleared by sync_amfi."""
+    return AmfiStatus(scheme_count=get_scheme_count(), latest_nav_date=get_latest_amfi_nav_date())
+
+
+@st.cache_data(ttl=TTL_HOURLY, show_spinner=False)
+def load_amfi_df_cached() -> pl.DataFrame:
+    """All AMFI schemes with AMC and category names; cleared by sync_amfi."""
+    return load_amfi_df()
+
+
+@st.cache_data(ttl=TTL_HOURLY, show_spinner=False)
+def load_scheme_details_cached(scheme_name: str) -> dict | None:
+    """One scheme's AMFI master row plus fund house and category text; cleared by sync_amfi."""
+    return get_scheme_details_by_name(scheme_name)
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_nav_df_cached(scheme_names: tuple[str, ...]) -> pl.DataFrame:
+    """Stored NAV for the schemes (all when empty) without fetching; cleared by clear_fund_data_caches."""
+    return load_nav_df(list(scheme_names))
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_nav_record_stats_cached(scheme_names: tuple[str, ...]) -> dict[str, tuple[int, object]]:
+    """{scheme_name: (NAV record count, earliest date)}; cleared by clear_fund_data_caches."""
+    return nav_record_stats(list(scheme_names))
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_holdings_db_cached(slugs: tuple[str, ...]) -> pl.DataFrame:
+    """Stored holdings for the slugs (all when empty) without fetching; cleared by clear_fund_data_caches."""
+    return load_holdings(list(slugs))
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_fund_holdings_detail_cached(slug: str) -> FundHoldingsDetail:
+    """Stored sector/asset allocation and newest snapshots of one fund; cleared by clear_fund_data_caches."""
+    return FundHoldingsDetail(
+        sectors=load_sectors([slug]),
+        assets=load_assets([slug]),
+        latest_holdings=load_latest_holdings(slug),
+        latest_allocation=load_latest_asset_allocation(slug),
+    )
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_holdings_counts_cached(scheme_names: tuple[str, ...]) -> dict[str, int]:
+    """{scheme_name: holdings row count}; cleared by clear_fund_data_caches."""
+    return holdings_count_by_scheme(list(scheme_names))
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_tradebook_cached() -> pl.DataFrame:
+    """Stored tradebook with scheme names joined; cleared by import_tradebook and sync_amfi."""
+    return load_tradebook_from_db()
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_tradebook_stats_cached() -> TradebookStats:
+    """Tradebook counts and date span; cleared by import_tradebook."""
+    return get_tradebook_stats()
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_fundamentals_status_cached(symbol: str) -> SourceStatus | None:
+    """Fundamentals scrape status of a bare symbol; cleared by clear_stock_data_caches."""
+    return fundamentals_status_of(symbol)
+
+
+@st.cache_data(ttl=TTL_FAST, show_spinner=False)
+def load_bhavcopy_index_names_cached() -> list[str]:
+    """NSE indices published in the recent bhavcopy; cleared by clear_stock_data_caches and clear_market_caches."""
+    from data.repositories.index_ohlcv import list_bhavcopy_index_names  # noqa: PLC0415
+
+    return list_bhavcopy_index_names()
+
+
+def clear_fund_data_caches() -> None:
+    """Drop every cache fed by NAV, holdings, metadata and metrics rows; call after any flow that writes them."""
+    for loader in (
+        load_nav_data,
+        load_holdings_data,
+        load_metadata_cached,
+        load_metrics_cached,
+        load_screener_df_cached,
+        load_nav_df_cached,
+        load_nav_record_stats_cached,
+        load_holdings_db_cached,
+        load_fund_holdings_detail_cached,
+        load_holdings_counts_cached,
+    ):
+        loader.clear()
+
+
+def clear_amfi_caches() -> None:
+    """Drop every cache derived from the AMFI master."""
+    for loader in (
+        load_amfi_status_cached,
+        load_amfi_df_cached,
+        load_scheme_details_cached,
+        cached_search,
+        load_screener_df_cached,
+        load_tradebook_cached,
+        load_tradebook_stats_cached,
+        load_txn_data,
+    ):
+        loader.clear()
+
+
+def clear_stock_data_caches() -> None:
+    """Drop every cache fed by stock and index OHLCV, registry and fundamentals rows."""
+    for loader in (
+        load_stock_open_close,
+        load_stock_screener_df_cached,
+        load_analysis_catalog_cached,
+        load_fundamentals_status_cached,
+        load_bhavcopy_index_names_cached,
+    ):
+        loader.clear()
+
+
+def clear_market_caches() -> None:
+    """Drop the Overview board caches and the price caches a market-data refresh invalidates."""
+    for loader in (
+        load_market_pulse_cached,
+        load_index_performance_cached,
+        load_international_pulse_cached,
+        load_overview_alerts_cached,
+        load_fund_movers_cached,
+        load_bhavcopy_index_names_cached,
+        load_stock_open_close,
+    ):
+        loader.clear()
+
+
+def sync_amfi() -> int:
+    """Sync the AMFI master and clear the caches derived from it. Returns the scheme count."""
+    count = sync_amfi_master()
+    clear_amfi_caches()
+    return count
+
+
+def import_tradebook(file_bytes: bytes) -> tuple[int, int]:
+    """Import a tradebook CSV; clears the tradebook caches when trades were added. Returns (new, skipped)."""
+    new_count, skipped = import_tradebook_bytes(file_bytes)
+    if new_count > 0:
+        load_txn_data.clear()
+        load_tradebook_cached.clear()
+        load_tradebook_stats_cached.clear()
+    return new_count, skipped
+
+
+def sync_fundamentals(symbol: str) -> None:
+    """Scrape screener.in fundamentals for a bare symbol; the screener and status caches are cleared even if it raises."""
+    try:
+        ensure_stock_fundamentals([symbol])
+    finally:
+        load_stock_screener_df_cached.clear()
+        load_fundamentals_status_cached.clear()
+
+
+def register_global_stock(symbol: str, *, name: str, exchange: str, quote_type: str) -> None:
+    """Register a stock outside the NSE master and clear the picker catalog."""
+    register_stock(symbol, name=name, exchange=exchange, quote_type=quote_type)
+    load_analysis_catalog_cached.clear()
+
+
+def add_stocks(picks: list[tuple[str, str, str]]) -> "AddedStocks":
+    """Add (symbol, name, exchange) picks with full history and fundamentals, then clear the stock caches."""
+    from services.stock.sync import add_stocks as _add_stocks  # noqa: PLC0415
+
+    try:
+        return _add_stocks(picks)
+    finally:
+        clear_stock_data_caches()
+
+
+def add_index(symbol: str) -> None:
+    """Pull an index's full history into index_ohlcv and clear the index chart caches."""
+    from services.stock.sync import ensure_index_history  # noqa: PLC0415
+
+    try:
+        ensure_index_history(symbol)
+    finally:
+        load_index_ohlcv.clear()
+        load_index_chart_ohlcv.clear()
+        load_bhavcopy_index_names_cached.clear()
 
 
 def get_trade_symbols(trades_df: pl.DataFrame) -> list[str]:

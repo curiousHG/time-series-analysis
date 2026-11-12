@@ -7,11 +7,10 @@ import polars as pl
 import streamlit as st
 
 from core.enums import SourceStatus
-from data.repositories.amfi import get_scheme_count
 from services.mf.registry import list_tracked
 from services.mf.screener import apply_filters
 from ui.components.chrome import page_header
-from ui.state.loaders import load_screener_df_cached
+from ui.state.loaders import load_amfi_status_cached, load_screener_df_cached
 from ui.views.mf_screener.backfill import DISPLAY_ORDER_KEY, render_inline_backfill
 from ui.views.mf_screener.chart import render_risk_return_chart
 from ui.views.mf_screener.filters import render_sidebar
@@ -45,7 +44,7 @@ def _render_universe_summary(amfi_count: int, filtered: pl.DataFrame) -> None:
         )
 
 
-_amfi_count = get_scheme_count()
+_amfi_count = load_amfi_status_cached().scheme_count
 if _amfi_count == 0:
     st.warning("AMFI master data not loaded. Run **Sync AMFI Master** from Settings first.")
     st.stop()

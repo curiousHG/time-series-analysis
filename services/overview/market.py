@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -16,7 +17,13 @@ from services.portfolio.analytics import fund_values_from_nav, fund_weights
 from services.portfolio.value import get_mapped_data
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import pandas as pd
+
+    from services.stock.sync import StockRefreshSummary
+
+logger = logging.getLogger(__name__)
 
 
 def trailing_return(close: pd.Series, rows_back: int) -> float | None:
@@ -154,3 +161,22 @@ def fund_movers() -> pl.DataFrame:
         )
     out = pl.DataFrame(rows)
     return out.sort(pl.col("chg_1w").abs(), descending=True, nulls_last=True)
+
+
+def refresh_overview_data(*, progress_cb: Callable[..., None] | None = None) -> StockRefreshSummary:
+    """Refresh stock prices and all NSE indices, then the board's ^-indices (market pulse + international) to today.
+    A board index that fails is skipped."""
+    from data.repositories.index_ohlcv import refresh_index_to_today  # noqa: PLC0415
+    from services.stock.sync import refresh_all_stock_data  # noqa: PLC0415
+
+    result = refresh_all_stock_data(progress_cb=progress_cb)
+    board = sorted(set(MARKET_PULSE_SYMBOLS) | set(INTERNATIONAL_PULSE_SYMBOLS))
+    for i, sym in enumerate(board, 1):
+        try:
+            refresh_index_to_today(sym)
+        except Exception:
+            logger.debug("board index refresh failed for %s", sym, exc_info=True)
+            continue
+        if progress_cb is not None:
+            progress_cb(phase="Board indices", done=i, total=len(board))
+    return result

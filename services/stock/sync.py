@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from core.enums import SourceStatus
 from data.repositories.stock_fundamentals import ensure_stock_fundamentals
 from services.stock.metrics import recompute_price_metrics
+from stocks.constants import to_bare_symbol
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -25,6 +26,76 @@ def sync_stocks(symbols: list[str], *, scrape_fundamentals: bool = True) -> int:
     n = recompute_price_metrics(symbols)
     logger.info("synced %d stocks (fundamentals=%s)", len(symbols), scrape_fundamentals)
     return n
+
+
+NSE_EXCHANGES = frozenset({"NSE", "NSI", "BSE", "BO"})
+FULL_HISTORY_START = _date(2000, 1, 1)
+
+
+@dataclass(frozen=True, slots=True)
+class AddedStocks:
+    """Bare symbols of newly added NSE stocks and the as-is symbols of global ones."""
+
+    nse_symbols: list[str]
+    global_symbols: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class StockOpenRefresh:
+    """Outcome of refreshing a stock on open: newest stored bar date and whether price metrics were created."""
+
+    new_max: _date | None
+    metrics_added: bool
+
+
+def add_stocks(picks: list[tuple[str, str, str]]) -> AddedStocks:
+    """Add (symbol, name, exchange) picks: register global ones, pull full OHLCV history for all, and sync
+    fundamentals + CAPM for the NSE ones."""
+    from data.repositories.stock_ohlcv import ensure_stock_data, register_stock  # noqa: PLC0415
+
+    nse_symbols: list[str] = []
+    global_symbols: list[str] = []
+    for sym, name, exch in picks:
+        if sym.endswith(".NS") or (exch or "").upper() in NSE_EXCHANGES:
+            nse_symbols.append(to_bare_symbol(sym))
+        else:
+            register_stock(sym, name=name, exchange=exch or "GLOBAL", quote_type="equity")
+            global_symbols.append(sym)
+
+    today = _date.today()
+    for sym in nse_symbols + global_symbols:
+        ensure_stock_data(sym, FULL_HISTORY_START, today)
+    if nse_symbols:
+        sync_stocks(nse_symbols)
+    return AddedStocks(nse_symbols=nse_symbols, global_symbols=global_symbols)
+
+
+def ensure_index_history(symbol: str) -> None:
+    """Pull a market index's full history into index_ohlcv."""
+    from data.repositories.index_ohlcv import ensure_index_data  # noqa: PLC0415
+
+    ensure_index_data(symbol, FULL_HISTORY_START, _date.today())
+
+
+def refresh_stock_on_open(symbol: str) -> StockOpenRefresh:
+    """Forward-fill a bare symbol's OHLCV to today and compute price metrics when it has none. Each step
+    that raises is logged at debug and skipped."""
+    from data.repositories.stock_fundamentals import load_stock_metrics  # noqa: PLC0415
+    from data.repositories.stock_ohlcv import refresh_stock_to_today  # noqa: PLC0415
+
+    new_max = None
+    metrics_added = False
+    try:
+        _, new_max = refresh_stock_to_today(symbol)
+    except Exception:
+        logger.debug("open refresh of %s prices failed", symbol, exc_info=True)
+    try:
+        if load_stock_metrics([symbol]).is_empty():
+            recompute_price_metrics([symbol])
+            metrics_added = True
+    except Exception:
+        logger.debug("open refresh of %s metrics failed", symbol, exc_info=True)
+    return StockOpenRefresh(new_max=new_max, metrics_added=metrics_added)
 
 
 def seed_nifty500(*, force_fundamentals: bool = False) -> int:
