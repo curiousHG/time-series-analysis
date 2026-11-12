@@ -19,6 +19,26 @@ NSE_EQUITY_LIST_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_
 NIFTY500_LIST_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv"
 NSE_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"}
 
+AMFI_AAUM_SCHEMEWISE_URL = "https://www.amfiindia.com/api/average-aum-schemewise"
+AMFI_AAUM_FLOOR_YEAR = 2016
+AMFI_REQUEST_INTERVAL_S = 1.0
+
+NIFTYINDICES_BASE_URL = "https://www.niftyindices.com"
+NIFTYINDICES_TRI_PATH = "/BackPage/getTotalReturnIndexString"
+NIFTYINDICES_HISTORY_PAGE = "https://www.niftyindices.com/reports/historical-data"
+NIFTYINDICES_EARLIEST = "01-Jan-1990"
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
+NIFTYINDICES_HEADERS = {
+    "User-Agent": BROWSER_USER_AGENT,
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Content-Type": "application/json; charset=UTF-8",
+    "X-Requested-With": "XMLHttpRequest",
+    "Origin": NIFTYINDICES_BASE_URL,
+    "Referer": NIFTYINDICES_HISTORY_PAGE,
+}
+
 MIN_FETCH_DAYS = 5
 EMPTY_OHLCV = pl.DataFrame(
     schema={

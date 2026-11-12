@@ -44,6 +44,18 @@ class IndexOhlcv(SQLModel, table=True):
     div_yield: float | None = None
 
 
+class IndexTri(SQLModel, table=True):
+    """Daily total-return level (dividends reinvested) per NSE index, keyed by the same name as index_ohlcv."""
+
+    __tablename__ = "index_tri"
+    __table_args__ = TABLE_ARGS
+
+    date: datetime.date = Field(primary_key=True)
+    symbol: str = Field(primary_key=True, index=True)
+    tri: float
+    ntr: float | None = None
+
+
 class IndexRegistry(SQLModel, table=True):
     """Light registry for indices we hold OHLC for — a display name plus the backward-gap
     floor (earliest) so ensure_index_data stops re-attempting pre-inception history."""

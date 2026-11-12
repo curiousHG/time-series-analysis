@@ -18,13 +18,14 @@ if TYPE_CHECKING:
 _MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs"
 
 _SOURCES: tuple[dict, ...] = (
-    {"id": "AMFI", "label": "AMFI", "sub": "NAVAll.txt", "match": lambda s: s.startswith("AMFI")},
+    {"id": "AMFI", "label": "AMFI", "sub": "NAVAll.txt · AAUM API", "match": lambda s: s.startswith("AMFI")},
     {"id": "MFAPI", "label": "MFAPI", "sub": "api.mfapi.in", "match": lambda s: s.startswith("MFAPI")},
     {"id": "AK", "label": "AdvisorKhoj", "sub": "scraped", "match": lambda s: s.startswith("AdvisorKhoj")},
     {"id": "KUV", "label": "Kuvera", "sub": "fallback", "match": lambda s: s.startswith("Kuvera")},
     {"id": "KITE", "label": "Zerodha CSV", "sub": "upload", "match": lambda s: s.startswith("Kite")},
     {"id": "YF", "label": "yfinance", "sub": "Yahoo", "match": lambda s: s.startswith("yfinance")},
     {"id": "BHAV", "label": "NSE index bhavcopy", "sub": "daily file", "match": lambda s: "index bhavcopy" in s},
+    {"id": "NIFTY", "label": "niftyindices", "sub": "TRI history", "match": lambda s: s.startswith("niftyindices")},
     {
         "id": "NSE",
         "label": "NSE lists",
@@ -114,6 +115,22 @@ _TABLES: tuple[dict, ...] = (
         "note": "Index levels are unadjusted by nature; implausible one-day moves are rejected at the write path.",
     },
     {
+        "id": "TRI",
+        "label": "index_tri",
+        "key": "(date, symbol)",
+        "holds": "Total-return (dividends reinvested) levels for NSE indices, same names as index_ohlcv.",
+        "note": "Filled once with full history, then gap-fetched forward. Use it, not index_ohlcv, to compare "
+        "a fund's NAV against its benchmark.",
+    },
+    {
+        "id": "AAUM",
+        "label": "mf_aaum",
+        "key": "(scheme_code, period_end)",
+        "holds": "AMFI average AUM per scheme plan per quarter (₹ lakhs), with category and AMC.",
+        "note": "Published quarters are final, so only new quarters are fetched. Net flows are derived in "
+        "services.mf.flows by removing NAV growth from AUM growth.",
+    },
+    {
         "id": "SMET",
         "label": "stock_metrics",
         "key": "symbol",
@@ -166,6 +183,8 @@ _EDGES: tuple[tuple[str, str, str, str], ...] = (
     ("YF", "OHLCV", "", "solid"),
     ("YF", "IDX", "foreign · FX", "solid"),
     ("BHAV", "IDX", "", "solid"),
+    ("NIFTY", "TRI", "", "solid"),
+    ("AMFI", "AAUM", "AAUM", "solid"),
     ("NSE", "SREG", "", "solid"),
     ("YF", "SREG", "add intl", "dotted"),
     ("SCR", "SMET", "", "solid"),

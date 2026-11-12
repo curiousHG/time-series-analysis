@@ -3,6 +3,7 @@
 from core.models.backtest import BacktestOptimization, BacktestRun, BacktestTrade, BacktestTrial
 from core.models.mutual_fund import (
     AmfiScheme,
+    MfAaum,
     MfAmc,
     MfAssetAllocation,
     MfCategory,
@@ -17,6 +18,7 @@ from core.models.mutual_fund import (
 from core.models.stock import (
     IndexOhlcv,
     IndexRegistry,
+    IndexTri,
     StockMetrics,
     StockOhlcv,
     StockQuarterly,

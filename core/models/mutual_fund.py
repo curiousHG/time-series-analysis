@@ -252,3 +252,21 @@ class MfTradebook(SQLModel, table=True):
     price: float
     order_id: str | None = None
     order_execution_time: str | None = None
+
+
+class MfAaum(SQLModel, table=True):
+    """AMFI average AUM per scheme plan per disclosure period (quarterly; monthly before FY2007-08), in ₹ lakhs.
+
+    No FK to amfi_schemes: AMFI history includes merged and wound-up schemes absent from today's master.
+    """
+
+    __tablename__ = "mf_aaum"
+    __table_args__ = TABLE_ARGS
+
+    scheme_code: int = Field(primary_key=True)
+    period_end: datetime.date = Field(primary_key=True, index=True)
+    scheme_name: str | None = None
+    aaum_lakhs: float
+    fof_domestic_lakhs: float = 0.0
+    category: str | None = None
+    fund_house: str | None = None

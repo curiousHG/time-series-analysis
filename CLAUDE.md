@@ -39,6 +39,9 @@ uv run python -c "from strategies.resolver import new_strategy_file; print(new_s
 # List every strategy the Backtest Lab can run
 uv run python -c "from strategies.resolver import discover; print(list(discover(refresh=True).strategies))"
 
+# Sync AMFI average AUM history (fetches only quarters not yet stored; ~1 min/quarter)
+uv run python -c "from data.repositories.aaum import sync_aaum; print(sync_aaum(2016))"
+
 # Sync AMFI master data (14K+ mutual fund schemes with ISIN codes)
 # Also available via "Sync AMFI Master" button in Settings
 uv run python -c "from data.repositories.amfi import sync_amfi_master; sync_amfi_master()"
@@ -106,7 +109,9 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
              value.py                  # get_mapped_data(), build_portfolio_value_series()
              analytics.py              # XIRR, look-through exposure, contribution
              holdings.py               # held schemes
+             sip_rules.py              # SIP simulator: continuous vs pause / buy-the-dip rules, rolling windows
            mf/                         # mutual-fund data flow
+             flows.py                  # net flows from AMFI average AUM (per scheme / fund / category)
              nav_sources.py            # ensure_nav_data(), refresh_nav_data(): MFAPI vs AdvisorKhoj, metric recompute
              sync.py                   # safe data refresh orchestration
              registry.py               # tracked-fund registry + source statuses
@@ -145,6 +150,8 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
            mfapi.py                    # MFAPI NAV + scheme search
            advisorkhoj.py              # AdvisorKhoj portfolio, metadata, NAV
            amfi.py                     # AMFI NAVAll.txt master
+           amfi_aaum.py                # AMFI scheme-wise average AUM (quarterly, per plan)
+           niftyindices.py             # NSE total-return index history
            schemas.py                  # pydantic models validating upstream payloads (validate_upstream)
            stock.py                    # yfinance + jugaad-data (NSE fallback)
          data/repositories/            # DB CRUD (one file per aggregate)
@@ -158,6 +165,8 @@ main.py → ui/app.py (multi-page router, init_schema, setup_logging)
            amfi.py                     # AMFI master sync + ISIN lookup
            stock_ohlcv.py              # Stock OHLCV CRUD + smart caching
            tradebook.py                # Tradebook import with dedup
+           aaum.py                     # mf_aaum: sync_aaum() (new periods only), AUM-with-NAV reads
+           index_tri.py                # index_tri: ensure_index_tri() DB-first gap fetch
 ```
 
 ### Database (PostgreSQL)
@@ -182,6 +191,8 @@ All data is stored in PostgreSQL via SQLModel ORM. Models in `core/models/`:
 | `stock_quarterly` | Quarterly P&L per stock | (symbol, period_end) |
 | `index_ohlcv` | Index/FX OHLCV (NSE bhavcopy names + `^` for foreign indices) | (date, symbol) |
 | `index_registry` | Index registry + backfill floor | symbol |
+| `index_tri` | NSE total-return index levels (niftyindices) | (date, symbol) |
+| `mf_aaum` | AMFI average AUM per scheme plan per quarter (₹ lakhs) | (scheme_code, period_end) |
 | `mf_tradebook` | Kite/Zerodha trades (deduped by trade_id) | trade_id |
 | `backtest_run` | Backtest Lab runs: config, status, summary, equity curve | id |
 | `backtest_trade` | Trades of a run (cascade on delete) | id, run_id FK |

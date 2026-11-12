@@ -127,6 +127,22 @@ SOURCE_ROUTING: tuple[dict[str, str], ...] = (
         "why": "Kuvera fills AdvisorKhoj 404s/slug misses",
     },
     {
+        "what": "MF average AUM history (per plan)",
+        "source": "AMFI /api/average-aum-schemewise",
+        "fallback": "—",
+        "returns": "Every scheme plan's average AUM per quarter (monthly before FY2007-08), ₹ lakhs",
+        "lands_in": "mf_aaum",
+        "why": "Only free AUM time series; net flows = AUM change not explained by NAV (services.mf.flows)",
+    },
+    {
+        "what": "NSE total-return indices",
+        "source": "niftyindices.com /BackPage/getTotalReturnIndexString",
+        "fallback": "—",
+        "returns": "Daily TRI + net TRI for any NSE index since inception (Nifty 50 from 1999)",
+        "lands_in": "index_tri",
+        "why": "Price indices omit ~1-1.5%/yr of dividends, so fund-vs-index comparisons need TRI",
+    },
+    {
         "what": "Trades",
         "source": "Kite/Zerodha tradebook CSV (upload)",
         "fallback": "—",

@@ -229,6 +229,32 @@ Growth code, and the portfolio priced a Direct-plan holding at the IDCW NAV (Sep
   sub-category → Nifty 50 for non-debt funds; each distinct index loads once. The benchmark is
   force-refreshed (`_load_benchmark_returns`) because `ensure_stock_data` skips sub-5-day gaps, which
   would leave CAPM on stale data.
+- **TRI for fund-vs-index comparisons** (`index_tri`, `repositories.index_tri.ensure_index_tri`) — the
+  bhavcopy levels in `index_ohlcv` are price indices; a fund's NAV includes dividends, so price-index
+  comparisons overstate alpha by roughly the index dividend yield (1-1.5%/yr). TRI comes from
+  niftyindices `/BackPage/getTotalReturnIndexString`; the older `Backpage.aspx/...` paths now redirect to
+  a login page. The endpoint needs a browser User-Agent and a single call returns full history, so the
+  table is filled once and then only gap-fetched forward. Indices launched after 2005 carry NSE's
+  back-calculated history before their launch date. The existing alpha/beta metrics still use price
+  indices; moving them to TRI is a separate change.
+- **Index P/E has a methodology break on 2021-03-31** — NSE moved index P/E from standalone to
+  consolidated earnings (Nifty 50: 40.4 → 33.2 overnight). Percentiles or "P/E vs history" must use data
+  from 2021-04-01 onward, or adjust for the step; mixing both makes large caps look ~3-7 points cheaper
+  than they are.
+
+## Fund flows (`mf_aaum`, `services.mf.flows`)
+
+- **Source** — AMFI's scheme-wise average AUM API (`/api/average-aum-schemewise`, found in the AMFI site's
+  Next.js bundle): financial years → periods → one ~2 MB answer per period covering every plan of every
+  scheme, keyed by AMFI code, in ₹ lakhs. Periods are quarterly from FY2007-08, monthly before. AMFI
+  throttles by returning 200 with a broken body, so the fetcher spaces calls by 1 s and retries bad JSON.
+  Published periods are final: `sync_aaum` only fetches periods not yet stored. The table has no FK to
+  `amfi_schemes` because history includes merged and wound-up schemes.
+- **Net flow estimate** — flow = AUM_t − AUM_{t−1} × NAV_t / NAV_{t−1}, with AUM and NAV both averaged
+  over the period, so market movement is removed and what remains is money in minus money out. It is an
+  estimate: averaging makes intra-period timing fuzzy, and IDCW payouts read as small outflows. Plans of
+  one fund are grouped by `fund_family`, which strips plan/option suffixes after a separator so names
+  like "Growth Leaders" survive.
 
 ## Metrics and portfolio analytics
 

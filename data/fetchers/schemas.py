@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from functools import cache
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any, NotRequired, TypeVar
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, TypeAdapter, ValidationError
 from typing_extensions import TypedDict
@@ -105,6 +105,78 @@ class KuveraSchemeDetail(BaseModel):
     investment_objective: str | None = None
     crisil_rating: str | None = None
     fund_manager: str | None = None
+
+
+class AmfiAaumYear(BaseModel):
+    model_config = _UPSTREAM
+
+    id: int
+    financial_year: str
+
+
+class AmfiAaumYears(BaseModel):
+    model_config = _UPSTREAM
+
+    data: list[AmfiAaumYear]
+
+
+class AmfiAaumPeriod(BaseModel):
+    model_config = _UPSTREAM
+
+    id: int
+    period: str
+
+
+class AmfiAaumPeriodList(BaseModel):
+    model_config = _UPSTREAM
+
+    periods: list[AmfiAaumPeriod]
+
+
+class AmfiAaumPeriods(BaseModel):
+    model_config = _UPSTREAM
+
+    data: AmfiAaumPeriodList
+
+
+class AmfiAaumAmount(BaseModel):
+    model_config = _UPSTREAM
+
+    excl_fof_domestic: LenientFloat = Field(
+        default=None, alias="ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas"
+    )
+    fof_domestic: LenientFloat = Field(default=None, alias="FundOfFundsDomestic")
+
+
+class AmfiAaumScheme(BaseModel):
+    model_config = _UPSTREAM
+
+    scheme_name: str = Field(alias="SchemeNAVName")
+    scheme_code: int = Field(alias="AMFI_Code")
+    amount: AmfiAaumAmount = Field(alias="AverageAumForTheMonth")
+
+
+class AmfiAaumGroup(BaseModel):
+    model_config = _UPSTREAM
+
+    fund_house: str | None = Field(default=None, alias="Mfname")
+    category: str | None = Field(default=None, alias="SchemeCat_Desc")
+    schemes: list[AmfiAaumScheme]
+
+
+class AmfiAaumData(BaseModel):
+    model_config = _UPSTREAM
+
+    data: list[AmfiAaumGroup]
+
+
+class NiftyTriRow(TypedDict):
+    Date: str
+    TotalReturnsIndex: str
+    NTR_Value: NotRequired[str]
+
+
+NiftyTriRows = list[NiftyTriRow]
 
 
 class FundMetadata(BaseModel):
